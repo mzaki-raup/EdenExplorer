@@ -1,0 +1,371 @@
+<p align="center">
+  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="120" height="120">
+</p>
+
+<h1 align="center">EdenExplorer</h1>
+
+<p align="center">
+  <a href="https://thetalabs.ca/eden-explorer/">
+    <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
+  </a>
+  <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
+</p>
+
+<p align="center">
+  <b>Blazing-fast, open-source file manager for Windows 10/11*.</b>
+</p>
+
+<p align="center">
+  A next-generation file explorer built with Rust and egui,<br>
+  focused on performance, efficiency, and modern workflows.
+</p>
+
+<p align="center">
+  A fast, open-source alternative to Windows File Explorer.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/downloads/mtucciarone/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/v/release/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/stars/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+</p>
+
+<p align="center">
+  <img src="src/demo.gif" width="600" />
+</p>
+
+<p align="center">
+  *Users reported no issues on Windows 10, but I'm cautious in declaring official support.
+</p>
+
+<h1 align="center"> ⭐ Support</h1>
+<p align="center">
+  If you like this FOSS project, consider sponsoring
+</p>
+<p align="center">
+  <a href="https://github.com/sponsors/mtucciarone">
+    <img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-5F4B87?style=for-the-badge&labelColor=14161A&logo=github" alt="Sponsor">
+  </a>
+</p>
+
+<h1 align="center">⚡ Why EdenExplorer?</h1>
+
+<p align="center">
+  Windows File Explorer hasn't evolved for modern workflows.<br><br>
+  It's slow, inefficient, and built for a different era.
+</p>
+
+<p align="center">
+  <b>EdenExplorer fixes that.</b>
+</p>
+
+<p align="center">
+  <b>Powered by direct NT-level filesystem access for maximum performance.</b>
+</p>
+
+<br>
+
+<p align="center">
+  ⚡ <b>Lightning-fast performance</b> — minimal overhead<br>
+  🧠 <b>Efficient by design</b> — Built in Rust for memory safety and speed<br>
+  🎯 <b>Minimal, modern UI</b> — Clean, distraction-free interface that just works<br>
+  🔓 <b>100% Free & Open Source</b> — No telemetry, no lock-in, no nonsense<br>
+  🪶 <b>Lightweight footprint</b> — Uses a fraction of the resources of Explorer<br>
+  🧰 <b>Built for daily use</b> — Your new go-to file manager for everything
+</p>
+
+<h1 align="center"> 🧩 Built With Modern Technology </h1>
+
+<p align="center">
+  🦀 <b>Rust</b> — Safe, fast, and reliable systems programming<br>
+  🎨 <a href="https://github.com/emilk/egui/"><b>egui</b></a> — Immediate mode GUI for ultra-responsive interfaces<br>
+  📦 <a href="https://github.com/amPerl/egui-phosphor"><b>egui-phosphor</b></a> — <a href="https://github.com/phosphor-icons/homepage">Phosphor</a> icon set for egui<br>
+  ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
+</p>
+
+<h1 align="center"> Comparison </h1>
+<div align="center">
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th><b>EdenExplorer</b></th>
+      <th>FilePilot</th>
+      <th>Windows Explorer</th>
+      <th>Files.Community</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Pricing</b></td>
+      <td><b>✅ Free</b></td>
+      <td>❌ Paid</td>
+      <td>❌ Your Data</td>
+      <td>✅ Free</td>
+    </tr>
+    <tr>
+      <td><b>Performance</b></td>
+      <td><b>⚡ Fast</b></td>
+      <td>⚡ Fast</td>
+      <td>🐢 Slow</td>
+      <td>🐢 Slow</td>
+    </tr>
+    <tr>
+      <td><b>Open Source</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>✅ Yes</td>
+    </tr>
+    <tr>
+      <td><b>NT-level access</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>✅ Yes</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+    </tr>
+    <tr>
+      <td><b>Resource Usage</b></td>
+      <td><b>🪶 Low</b></td>
+      <td>🪶 Low</td>
+      <td>🧱 Heavy</td>
+      <td>🧱 Medium</td>
+    </tr>
+    <tr>
+      <td><b>Core Technology</b></td>
+      <td><b>🦀 Rust</b></td>
+      <td>🦀 Rust</td>
+      <td>⚙️ C++*</td>
+      <td>💙 C# / WinUI</td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
+
+<h2 align="center">🚀 Getting Started</h2>
+<h3 align="center">Download</h3>
+<p align="center">
+  Grab the latest release from:<br>
+  <a href="https://github.com/mtucciarone/EdenExplorer/releases">
+    https://github.com/mtucciarone/EdenExplorer/releases
+  </a>
+</p>
+<p align="center">
+  Just download and launch — no installation, no setup.
+</p>
+
+
+
+
+<h2 align="center">✨ Features</h2>
+
+<table align="center" style="border: none; border-collapse: collapse;">
+<tr>
+<td width="50%" valign="top" style="border: none; padding: 12px;">
+
+<h3>Core Functionality</h3>
+<ul>
+  <li><b>Lightning-fast GUI</b> that starts at the <b>root of your computer</b>, displaying all drives with comprehensive storage types and detailed information</li>
+  <li><b>Asynchronous directory scanning</b> for ultra-fast file listing without blocking the UI</li>
+  <li><b>Intuitive navigation</b> with <b>Back / Forward / Up</b> controls for seamless browsing</li>
+  <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
+</ul>
+
+<h3>Theme & Customization</h3>
+<ul>
+  <li><b>Dark/Light mode switching</b> with instant toggle</li>
+  <li><b>Advanced theme customization</b> with full color palette editor</li>
+  <li><b>Customizable startup directory</b></li>
+  <li><b>Persistent settings</b> across restarts</li>
+</ul>
+
+<h3>Search & Filtering</h3>
+<ul>
+  <li><b>Real-time file filtering</b> as you type</li>
+  <li><b>Fuzzy matching</b> for intelligent results</li>
+  <li><b>Performance-optimized filtering</b> with cached indices</li>
+</ul>
+
+</td>
+
+<td width="50%" valign="top" style="border: none; padding: 12px;">
+
+<h3>User Interface & Navigation</h3>
+<ul>
+  <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
+  <li><b>Responsive design</b> across window sizes</li>
+  <li><b>Modern toolbar</b> with file and folder actions</li>
+  <li><b>Tag management system</b> for organizing files and folders</li>
+  <li><b>File Gallery/Thumbnail view</b> for better file organization</li>
+</ul>
+
+<h3>Advanced Features</h3>
+<ul>
+  <li><b>Favorites system</b> with drag-and-drop support</li>
+  <li><b>Background folder size calculation</b> with progress tracking</li>
+  <li><b>Context menu operations</b> (cut, copy, paste, rename, delete)</li>
+  <li><b>Drag and drop files/folders</b> within the viewer</li>
+  <li><b>Portable device support</b> (iPhone, Android, external devices)</li>
+  <li><b>Raw/unmounted drive detection</b> (ISO, Linux partitions)</li>
+  <li><b>Multi-language Support using i18n</li>
+</ul>
+
+<h3>System Integration</h3>
+<ul>
+  <li><b>Persistent settings</b> using efficient binary cache</li>
+  <li><b>Efficient drive space queries</b> with caching</li>
+  <li><b>Windows API integration</b></li>
+  <li><b>Custom executable icon</b> with file association</li>
+  <li><b>Improved window management</b></li>
+</ul>
+
+<h3>Performance Optimizations</h3>
+<ul>
+  <li><b>NT-level filesystem access</b> via direct API calls</li>
+  <li><b>Background scanning</b> prevents UI freezing</li>
+  <li><b>Efficient caching</b> for directories and metadata</li>
+  <li><b>Streaming directory enumeration</b></li>
+  <li><b>Low memory footprint</b></li>
+  <li><b>Built-in benchmarking system</b></li>
+</ul>
+
+</td>
+</tr>
+</table>
+
+## 🗺️ Roadmap
+
+### ✅ Implemented Features
+- [x] **Tabbed interface** with tab management, tab pinning (automatic restore on startup), and navigation
+- [x] **Search and filter engine** with real-time file indexing
+- [x] **Dark/Light theme switching** with toggle controls
+- [x] **Comprehensive navigation** with back/forward/up controls
+- [x] **Favorites system** with drag-and-drop support
+- [x] **Favorites management** with reset and reorganization capabilities
+- [x] **Context menu operations** (cut, copy, paste, rename, delete)
+- [x] **Enhanced drive caching** with 30-second cache duration for improved UI performance
+- [x] **Optimized icon caching** with metadata-based cache keys and background loading
+- [x] **Folder size scanning control** with user setting to enable/disable performance-heavy operations
+- [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
+- [x] **Portable device support** for iPhone, Android, and other connected devices
+- [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
+- [x] **Performance benchmarking system** with real-time measurement and comparison tools
+- [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
+- [x] **Window management improvements** with proper maximization bounds and minimum size constraints
+- [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
+- [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
+- [x] Drag and drop files into breadcrumb folders and directory tabs
+- [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
+- [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C
+- [x] Column sorting saves across sessions
+- [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
+- [x] Full navigation history is saved and restored with Back/Forward/Up buttons
+- [x] Added English, Indonesian, Japanese, and multi-Chinese language support
+- [x] Add folder tags and custom folder colors
+- [x] Add toggle for display hidden explorer objects
+- [x] Support changing the application font based on the system-installed fonts
+- [x] Collapsible sidebar
+- [x] Split-pane view in the Explorer
+- [x] Explorer view displays objects that have tags applied to them based on the tag color 
+- [x] Added native Recycle Bin support
+- [x] New Explorer view that displays media files in small/medium/large/extra large format
+- [x] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
+- [x] CLI now accepts `::MY_PC::`, `::RECYCLE_BIN::`, `shell:MyComputerFolder`, and `shell:RecycleBinFolder` as valid directories
+- [x] Lexicographic multi-column sorting using Shift+Click to add columns to sort rows or Ctrl+Click to remove column sorting
+- [x] Directory column sorting, sizing, and view changes persist across sessions
+
+- [x] Browse network shares - type a `\\SERVER` or `\\SERVER\Share` path in the address bar, or click **Network** in the sidebar, to list and open SMB shares
+- [x] **Shared Network** sidebar category that auto-detects computers advertising file shares on the local network (SMB/NetBIOS browsing), alongside a manual **Network** entry for typing a server name directly
+- [x] **Export/Import Settings** - back up or transfer general settings, favorites, tags, and both theme palettes as a single JSON file, from the Settings window
+
+### 🚀 Upcoming Alpha Features
+- [ ] Add multi-tagging of objects
+- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
+- [ ] Support additional network discovery protocols (mDNS/WS-Discovery) for devices that don't announce over legacy NetBIOS browsing
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=mtucciarone%2Fedenexplorer&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&theme=dark&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+ </picture>
+</a>
+
+## 🛠️ Building, Testing & Debugging
+
+### Prerequisites
+- **Rust** (2024 edition toolchain) — install via [rustup](https://rustup.rs/)
+- **Windows 10/11** — this project depends heavily on Win32/NT APIs (`windows`, `ntapi` crates) and only targets Windows
+
+### Build
+```bash
+cargo build
+```
+Debug builds are placed in `target/debug/EdenExplorer.exe`.
+
+For an optimized release build:
+```bash
+cargo build --release
+```
+Release builds are placed in `target/release/EdenExplorer.exe`.
+
+To reproduce the CI release packaging locally (builds release + copies the binary, README, and LICENSE into `release/`):
+```powershell
+pwsh -File ./scripts/build-and-package.ps1
+```
+
+### Run
+```bash
+cargo run
+```
+Or run the release binary directly:
+```bash
+cargo run --release
+```
+
+### Test
+Unit tests live alongside their modules (e.g. `src/core/indexer.rs`, `src/core/launch.rs`, `src/core/utils/text.rs`):
+```bash
+cargo test
+```
+
+### Debug
+- Run with `cargo run` (unoptimized) to get full debug symbols and faster compile times while iterating.
+- Use `RUST_BACKTRACE=1 cargo run` to get full backtraces on panics:
+  ```bash
+  RUST_BACKTRACE=1 cargo run
+  ```
+- Attach a debugger (e.g. [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) in VS Code, or `windbg`/`x64dbg`) to `target/debug/EdenExplorer.exe` for breakpoint-level debugging of the native Windows API calls.
+- The app includes a **built-in performance benchmarking system** for measuring filesystem/indexing performance directly from the UI.
+- Since this app relies on NT-level filesystem access and Windows Shell APIs, test file operations (drag-and-drop, context menu, recycle bin, portable devices) on real hardware/drives — these code paths are not covered by unit tests.
+
+### Release process
+Releases are automated via [semantic-release](https://semantic-release.gitbook.io/) (`.releaserc.json`) triggered from `main`: it bumps the version in `Cargo.toml` (`scripts/update-version.ps1`), builds and packages the release binary (`scripts/build-and-package.ps1`), and publishes it to GitHub Releases.
+
+## Keyboard Shortcuts
+- F1 - Toggle fullscreen
+- Ctrl+Shift+C - Copy selected path
+- Ctrl+W - Close current Tab
+- Ctrl+T - New Tab
+- Ctrl+Tab - Next Tab
+- Ctrl+Shift+Tab - Previous Tab
+- Ctrl+Shift+N - Create new folder in current directory
+- Ctrl+R (F5) - Refresh current directory
+- Alt+D - Select the address bar / current directory path
+- F2 - Rename current selected file (if any is selected inside the explorer)
+- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
+- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
+- Alt + Left Arrow (Backspace) - Navigate backwards
+- Alt + Right Arrow (Mouse Button 4) - Navigate forwards
+- Alt + Up Arrow (Mouse Button 5) - Navigate upwards
+- Enter - If a file is selected, runs the default program
+
+## License
+This project is FOSS, released under the MIT License.

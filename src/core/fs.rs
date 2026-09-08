@@ -1,0 +1,680 @@
+use crate::core::network;
+use crate::core::portable;
+use chrono::{DateTime, Local, TimeZone, Utc};
+use crossbeam_channel::Sender;
+use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
+use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::thread;
+use std::time::{Duration, Instant};
+use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{FILETIME, PROPERTYKEY};
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW,
+    OPEN_EXISTING,
+};
+use windows::Win32::UI::Shell::PropertiesSystem::PSGetPropertyKeyFromName;
+use windows::Win32::UI::Shell::{IShellItem, IShellItem2};
+use windows::core::w;
+use windows::core::{GUID, Interface, PCWSTR};
+
+const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
+static RECYCLE_DATE_DELETED: OnceLock<PROPERTYKEY> = OnceLock::new();
+static RECYCLE_NAME: OnceLock<PROPERTYKEY> = OnceLock::new();
+static RECYCLE_ORIGINAL_DIRECTORY: OnceLock<PROPERTYKEY> = OnceLock::new();
+pub const MY_PC_PATH: &str = "::MY_PC::";
+pub const MY_RECYCLE_BIN_PATH: &str = "::RECYCLE_BIN::";
+pub const SETTINGS_PATH: &str = "::SETTINGS::";
+const TAG_VIEW_PREFIX: &str = "::TAG::";
+
+/// The sentinel "path" a tab navigates to in order to show the virtual
+/// tagged-items list for one tag group, the same trick used for the
+/// This-PC/Recycle-Bin/Settings virtual views.
+pub fn tag_view_path(group_id: u64) -> PathBuf {
+    PathBuf::from(format!("{TAG_VIEW_PREFIX}{group_id}"))
+}
+
+/// If `path` is a tag-view sentinel, returns the tag group id it names.
+pub fn parse_tag_view_path(path: &Path) -> Option<u64> {
+    path.to_string_lossy()
+        .strip_prefix(TAG_VIEW_PREFIX)?
+        .parse()
+        .ok()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DateStyle {
+    Iso,
+    UsShort,
+    Long,
+}
+
+impl Default for DateStyle {
+    fn default() -> Self {
+        DateStyle::UsShort
+    }
+}
+
+pub fn filetime_to_string(
+    filetime: i64,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) -> Option<String> {
+    if filetime == 0 {
+        return None;
+    }
+
+    let unix_time = (filetime / 10_000_000) - 11_644_473_600;
+
+    if unix_time <= 0 {
+        return None;
+    }
+
+    let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
+    let dt_local: DateTime<Local> = dt_utc.into();
+
+    let date_fmt = match date_style {
+        DateStyle::Iso => "%Y-%m-%d",
+        DateStyle::UsShort => "%-m/%-d/%Y",
+        DateStyle::Long => "%B %-d, %Y",
+    };
+    let time_fmt = if time_format_24h {
+        "%H:%M"
+    } else {
+        "%-I:%M %p"
+    };
+
+    Some(
+        dt_local
+            .format(&format!("{date_fmt} {time_fmt}"))
+            .to_string(),
+    )
+}
+
+/// Convert PathBuf -> UTF-16
+fn path_to_wide(path: &Path) -> Vec<u16> {
+    let mut w: Vec<u16> = path.as_os_str().encode_wide().collect();
+    w.push(0);
+    w
+}
+
+/// Open directory handle
+fn open_directory_handle(path: &PathBuf) -> Option<HANDLE> {
+    let wide = path_to_wide(path);
+    let pcw = PCWSTR(wide.as_ptr());
+
+    unsafe {
+        match CreateFileW(
+            pcw,
+            FILE_LIST_DIRECTORY.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            None,
+        ) {
+            Ok(handle) => Some(handle),
+            Err(_) => None,
+        }
+    }
+}
+
+/// Get drive space
+pub fn get_drive_space(path: &PathBuf) -> Option<(u64, u64)> {
+    let wide = path_to_wide(path);
+    let pcw = PCWSTR(wide.as_ptr());
+
+    unsafe {
+        let mut free: u64 = 0;
+        let mut total: u64 = 0;
+        let mut _total_free: u64 = 0;
+
+        let res = GetDiskFreeSpaceExW(
+            pcw,
+            Some(&mut free),
+            Some(&mut total),
+            Some(&mut _total_free),
+        );
+
+        if res.is_ok() {
+            Some((total, free))
+        } else {
+            None
+        }
+    }
+}
+
+/// 🚀 FAST NT-based folder size calculation
+#[allow(dead_code)]
+pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
+    let mut total_size = 0u64;
+    let mut stack = vec![path];
+
+    // Reuse buffer (good)
+    let mut buffer = vec![0u8; 256 * 1024];
+
+    while let Some(dir) = stack.pop() {
+        let handle = match open_directory_handle(&dir) {
+            Some(h) => h,
+            None => continue,
+        };
+
+        unsafe {
+            let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+            loop {
+                let status = NtQueryDirectoryFile(
+                    handle.0 as *mut _,
+                    std::ptr::null_mut(),
+                    None,
+                    std::ptr::null_mut(),
+                    &mut io_status,
+                    buffer.as_mut_ptr() as *mut _,
+                    buffer.len() as u32,
+                    1,
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                );
+
+                if status == STATUS_NO_MORE_FILES || status < 0 {
+                    break;
+                }
+
+                let mut offset = 0usize;
+                let end = io_status.Information as usize;
+
+                while offset < end {
+                    let entry_ptr =
+                        buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
+                    let entry = &*entry_ptr;
+
+                    let name_len = entry.FileNameLength as usize / 2;
+                    let name_ptr = entry.FileName.as_ptr();
+
+                    // 🚀 FAST "." and ".." check (no allocation)
+                    let is_dot = name_len == 1 && *name_ptr == b'.' as u16;
+                    let is_dotdot = name_len == 2
+                        && *name_ptr == b'.' as u16
+                        && *name_ptr.add(1) == b'.' as u16;
+
+                    if !is_dot && !is_dotdot {
+                        let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+
+                        if is_dir {
+                            // Only allocate when needed (directory)
+                            let name =
+                                OsString::from_wide(std::slice::from_raw_parts(name_ptr, name_len));
+                            stack.push(dir.join(name));
+                        } else {
+                            total_size =
+                                total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                        }
+                    }
+
+                    if entry.NextEntryOffset == 0 {
+                        break;
+                    }
+
+                    offset += entry.NextEntryOffset as usize;
+                }
+            }
+
+            let _ = CloseHandle(handle);
+        }
+    }
+
+    total_size
+}
+
+/// 🚀 Async directory scan
+pub fn scan_dir_async(
+    path: PathBuf,
+    tx: Sender<FileItem>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) {
+    thread::spawn(move || {
+        if path.to_string_lossy() == MY_PC_PATH {
+            return;
+        }
+
+        if portable::is_portable_path(&path) {
+            portable::scan_portable_async(path, tx);
+            return;
+        }
+
+        if let Some(host) = network::unc_host_only(&path) {
+            for share in network::list_shares(&host) {
+                let is_hidden = share.name.ends_with('$');
+                let item = FileItem::new(
+                    share.name, share.path, true, is_hidden, None, None, None, None, None, None,
+                    None, None, None,
+                );
+                let _ = tx.send(item);
+            }
+            return;
+        }
+
+        let handle = match open_directory_handle(&path) {
+            Some(h) => h,
+            None => return,
+        };
+
+        unsafe {
+            let mut buffer = vec![0u8; 64 * 1024];
+            let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+            loop {
+                let status = NtQueryDirectoryFile(
+                    handle.0 as *mut _,
+                    std::ptr::null_mut(),
+                    None,
+                    std::ptr::null_mut(),
+                    &mut io_status,
+                    buffer.as_mut_ptr() as *mut _,
+                    buffer.len() as u32,
+                    1,
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                );
+
+                if status == STATUS_NO_MORE_FILES || status < 0 {
+                    break;
+                }
+
+                let mut offset = 0;
+
+                while offset < io_status.Information as usize {
+                    let entry_ptr =
+                        buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
+                    let entry = &*entry_ptr;
+
+                    let name_len = entry.FileNameLength as usize / 2;
+
+                    let name_os = OsString::from_wide(std::slice::from_raw_parts(
+                        entry.FileName.as_ptr(),
+                        name_len,
+                    ));
+
+                    let name = name_os.to_string_lossy().to_string();
+
+                    if name == "." || name == ".." {
+                        if entry.NextEntryOffset == 0 {
+                            break;
+                        }
+                        offset += entry.NextEntryOffset as usize;
+                        continue;
+                    }
+
+                    let full_path = path.join(&name_os);
+
+                    let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                    let is_hidden = (entry.FileAttributes & FILE_ATTRIBUTE_HIDDEN.0) != 0;
+
+                    let file_size = if is_dir {
+                        None
+                    } else {
+                        Some(*entry.EndOfFile.QuadPart() as u64)
+                    };
+
+                    let modified_time_filetime = *entry.LastWriteTime.QuadPart();
+                    let created_time_filetime = *entry.CreationTime.QuadPart();
+
+                    let modified_time =
+                        filetime_to_string(modified_time_filetime, date_style, time_format_24h);
+                    let created_time =
+                        filetime_to_string(created_time_filetime, date_style, time_format_24h);
+
+                    let modified_time_raw = if modified_time_filetime == 0 {
+                        None
+                    } else {
+                        Some(modified_time_filetime)
+                    };
+                    let created_time_raw = if created_time_filetime == 0 {
+                        None
+                    } else {
+                        Some(created_time_filetime)
+                    };
+
+                    let item = FileItem::new(
+                        name,
+                        full_path.clone(),
+                        is_dir,
+                        is_hidden,
+                        None,
+                        file_size,
+                        modified_time,
+                        created_time,
+                        None,
+                        modified_time_raw,
+                        created_time_raw,
+                        None,
+                        None,
+                    );
+
+                    let _ = tx.send(item);
+
+                    if entry.NextEntryOffset == 0 {
+                        break;
+                    }
+
+                    offset += entry.NextEntryOffset as usize;
+                }
+            }
+
+            let _ = CloseHandle(handle);
+        }
+    });
+}
+
+// ⚡ Fast, accurate folder size calculation with progress updates
+pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
+    let mut total_size = 0u64;
+    let mut stack = vec![path.clone()];
+    let mut last_emit = Instant::now();
+
+    while let Some(dir) = stack.pop() {
+        if let Some(handle) = open_directory_handle(&dir) {
+            unsafe {
+                let mut buffer = vec![0u8; 64 * 1024];
+                let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+                loop {
+                    let status = NtQueryDirectoryFile(
+                        handle.0 as *mut _,
+                        std::ptr::null_mut(),
+                        None,
+                        std::ptr::null_mut(),
+                        &mut io_status,
+                        buffer.as_mut_ptr() as *mut _,
+                        buffer.len() as u32,
+                        1, // FileDirectoryInformation
+                        0,
+                        std::ptr::null_mut(),
+                        0,
+                    );
+
+                    if status == STATUS_NO_MORE_FILES || status < 0 {
+                        break;
+                    }
+
+                    let mut offset = 0;
+                    while offset < io_status.Information as usize {
+                        let entry_ptr =
+                            buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
+                        let entry = &*entry_ptr;
+
+                        let name_len = entry.FileNameLength as usize / 2;
+                        let name = OsString::from_wide(std::slice::from_raw_parts(
+                            entry.FileName.as_ptr(),
+                            name_len,
+                        ));
+
+                        if name != "." && name != ".." {
+                            let full_path = dir.join(&name);
+                            let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                            let is_reparse =
+                                (entry.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0;
+
+                            // Only traverse real directories (skip symlinks/junctions)
+                            if is_dir && !is_reparse {
+                                stack.push(full_path);
+                            } else if !is_dir {
+                                total_size =
+                                    total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                            }
+                        }
+
+                        if entry.NextEntryOffset == 0 {
+                            break;
+                        }
+                        offset += entry.NextEntryOffset as usize;
+                    }
+
+                    // Emit progress every 100ms
+                    if last_emit.elapsed() > Duration::from_millis(100) {
+                        let _ = tx.send((path.clone(), total_size, false));
+                        last_emit = Instant::now();
+                    }
+                }
+
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
+
+    // Final emit
+    let _ = tx.send((path, total_size, true));
+}
+
+#[derive(Clone, Debug)]
+pub struct FileItem {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub is_hidden: bool,
+    pub recycle_bin_pidl: Option<Vec<u8>>,
+    pub file_size: Option<u64>,
+    pub modified_time: Option<String>,
+    pub created_time: Option<String>,
+    pub deleted_time: Option<String>,
+    pub modified_time_raw: Option<i64>,
+    pub created_time_raw: Option<i64>,
+    pub deleted_time_raw: Option<i64>,
+    pub original_directory: Option<String>,
+
+    // Optional drive info (only populated for drive roots)
+    pub total_space: Option<u64>,
+    pub free_space: Option<u64>,
+}
+
+impl FileItem {
+    pub fn new(
+        name: String,
+        path: PathBuf,
+        is_dir: bool,
+        is_hidden: bool,
+        recycle_bin_pidl: Option<Vec<u8>>,
+        file_size: Option<u64>,
+        modified_time: Option<String>,
+        created_time: Option<String>,
+        deleted_time: Option<String>,
+        modified_time_raw: Option<i64>,
+        created_time_raw: Option<i64>,
+        deleted_time_raw: Option<i64>,
+        original_directory: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            path,
+            is_dir,
+            is_hidden,
+            recycle_bin_pidl,
+            file_size,
+            modified_time,
+            created_time,
+            deleted_time,
+            modified_time_raw,
+            created_time_raw,
+            deleted_time_raw,
+            original_directory,
+            total_space: None,
+            free_space: None,
+        }
+    }
+
+    pub fn with_drive_info(
+        name: String,
+        path: PathBuf,
+        is_dir: bool,
+        is_hidden: bool,
+        recycle_bin_pidl: Option<Vec<u8>>,
+        file_size: Option<u64>,
+        modified_time: Option<String>,
+        created_time: Option<String>,
+        deleted_time: Option<String>,
+        modified_time_raw: Option<i64>,
+        created_time_raw: Option<i64>,
+        deleted_time_raw: Option<i64>,
+        original_directory: Option<String>,
+        total: u64,
+        free: u64,
+    ) -> Self {
+        Self {
+            name,
+            path,
+            is_dir,
+            is_hidden,
+            recycle_bin_pidl,
+            file_size,
+            modified_time,
+            created_time,
+            deleted_time,
+            modified_time_raw,
+            created_time_raw,
+            deleted_time_raw,
+            original_directory,
+            total_space: Some(total),
+            free_space: Some(free),
+        }
+    }
+}
+
+#[inline]
+pub fn filetime_struct_to_i64(ft: FILETIME) -> Option<i64> {
+    let value = ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
+
+    if value == 0 { None } else { Some(value as i64) }
+}
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_SIZE: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 12,
+};
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_DATE_MODIFIED: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 14,
+};
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_DATE_CREATED: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 15,
+};
+
+pub fn get_shell_item_metadata(
+    item: &IShellItem,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) -> (
+    Option<u64>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+) {
+    let Ok(item2) = item.cast::<IShellItem2>() else {
+        return (None, None, None, None, None, None, None, None, None);
+    };
+
+    let (
+        file_size,
+        modified_time_raw,
+        created_time_raw,
+        deleted_time_raw,
+        original_name,
+        original_directory,
+    ) = unsafe {
+        (
+            item2.GetUInt64(&PKEY_SIZE).ok(),
+            item2
+                .GetFileTime(&PKEY_DATE_MODIFIED)
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2
+                .GetFileTime(&PKEY_DATE_CREATED)
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2
+                .GetFileTime(recycle_date_deleted_key())
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2.GetString(recycle_name_key()).ok(),
+            item2.GetString(recycle_original_directory_key()).ok(),
+        )
+    };
+
+    let modified_time =
+        modified_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let created_time =
+        created_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let deleted_time =
+        deleted_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let original_name = unsafe { original_name.and_then(|name| name.to_string().ok()) };
+
+    let original_directory = unsafe { original_directory.and_then(|dir| dir.to_string().ok()) };
+
+    (
+        file_size,
+        modified_time,
+        created_time,
+        deleted_time,
+        modified_time_raw,
+        created_time_raw,
+        deleted_time_raw,
+        original_name,
+        original_directory,
+    )
+}
+
+fn recycle_date_deleted_key() -> &'static PROPERTYKEY {
+    RECYCLE_DATE_DELETED.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.Recycle.DateDeleted"), &mut key)
+                .expect("System.Recycle.DateDeleted");
+        }
+        key
+    })
+}
+
+fn recycle_name_key() -> &'static PROPERTYKEY {
+    RECYCLE_NAME.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.ItemNameDisplay"), &mut key)
+                .expect("PKEY_ItemNameDisplay");
+        }
+        key
+    })
+}
+
+fn recycle_original_directory_key() -> &'static PROPERTYKEY {
+    RECYCLE_ORIGINAL_DIRECTORY.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.Recycle.DeletedFrom"), &mut key)
+                .expect("System.Recycle.DeletedFrom");
+        }
+
+        key
+    })
+}

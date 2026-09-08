@@ -1,0 +1,82 @@
+use crate::gui::utils::SortColumn;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+pub enum ItemViewerNavAction {
+    Back,
+    Forward,
+    Up,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ItemViewerHeaderColumn {
+    Name,
+    Type,
+    Size,
+    Modified,
+    Created,
+    Usage,
+    Deleted,
+    OriginalDirectory,
+}
+
+pub enum ItemViewerAction {
+    Sort {
+        column: SortColumn,
+        additive: bool,
+        remove: bool,
+    },
+    ToggleColumnVisibility(ItemViewerHeaderColumn),
+    FitColumn(ItemViewerHeaderColumn),
+    FitAllColumns,
+    CreateFolder,
+    CreateFile,
+    RefreshCurrentDirectory,
+    OpenTerminal,
+    MoveColumnLeft(ItemViewerHeaderColumn),
+    MoveColumnRight(ItemViewerHeaderColumn),
+    MoveColumnToStart(ItemViewerHeaderColumn),
+    MoveColumnToEnd(ItemViewerHeaderColumn),
+    Select(PathBuf),
+    Deselect(PathBuf),
+    SelectAll,
+    DeselectAll,
+    RangeSelect(Vec<PathBuf>),
+    Open(PathBuf),
+    OpenWithDefault(Vec<PathBuf>),
+    OpenInNewTab(PathBuf),
+    OpenInSplitView(PathBuf),
+    Context(ItemViewerContextAction),
+    StartEdit(PathBuf),
+    FilesDropped(Vec<PathBuf>),
+    ReplaceSelection(PathBuf),
+    MoveItems {
+        sources: Vec<PathBuf>,
+        target_dir: PathBuf,
+    },
+    ColumnSizesChanged,
+    /// Run a user-defined custom context menu command (see
+    /// `core::context_menu_settings`) against `paths` - the selection it was
+    /// invoked on, or empty for the folder-background menu (in which case
+    /// the handler runs it against the current directory instead).
+    RunCustomCommand {
+        entry_id: u64,
+        paths: Vec<PathBuf>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum ItemViewerContextAction {
+    Copy(Vec<PathBuf>),
+    CopyPath(Vec<PathBuf>),
+    Cut(Vec<PathBuf>),
+    Paste,
+    Restore(Vec<PathBuf>),
+    AddTag(Vec<PathBuf>),
+    RemoveTag(Vec<PathBuf>),
+    AddFavorite(Vec<PathBuf>),
+    RenameRequest(PathBuf, String),
+    RenameCancel,
+    Delete(Vec<PathBuf>),
+    Properties(Vec<PathBuf>),
+}
