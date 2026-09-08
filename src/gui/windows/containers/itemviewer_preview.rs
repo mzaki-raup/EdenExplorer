@@ -155,6 +155,10 @@ pub fn draw_preview_view(
                                     ui.add_space(8.0);
                                     ui.weak(i18n.tr("folder_is_empty"));
                                 }
+
+                                // Bottom padding so the last item isn't
+                                // flush against the pane border.
+                                ui.add_space(12.0);
                             });
                         });
                     });

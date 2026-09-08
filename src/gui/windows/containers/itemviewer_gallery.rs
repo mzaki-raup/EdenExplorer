@@ -105,7 +105,9 @@ pub fn draw_gallery_view(
         .floor()
         .max(1.0) as usize;
     let rows = filtered_indices.len().div_ceil(columns);
-    let content_height = (rows as f32 * row_pitch).max(ui.available_height());
+    // Bottom padding so the last row of tiles isn't flush against the pane border.
+    const BOTTOM_PADDING: f32 = 12.0;
+    let content_height = (rows as f32 * row_pitch + BOTTOM_PADDING).max(ui.available_height());
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut best_hovered_tile: Option<(f32, bool, PathBuf, egui::Rect)> = None;
     let mut current_hovered_drop_target: Option<PathBuf> = None;

@@ -536,8 +536,14 @@ pub fn draw_item_viewer(
                         let hovered_drop_target = &mut hovered_drop_target;
                         let filtered_indices = &filter_state.cached_indices;
 
-                        body.rows(layout.row_height, filtered_indices.len(), |mut row| {
+                        // One extra row at the end, past the real item count,
+                        // rendered empty - bottom padding so the last real
+                        // row isn't flush against the pane border.
+                        body.rows(layout.row_height, filtered_indices.len() + 1, |mut row| {
                             let idx = row.index();
+                            if idx >= filtered_indices.len() {
+                                return;
+                            }
                             let file = &files[filtered_indices[idx]];
                             let is_non_ntfs_drive =
                                 layout.is_drive_view && is_raw_physical_drive_path(&file.path);

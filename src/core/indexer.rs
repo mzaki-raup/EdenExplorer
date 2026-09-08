@@ -350,6 +350,59 @@ fn tags_cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("tags.bin"))
 }
 
+/// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
+/// Shared Network) are expanded, persisted across restarts.
+#[derive(Serialize, Deserialize)]
+pub struct SidebarSectionsSnapshot {
+    pub places: bool,
+    pub storage: bool,
+    pub favorites: bool,
+    pub tags: bool,
+    pub shared_network: bool,
+}
+
+impl Default for SidebarSectionsSnapshot {
+    fn default() -> Self {
+        Self {
+            places: true,
+            storage: true,
+            favorites: true,
+            tags: true,
+            shared_network: true,
+        }
+    }
+}
+
+fn sidebar_sections_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("sidebar_sections.bin"))
+}
+
+pub fn load_sidebar_sections() -> SidebarSectionsSnapshot {
+    let Some(path) = sidebar_sections_cache_path() else {
+        return SidebarSectionsSnapshot::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SidebarSectionsSnapshot::default();
+    };
+    postcard::take_from_bytes::<SidebarSectionsSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_sidebar_sections(snapshot: &SidebarSectionsSnapshot) {
+    let Some(path) = sidebar_sections_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 fn window_position_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("window_position.bin"))

@@ -17,6 +17,41 @@ use egui_phosphor::regular;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// Draws a clickable section header (label + expand/collapse chevron) and
+/// toggles `expanded` when clicked. Callers wrap the section's own content in
+/// `if *expanded { ... }`.
+/// Returns `true` if the section was toggled this frame (so callers can
+/// persist the new state).
+fn draw_section_header(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    label: &str,
+    expanded: &mut bool,
+) -> bool {
+    let chevron = if *expanded {
+        regular::CARET_DOWN
+    } else {
+        regular::CARET_RIGHT
+    };
+    let resp = ui.add(
+        egui::Button::new(
+            egui::RichText::new(format!("{chevron}  {label}"))
+                .size(palette.text_size)
+                .color(palette.text_header_section)
+                .strong(),
+        )
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::NONE)
+        .frame(false),
+    );
+    if resp.clicked() {
+        *expanded = !*expanded;
+        true
+    } else {
+        false
+    }
+}
+
 /// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
@@ -30,6 +65,7 @@ pub fn draw_sidebar(
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
+    let mut sections_changed = false;
     let mut drop_index: Option<usize> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
@@ -50,139 +86,144 @@ pub fn draw_sidebar(
                     ui.add_space(8.0);
                     ui.spacing_mut().item_spacing.y *= palette.sidebar_item_spacing_y;
 
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("places"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(8.0);
-
-                    let pc_icon_path = PathBuf::from(MY_PC_PATH);
-                    let resp = draw_sidebar_item(
+                    sections_changed |= draw_section_header(
                         ui,
-                        icon_cache,
-                        &pc_icon_path,
-                        &i18n.tr("thispc"),
-                        true,
-                        false,
                         palette,
-                        false,
-                        None,
+                        &i18n.tr("places"),
+                        &mut sidebar_state.places_expanded,
                     );
-                    if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from(MY_PC_PATH));
-                    }
-                    if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
-                    }
+                    if sidebar_state.places_expanded {
+                        ui.add_space(8.0);
 
-                    Popup::context_menu(&resp)
-                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
-                                ui.close();
-                            }
-                        });
-
-                    if let Some(home) = dirs::home_dir() {
+                        let pc_icon_path = PathBuf::from(MY_PC_PATH);
                         let resp = draw_sidebar_item(
                             ui,
                             icon_cache,
-                            &home,
-                            &i18n.tr("my_user_home"),
+                            &pc_icon_path,
+                            &i18n.tr("thispc"),
                             true,
                             false,
                             palette,
                             false,
                             None,
                         );
-
                         if resp.clicked() {
-                            action.nav_to = Some(home.clone());
+                            action.nav_to = Some(PathBuf::from(MY_PC_PATH));
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(home.clone());
+                            action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                         }
+
                         Popup::context_menu(&resp)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
                                 apply_eden_text_overrides(ui, palette);
                                 if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                    action.open_new_tab = Some(home.clone());
+                                    action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
+                                    ui.close();
+                                }
+                            });
+
+                        if let Some(home) = dirs::home_dir() {
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &home,
+                                &i18n.tr("my_user_home"),
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+
+                            if resp.clicked() {
+                                action.nav_to = Some(home.clone());
+                            }
+                            if resp.middle_clicked() {
+                                action.open_new_tab = Some(home.clone());
+                            }
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    apply_eden_text_overrides(ui, palette);
+                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                        action.open_new_tab = Some(home.clone());
+                                        ui.close();
+                                    }
+                                });
+                        }
+
+                        let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
+                        let resp = draw_sidebar_item(
+                            ui,
+                            icon_cache,
+                            &recycle_bin_path,
+                            &i18n.tr("recycle_bin"),
+                            true,
+                            true,
+                            palette,
+                            false,
+                            None,
+                        );
+                        if resp.clicked() {
+                            action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                        }
+                        if resp.middle_clicked() {
+                            action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                        }
+
+                        Popup::context_menu(&resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_eden_text_overrides(ui, palette);
+                                if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                    action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
                                     ui.close();
                                 }
                             });
                     }
 
-                    let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
-                    let resp = draw_sidebar_item(
-                        ui,
-                        icon_cache,
-                        &recycle_bin_path,
-                        &i18n.tr("recycle_bin"),
-                        true,
-                        true,
-                        palette,
-                        false,
-                        None,
-                    );
-                    if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
-                    }
-                    if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
-                    }
-
-                    Popup::context_menu(&resp)
-                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
-                                ui.close();
-                            }
-                        });
-
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("storage"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(4.0);
+                    sections_changed |= draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("storage"),
+                        &mut sidebar_state.storage_expanded,
+                    );
+                    if sidebar_state.storage_expanded {
+                        ui.add_space(4.0);
 
-                    if sidebar_state.cached_drives.is_empty()
-                        || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
-                        || consume_drive_list_dirty()
-                    {
-                        sidebar_state.cached_drives = get_drive_infos();
-                        sidebar_state.last_drive_refresh = Instant::now();
-                    }
-
-                    for drive in sidebar_state.cached_drives.iter() {
-                        let is_selected = sidebar_state
-                            .item_clicked
-                            .as_ref()
-                            .map(|p| p == &drive.path)
-                            .unwrap_or(false);
-
-                        let resp = sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
-                        if resp.clicked() {
-                            if is_raw_physical_drive_path(&drive.path) {
-                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
-                            } else {
-                                action.nav_to = Some(drive.path.clone());
-                            }
+                        if sidebar_state.cached_drives.is_empty()
+                            || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
+                            || consume_drive_list_dirty()
+                        {
+                            sidebar_state.cached_drives = get_drive_infos();
+                            sidebar_state.last_drive_refresh = Instant::now();
                         }
-                        if resp.middle_clicked() {
-                            if is_raw_physical_drive_path(&drive.path) {
-                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
-                            } else {
-                                action.open_new_tab = Some(drive.path.clone());
+
+                        for drive in sidebar_state.cached_drives.iter() {
+                            let is_selected = sidebar_state
+                                .item_clicked
+                                .as_ref()
+                                .map(|p| p == &drive.path)
+                                .unwrap_or(false);
+
+                            let resp =
+                                sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
+                            if resp.clicked() {
+                                if is_raw_physical_drive_path(&drive.path) {
+                                    sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                                } else {
+                                    action.nav_to = Some(drive.path.clone());
+                                }
+                            }
+                            if resp.middle_clicked() {
+                                if is_raw_physical_drive_path(&drive.path) {
+                                    sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                                } else {
+                                    action.open_new_tab = Some(drive.path.clone());
+                                }
                             }
                         }
                     }
@@ -209,12 +250,13 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("favorites"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
+                    sections_changed |= draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("favorites"),
+                        &mut sidebar_state.favorites_expanded,
+                    );
+                    if sidebar_state.favorites_expanded {
                     ui.add_space(4.0);
 
                     let is_dragging = sidebar_state.dragging_favorite.is_some();
@@ -394,62 +436,51 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // favorites_expanded
 
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("tags"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(4.0);
+                    sections_changed |= draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("tags"),
+                        &mut sidebar_state.tags_expanded,
+                    );
+                    if sidebar_state.tags_expanded {
+                        ui.add_space(4.0);
 
-                    if tags_state.groups.is_empty() {
-                        ui.label(
-                            egui::RichText::new(i18n.tr("tag_empty_state"))
-                                .size(palette.tooltip_text_size)
-                                .color(palette.tooltip_text_color),
-                        );
-                    } else {
-                        for group in tags_state.groups.iter() {
-                            let resp = draw_sidebar_tag_item(ui, &group.name, group.color, palette);
-                            if resp.clicked() {
-                                action.open_tag_view = Some(group.id);
+                        if tags_state.groups.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("tag_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for group in tags_state.groups.iter() {
+                                let resp =
+                                    draw_sidebar_tag_item(ui, &group.name, group.color, palette);
+                                if resp.clicked() {
+                                    action.open_tag_view = Some(group.id);
+                                }
                             }
                         }
                     }
 
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("shared_network"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(4.0);
-
-                    let network_icon_path = PathBuf::from("Network");
-                    let resp = draw_sidebar_item(
+                    sections_changed |= draw_section_header(
                         ui,
-                        icon_cache,
-                        &network_icon_path,
-                        &i18n.tr("network"),
-                        true,
-                        false,
                         palette,
-                        false,
-                        None,
+                        &i18n.tr("shared_network"),
+                        &mut sidebar_state.shared_network_expanded,
                     );
-                    if resp.clicked() {
-                        action.open_network_browser = true;
-                    }
+                    if sidebar_state.shared_network_expanded {
+                        ui.add_space(4.0);
 
-                    for computer in network::get_network_computers_cached() {
+                        let network_icon_path = PathBuf::from("Network");
                         let resp = draw_sidebar_item(
                             ui,
                             icon_cache,
-                            &computer.path,
-                            &computer.name,
+                            &network_icon_path,
+                            &i18n.tr("network"),
                             true,
                             false,
                             palette,
@@ -457,10 +488,27 @@ pub fn draw_sidebar(
                             None,
                         );
                         if resp.clicked() {
-                            action.nav_to = Some(computer.path.clone());
+                            action.open_network_browser = true;
                         }
-                        if resp.middle_clicked() {
-                            action.open_new_tab = Some(computer.path.clone());
+
+                        for computer in network::get_network_computers_cached() {
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &computer.path,
+                                &computer.name,
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+                            if resp.clicked() {
+                                action.nav_to = Some(computer.path.clone());
+                            }
+                            if resp.middle_clicked() {
+                                action.open_new_tab = Some(computer.path.clone());
+                            }
                         }
                     }
 
@@ -470,6 +518,16 @@ pub fn draw_sidebar(
                 ui.add_space(2.0);
             });
         });
+
+    if sections_changed {
+        crate::core::indexer::save_sidebar_sections(&crate::core::indexer::SidebarSectionsSnapshot {
+            places: sidebar_state.places_expanded,
+            storage: sidebar_state.storage_expanded,
+            favorites: sidebar_state.favorites_expanded,
+            tags: sidebar_state.tags_expanded,
+            shared_network: sidebar_state.shared_network_expanded,
+        });
+    }
 
     // Persistent footer (outside the scroll area): a Settings shortcut, pinned
     // to the bottom of the sidebar so it's always reachable, laid out the same

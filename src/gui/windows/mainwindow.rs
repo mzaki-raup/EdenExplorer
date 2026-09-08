@@ -267,7 +267,17 @@ impl Default for MainWindow {
             next_tab_id,
             folder_sizes: HashMap::new(),
 
-            sidebar_state: SidebarState::default(),
+            sidebar_state: {
+                let sections = crate::core::indexer::load_sidebar_sections();
+                SidebarState {
+                    places_expanded: sections.places,
+                    storage_expanded: sections.storage,
+                    favorites_expanded: sections.favorites,
+                    tags_expanded: sections.tags,
+                    shared_network_expanded: sections.shared_network,
+                    ..SidebarState::default()
+                }
+            },
 
             rename_state: None,
             theme: match saved_theme.as_deref() {

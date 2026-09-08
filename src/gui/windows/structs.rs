@@ -104,6 +104,14 @@ pub struct SidebarState {
     pub cached_drives: Vec<DriveInfo>,
     pub last_drive_refresh: Instant,
     pub non_ntfs_popup_path: Option<PathBuf>,
+    /// Whether each collapsible sidebar section (Places, Storage, Favorites,
+    /// Tags, Shared Network) is currently expanded. All expanded by default,
+    /// matching the previous always-expanded behavior.
+    pub places_expanded: bool,
+    pub storage_expanded: bool,
+    pub favorites_expanded: bool,
+    pub tags_expanded: bool,
+    pub shared_network_expanded: bool,
 }
 
 impl Default for SidebarState {
@@ -112,6 +120,11 @@ impl Default for SidebarState {
         Self {
             favorites: vec![],
             dragging_favorite: None,
+            places_expanded: true,
+            storage_expanded: true,
+            favorites_expanded: true,
+            tags_expanded: true,
+            shared_network_expanded: true,
             item_clicked: None,
             sidebar_default_width: 250.0,
             cached_drives: Vec::new(),

@@ -658,7 +658,13 @@ impl MainWindow {
                 }
             }
 
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            // "This PC" always lists drives in drive-letter order by default,
+            // regardless of whatever sort a regular folder view was left on
+            // (sorting by the "Name" column would otherwise order by volume
+            // label - e.g. "DATA (D:\)" before "MAIN (C:\)" - rather than by
+            // drive letter). Clicking a column header can still re-sort it
+            // from there like any other view.
+            view.files.sort_by(|a, b| a.path.cmp(&b.path));
             return;
         }
 
