@@ -45,18 +45,31 @@ pub fn clickable_icon_sized(
     palette: &ThemePalette,
     size: f32,
 ) -> Response {
+    clickable_icon_sized_with_base_color(ui, icon, palette, size, ui.visuals().text_color())
+}
+
+/// Same as [`clickable_icon_sized`] but with an explicit default (non-hover)
+/// color instead of the generic text color - e.g. the toolbar uses its own
+/// accent-tinted `palette.toolbar_icon_color`.
+pub fn clickable_icon_sized_with_base_color(
+    ui: &mut Ui,
+    icon: &str,
+    palette: &ThemePalette,
+    size: f32,
+    base_color: Color32,
+) -> Response {
     let font_id = FontId::proportional(size);
 
-    let galley =
-        ui.painter()
-            .layout_no_wrap(icon.to_string(), font_id.clone(), ui.visuals().text_color());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(icon.to_string(), font_id.clone(), base_color);
 
     let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
 
     let color = if resp.hovered() {
         palette.primary
     } else {
-        ui.visuals().text_color()
+        base_color
     };
 
     ui.painter()

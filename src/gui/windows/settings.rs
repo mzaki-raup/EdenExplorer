@@ -308,7 +308,7 @@ pub(crate) fn settings_section<R>(
 ) -> R {
     egui::Frame::NONE
         .fill(ui.visuals().faint_bg_color)
-        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        .stroke(egui::Stroke::new(1.5, palette.borders_default))
         .corner_radius(egui::CornerRadius::same(palette.medium_radius))
         .inner_margin(egui::Margin::same(14))
         .outer_margin(egui::Margin {
@@ -332,7 +332,7 @@ pub(crate) fn entry_card<R>(
 ) -> R {
     egui::Frame::NONE
         .fill(palette.row_bg)
-        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        .stroke(egui::Stroke::new(1.5, palette.borders_default))
         .corner_radius(egui::CornerRadius::same(palette.small_radius))
         .inner_margin(egui::Margin::same(10))
         .outer_margin(egui::Margin {

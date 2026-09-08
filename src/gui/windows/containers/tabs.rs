@@ -237,6 +237,42 @@ pub fn draw_tabs(
                                 }
                                 ui.separator();
 
+                                if ui.button(i18n.tr("tab_close")).clicked() {
+                                    action.close = Some(tab.id);
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        tabs.len() > 1,
+                                        egui::Button::new(i18n.tr("tab_close_others")),
+                                    )
+                                    .clicked()
+                                {
+                                    action.close_others = Some(tab.id);
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        index + 1 < tabs.len(),
+                                        egui::Button::new(i18n.tr("tab_close_to_right")),
+                                    )
+                                    .clicked()
+                                {
+                                    action.close_to_right = Some(tab.id);
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        index > 0,
+                                        egui::Button::new(i18n.tr("tab_close_to_left")),
+                                    )
+                                    .clicked()
+                                {
+                                    action.close_to_left = Some(tab.id);
+                                    ui.close();
+                                }
+                                ui.separator();
+
                                 draw_tab_groups_menu(ui, i18n, icon_cache, tab_groups, &mut action);
                                 ui.separator();
                                 draw_add_tab_to_group_menu(
@@ -547,7 +583,7 @@ fn handle_draw_tab_new_allocated(
     let tab_fill = if is_active {
         ui.visuals().widgets.active.bg_fill
     } else {
-        egui::Color32::TRANSPARENT
+        palette.tab_inactive_bg_color
     };
 
     // --- Font and colors ---
@@ -684,7 +720,7 @@ fn handle_draw_tab_new_allocated(
     let stroke = if is_active {
         egui::Stroke::new(1.0, palette.borders_active)
     } else {
-        egui::Stroke::new(1.0, palette.borders_default)
+        egui::Stroke::new(1.5, palette.borders_default)
     };
 
     painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
@@ -752,7 +788,7 @@ fn handle_draw_add_new_tab_button(
     let stroke = if hovered {
         egui::Stroke::new(1.0, palette.borders_active)
     } else {
-        egui::Stroke::new(1.0, palette.borders_default)
+        egui::Stroke::new(1.5, palette.borders_default)
     };
 
     let rounding = egui::CornerRadius {

@@ -49,6 +49,12 @@ pub struct TabInfo {
 pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
+    /// Close every other tab, keeping this one (and any pinned tabs).
+    pub close_others: Option<u64>,
+    /// Close every tab to the right of this one (pinned tabs kept).
+    pub close_to_right: Option<u64>,
+    /// Close every tab to the left of this one (pinned tabs kept).
+    pub close_to_left: Option<u64>,
     pub open_new: bool,
     pub duplicate: Option<PathBuf>,
     pub toggle_pin: Option<PathBuf>,

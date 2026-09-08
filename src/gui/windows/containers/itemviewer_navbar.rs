@@ -5,7 +5,7 @@ use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{
-    clear_clipboard_files, clickable_icon_sized, expand_environment_variables,
+    clear_clipboard_files, clickable_icon_sized_with_base_color, expand_environment_variables,
 };
 use crate::gui::windows::containers::enums::ItemViewerNavAction;
 use crate::gui::windows::containers::structs::{
@@ -203,7 +203,7 @@ fn draw_bordered_breadcrumb(
     let right_gap = 8.0;
 
     egui::Frame::NONE
-        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        .stroke(egui::Stroke::new(1.5, palette.borders_default))
         .corner_radius(egui::CornerRadius::same(palette.small_radius))
         .inner_margin(egui::Margin {
             left: side_margin as i8,
@@ -527,12 +527,17 @@ fn nav_icon_button(
     hover_text: &str,
 ) -> egui::Response {
     let font_id = egui::FontId::proportional(TOOLBAR_ICON_SIZE);
+    let base_color = if enabled {
+        palette.toolbar_icon_color
+    } else {
+        ui.visuals().text_color()
+    };
     let resp = ui.add_enabled(
         enabled,
         egui::Label::new(
             egui::RichText::new(icon)
                 .font(font_id.clone())
-                .color(ui.visuals().text_color()),
+                .color(base_color),
         )
         .selectable(false)
         .sense(egui::Sense::click()),
@@ -616,7 +621,13 @@ fn draw_navigation_bar_buttons(
         action.nav = Some(ItemViewerNavAction::Up);
     }
 
-    if clickable_icon_sized(ui, regular::ARROWS_CLOCKWISE, palette, TOOLBAR_ICON_SIZE)
+    if clickable_icon_sized_with_base_color(
+        ui,
+        regular::ARROWS_CLOCKWISE,
+        palette,
+        TOOLBAR_ICON_SIZE,
+        palette.toolbar_icon_color,
+    )
         .on_hover_text(
             egui::RichText::new(i18n.tr("tooltip_refresh"))
                 .size(palette.tooltip_text_size)

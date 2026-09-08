@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
-pub const THEME_VERSION: u32 = 7;
+pub const THEME_VERSION: u32 = 8;
 
 fn default_itemviewer_row_height() -> f32 {
     16.0
@@ -28,6 +28,22 @@ fn default_font_name() -> String {
 
 fn default_mono_font_name() -> String {
     "Hack".to_string()
+}
+
+// Fallbacks used only when loading a settings file saved before these fields
+// existed - `regenerate_base_derived_colors` recomputes accurate values the
+// next time the accent color changes, these just need to look reasonable in
+// the meantime (they match the dark theme's default derivation).
+fn default_icon_color_dark() -> Color32 {
+    Color32::WHITE
+}
+
+fn default_sidebar_bg_color() -> Color32 {
+    Color32::from_rgb(24, 27, 32)
+}
+
+fn default_tab_inactive_bg_color() -> Color32 {
+    Color32::from_rgb(28, 32, 38)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -69,9 +85,12 @@ pub struct ThemePalette {
     pub modal_background_effect_color: Color32,
 
     // 🎯 Icons & text
+    #[serde(default = "default_icon_color_dark")]
     pub icon_color: Color32,
     pub icon_windows: Color32,
     pub icon_colored_hover: Color32,
+    #[serde(default = "default_icon_color_dark")]
+    pub toolbar_icon_color: Color32,
     pub item_viewer_row_text_selected: Color32,
     pub tooltip_text_color: Color32,
     pub tab_text_selected: Color32,
@@ -82,6 +101,13 @@ pub struct ThemePalette {
     #[serde(default = "default_itemviewer_row_height")]
     pub row_height: f32,
     pub sidebar_item_spacing_y: f32,
+
+    // 🧱 Panel surfaces (sidebar/tabs get their own accent-tinted surface,
+    // distinct from the main explorer background)
+    #[serde(default = "default_sidebar_bg_color")]
+    pub sidebar_bg_color: Color32,
+    #[serde(default = "default_tab_inactive_bg_color")]
+    pub tab_inactive_bg_color: Color32,
 
     // 🎯 Handles / borders
     pub resize_handle: Color32,
@@ -131,7 +157,7 @@ fn base_color() -> Color32 {
 // 🌙 Dark theme palette (defaults)
 pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
-    ThemePalette {
+    let mut palette = ThemePalette {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
@@ -155,6 +181,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         icon_color: Color32::WHITE,
         icon_windows: Color32::WHITE,
         icon_colored_hover: Color32::WHITE,
+        toolbar_icon_color: Color32::WHITE,
         item_viewer_row_text_selected: Color32::WHITE,
         tooltip_text_color: Color32::from_rgb(160, 170, 180),
         tab_text_selected: Color32::WHITE,
@@ -164,6 +191,10 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_bg: Color32::from_rgb(40, 45, 50),
         row_height: default_itemviewer_row_height(),
         sidebar_item_spacing_y: 0.5,
+
+        // 🧱 Panel surfaces
+        sidebar_bg_color: Color32::from_rgb(24, 27, 32),
+        tab_inactive_bg_color: Color32::from_rgb(28, 32, 38),
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
@@ -213,13 +244,15 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: CornerRadius::same(4),
-    }
+    };
+    regenerate_base_derived_colors(&mut palette, true);
+    palette
 });
 
 // ☀️ Light theme palette (defaults)
 pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
-    ThemePalette {
+    let mut palette = ThemePalette {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
@@ -243,6 +276,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         icon_color: Color32::from_rgb(40, 40, 40),
         icon_windows: Color32::WHITE,
         icon_colored_hover: Color32::WHITE,
+        toolbar_icon_color: Color32::from_rgb(40, 40, 40),
         item_viewer_row_text_selected: Color32::BLACK,
         tooltip_text_color: Color32::from_rgb(40, 40, 40),
         tab_text_selected: Color32::WHITE,
@@ -252,6 +286,10 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_bg: Color32::from_rgb(240, 245, 250),
         row_height: default_itemviewer_row_height(),
         sidebar_item_spacing_y: 0.5,
+
+        // 🧱 Panel surfaces
+        sidebar_bg_color: Color32::from_rgb(238, 239, 242),
+        tab_inactive_bg_color: Color32::from_rgb(233, 235, 239),
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
@@ -301,7 +339,9 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: CornerRadius::same(4),
-    }
+    };
+    regenerate_base_derived_colors(&mut palette, false);
+    palette
 });
 
 // 🎯 Runtime-editable palettes
@@ -483,7 +523,24 @@ pub fn apply_checkbox_colors(ui: &mut egui::Ui, palette: &ThemePalette, checked:
     visuals.active.fg_stroke.color = palette.checkbox_checkmark_color;
 }
 
-// 🎯 Regenerate all base-derived colors when primary color changes
+/// Blend `base` toward `accent` by `t` (0 = pure `base`, 1 = pure `accent`).
+/// Used to give neutral surfaces/icons a subtle hint of the accent color
+/// without losing contrast, rather than painting them the raw accent.
+fn tint(base: Color32, accent: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |b: u8, a: u8| (b as f32 * (1.0 - t) + a as f32 * t).round() as u8;
+    Color32::from_rgb(
+        mix(base.r(), accent.r()),
+        mix(base.g(), accent.g()),
+        mix(base.b(), accent.b()),
+    )
+}
+
+// 🎯 Regenerate all base-derived colors when primary (accent) color changes.
+// Backgrounds get a subtle accent tint (`tint`); text/icons that need to
+// stay legible against any accent are left as-is by callers - only the
+// surfaces below, plus the pre-existing interactive-highlight colors, are
+// accent-driven.
 pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool) {
     let base = palette.primary;
 
@@ -496,7 +553,19 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.b() as u16 * 7) / 10) as u8, // 70% of blue
         );
         palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
-        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
+
+        // Surfaces: a faint accent tint over each area's neutral dark tone,
+        // kept distinct from one another so panels still read as separate.
+        palette.application_bg_color = tint(Color32::from_rgb(20, 22, 26), base, 0.05);
+        palette.sidebar_bg_color = tint(Color32::from_rgb(24, 27, 32), base, 0.08);
+        palette.row_bg = tint(Color32::from_rgb(40, 45, 50), base, 0.05);
+        palette.tab_inactive_bg_color = tint(Color32::from_rgb(28, 32, 38), base, 0.10);
+
+        // Icons: white base, only slightly warmed toward the accent so they
+        // stay legible against any accent hue; toolbar icons get a touch
+        // more so the toolbar reads as "branded" at a glance.
+        palette.icon_color = tint(Color32::WHITE, base, 0.15);
+        palette.toolbar_icon_color = tint(Color32::WHITE, base, 0.30);
     } else {
         // Light theme calculations
         palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
@@ -506,7 +575,14 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.b() as u16 * 14) / 10).min(255) as u8, // 140% of blue
         );
         palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
-        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
+
+        palette.application_bg_color = tint(Color32::from_rgb(245, 245, 245), base, 0.05);
+        palette.sidebar_bg_color = tint(Color32::from_rgb(238, 239, 242), base, 0.08);
+        palette.row_bg = tint(Color32::from_rgb(240, 245, 250), base, 0.05);
+        palette.tab_inactive_bg_color = tint(Color32::from_rgb(233, 235, 239), base, 0.10);
+
+        palette.icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.15);
+        palette.toolbar_icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.30);
     }
 
     // Common to both themes

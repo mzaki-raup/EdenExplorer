@@ -615,7 +615,8 @@ impl eframe::App for MainWindow {
                         };
 
                         let sidebar_frame = egui::Frame::NONE
-                            .stroke(egui::Stroke::new(1.0, palette.borders_default));
+                            .fill(palette.sidebar_bg_color)
+                            .stroke(egui::Stroke::new(1.5, palette.borders_default));
 
                         ui.allocate_ui_with_layout(
                             egui::vec2(sidebar_width, ui.available_height() + 15.5),
@@ -746,7 +747,7 @@ impl eframe::App for MainWindow {
                                         ui.painter().hline(
                                             topbar_rect.x_range(),
                                             topbar_rect.bottom(),
-                                            egui::Stroke::new(1.0, palette.borders_default),
+                                            egui::Stroke::new(1.5, palette.borders_default),
                                         );
 
                                         // -------------------------
@@ -859,7 +860,7 @@ impl eframe::App for MainWindow {
                                             ui.painter().vline(
                                                 divider_x,
                                                 split_rect.y_range(),
-                                                egui::Stroke::new(1.0, palette.borders_default),
+                                                egui::Stroke::new(1.5, palette.borders_default),
                                             );
 
                                             let (pointer_pos, primary_clicked) = ui.ctx().input(|i| {
@@ -1353,12 +1354,12 @@ impl eframe::App for MainWindow {
             self.dropped_files_pending_ui_refresh = false;
         }
 
-        // Window decorations are disabled, so paint a subtle border around the
+        // Window decorations are disabled, so paint a border around the
         // whole window to make it distinguishable from other open windows.
         ui.painter().rect_stroke(
-            ui.ctx().viewport_rect().shrink(0.5),
+            ui.ctx().viewport_rect().shrink(1.5),
             egui::CornerRadius::ZERO,
-            egui::Stroke::new(1.0, palette.borders_default),
+            egui::Stroke::new(3.0, palette.borders_default),
             egui::StrokeKind::Inside,
         );
 

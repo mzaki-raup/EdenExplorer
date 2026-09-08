@@ -1893,6 +1893,80 @@ impl MainWindow {
                     self.load_path();
                 }
             }
+            if let Some(reference_id) = action
+                .close_others
+                .or(action.close_to_right)
+                .or(action.close_to_left)
+            {
+                if let Some(reference_idx) =
+                    self.tabs.iter().position(|t| t.id == reference_id)
+                {
+                    let is_pinned = |t: &TabState| {
+                        self.settings_window
+                            .current_settings
+                            .pinned_tabs
+                            .iter()
+                            .any(|p| p == &t.primary_view.nav.current)
+                    };
+                    let should_close = |idx: usize, t: &TabState| -> bool {
+                        if idx == reference_idx || is_pinned(t) {
+                            return false;
+                        }
+                        if action.close_others.is_some() {
+                            true
+                        } else if action.close_to_right.is_some() {
+                            idx > reference_idx
+                        } else {
+                            idx < reference_idx
+                        }
+                    };
+
+                    let indices_to_close: Vec<usize> = self
+                        .tabs
+                        .iter()
+                        .enumerate()
+                        .filter(|(idx, t)| should_close(*idx, t))
+                        .map(|(idx, _)| idx)
+                        .collect();
+
+                    if !indices_to_close.is_empty() {
+                        for &idx in &indices_to_close {
+                            let tab = &self.tabs[idx];
+                            let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
+                            let _ = persist_directory_settings_snapshot(
+                                &mut self.settings_window.current_settings.directory_settings,
+                                snapshot,
+                            );
+                            if let Some(split) = tab.split_view.as_ref() {
+                                let snapshot = directory_settings_snapshot_for_view(split);
+                                let _ = persist_directory_settings_snapshot(
+                                    &mut self.settings_window.current_settings.directory_settings,
+                                    snapshot,
+                                );
+                            }
+                        }
+
+                        // Remove back-to-front so earlier indices stay valid.
+                        for &idx in indices_to_close.iter().rev() {
+                            self.tabs.remove(idx);
+                        }
+
+                        let new_active_id = reference_id;
+                        self.active_tab = self
+                            .tabs
+                            .iter()
+                            .position(|t| t.id == new_active_id)
+                            .unwrap_or(0)
+                            .min(self.tabs.len().saturating_sub(1));
+                        self.focused_split = SplitSide::Primary;
+                        if let Some(active_id) = self.tabs.get(self.active_tab).map(|t| t.id) {
+                            self.pending_tab_scroll_id = Some(active_id);
+                        }
+                        self.mark_tab_infos_dirty();
+                        self.load_path();
+                    }
+                }
+            }
             if let Some(path) = action.toggle_pin {
                 if self
                     .settings_window

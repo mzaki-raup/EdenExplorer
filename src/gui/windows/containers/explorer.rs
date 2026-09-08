@@ -227,7 +227,7 @@ pub fn draw_tab_content(
                 ui.painter().rect_stroke(
                     content_rect,
                     egui::CornerRadius::same(4),
-                    egui::Stroke::new(1.0, palette.borders_default),
+                    egui::Stroke::new(1.5, palette.borders_default),
                     egui::StrokeKind::Inside,
                 );
             });

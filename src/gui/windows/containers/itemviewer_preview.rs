@@ -165,7 +165,7 @@ pub fn draw_preview_view(
                 ui.painter().vline(
                     divider_rect.left(),
                     divider_rect.y_range(),
-                    egui::Stroke::new(1.0, palette.borders_default),
+                    egui::Stroke::new(1.5, palette.borders_default),
                 );
                 draw_preview_pane(
                     ui,
