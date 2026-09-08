@@ -1172,8 +1172,8 @@ impl MainWindow {
     pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, FileOperation,
-            IFileOperation, IShellItem, SHCreateItemFromParsingName,
+            FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem,
+            SHCreateItemFromParsingName,
         };
         use windows::core::HSTRING;
 
@@ -1193,8 +1193,10 @@ impl MainWindow {
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            file_op
-                .SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR)?;
+            // No FOF_RENAMEONCOLLISION - a folder pasted onto one with the same
+            // name should merge/overwrite (matching native Explorer's prompt),
+            // not silently get renamed to "Folder (1)".
+            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR)?;
 
             let target_item: IShellItem = SHCreateItemFromParsingName(
                 &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),

@@ -503,11 +503,19 @@ pub fn save_tags(snapshot: &TagsSnapshot) {
     }
 }
 
+/// One restored tab: its primary folder, and the secondary (split-view)
+/// folder alongside it, if the tab had split view open.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SessionTabEntry {
+    pub path: PathBuf,
+    pub split_path: Option<PathBuf>,
+}
+
 /// The set of tabs (and which was active) open when the app last exited, used to
 /// restore the previous session on the next launch when that setting is enabled.
 #[derive(Serialize, Deserialize, Default)]
 pub struct SessionTabsSnapshot {
-    pub tabs: Vec<PathBuf>,
+    pub tabs: Vec<SessionTabEntry>,
     pub active_index: usize,
 }
 
@@ -805,5 +813,32 @@ mod tests {
         // For now, we just verify the function exists and can be called
         let path = theme_cache_path();
         assert!(path.is_some() || path.is_none()); // Basic sanity check
+    }
+
+    #[test]
+    fn session_tab_entry_roundtrips_split_path() {
+        let snapshot = SessionTabsSnapshot {
+            tabs: vec![
+                SessionTabEntry {
+                    path: PathBuf::from("D:\\"),
+                    split_path: Some(PathBuf::from("C:\\Users")),
+                },
+                SessionTabEntry {
+                    path: PathBuf::from("C:\\"),
+                    split_path: None,
+                },
+            ],
+            active_index: 1,
+        };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SessionTabsSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.active_index, 1);
+        assert_eq!(decoded.tabs.len(), 2);
+        assert_eq!(decoded.tabs[0].path, PathBuf::from("D:\\"));
+        assert_eq!(decoded.tabs[0].split_path, Some(PathBuf::from("C:\\Users")));
+        assert_eq!(decoded.tabs[1].path, PathBuf::from("C:\\"));
+        assert_eq!(decoded.tabs[1].split_path, None);
     }
 }

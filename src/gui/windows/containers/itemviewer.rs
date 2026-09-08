@@ -950,6 +950,22 @@ pub fn draw_item_viewer(
                                     }
                                 });
 
+                                // `draw_custom_context_menu_group` draws its own leading
+                                // separator only when it actually has background-scoped
+                                // entries to show, so View/Paste stay adjacent (no double
+                                // separator) when there are none. The separator below is
+                                // unconditional, closing off the group before Paste either way.
+                                draw_custom_context_menu_group(
+                                    ui,
+                                    i18n,
+                                    icon_cache,
+                                    &settings_window.current_settings.custom_context_menu,
+                                    false,
+                                    false,
+                                    true,
+                                    &[],
+                                    &mut action,
+                                );
                                 ui.separator();
 
                                 if ui
@@ -969,18 +985,6 @@ pub fn draw_item_viewer(
                                     ));
                                     ui.close();
                                 }
-
-                                draw_custom_context_menu_group(
-                                    ui,
-                                    i18n,
-                                    icon_cache,
-                                    &settings_window.current_settings.custom_context_menu,
-                                    false,
-                                    false,
-                                    true,
-                                    &[],
-                                    &mut action,
-                                );
 
                                 if settings_window
                                     .current_settings

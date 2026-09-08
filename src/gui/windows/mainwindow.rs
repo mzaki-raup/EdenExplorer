@@ -1,8 +1,8 @@
 use crate::core::fs::MY_PC_PATH;
 use crate::core::indexer::WindowSizeMode;
 use crate::core::indexer::{
-    SessionTabsSnapshot, load_app_settings, load_favorites, load_session_tabs, load_tags,
-    load_theme_settings, save_app_settings, save_session_tabs,
+    SessionTabEntry, SessionTabsSnapshot, load_app_settings, load_favorites, load_session_tabs,
+    load_tags, load_theme_settings, save_app_settings, save_session_tabs,
 };
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
@@ -17,7 +17,7 @@ use crate::gui::windows::containers::explorer::draw_tab_content;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
-    RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction, TagsState,
+    RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabView, TabsAction, TagsState,
 };
 use crate::gui::windows::containers::tabs::{TAB_HEIGHT, draw_tabs, tab_row_count};
 use crate::gui::windows::containers::tags::draw_tag_picker_popup;
@@ -190,28 +190,44 @@ impl Default for MainWindow {
             None
         };
 
-        let (tab_paths, initial_active_tab) = match restored_session {
+        let (tab_entries, initial_active_tab): (Vec<SessionTabEntry>, usize) = match restored_session
+        {
             Some(snapshot) => {
                 let active = snapshot
                     .active_index
                     .min(snapshot.tabs.len().saturating_sub(1));
                 (snapshot.tabs, active)
             }
-            None if pinned_tabs.is_empty() => (vec![start_path], 0),
-            None => (pinned_tabs.clone(), 0),
+            None if pinned_tabs.is_empty() => (
+                vec![SessionTabEntry {
+                    path: start_path,
+                    split_path: None,
+                }],
+                0,
+            ),
+            None => (
+                pinned_tabs
+                    .iter()
+                    .map(|path| SessionTabEntry {
+                        path: path.clone(),
+                        split_path: None,
+                    })
+                    .collect(),
+                0,
+            ),
         };
 
         let mut tabs = Vec::new();
         let mut next_tab_id = 1;
 
-        for path in &tab_paths {
-            tabs.push(TabState::new(
+        for entry in &tab_entries {
+            let mut tab = TabState::new(
                 next_tab_id,
-                Navigation::new(path.clone()),
+                Navigation::new(entry.path.clone()),
                 loaded_settings.sort_column,
                 loaded_settings.sort_ascending,
-            ));
-            tabs.last_mut().unwrap().primary_view.column_state = ItemViewerColumnState::from_orders(
+            );
+            tab.primary_view.column_state = ItemViewerColumnState::from_orders(
                 loaded_settings.item_viewer_file_column_order.clone(),
                 loaded_settings.item_viewer_drive_column_order.clone(),
                 loaded_settings.recycle_bin_column_order.clone(),
@@ -219,6 +235,23 @@ impl Default for MainWindow {
                 loaded_settings.item_viewer_drive_column_sizes.clone(),
                 loaded_settings.recycle_bin_column_sizes.clone(),
             );
+            if let Some(split_path) = &entry.split_path {
+                let mut split_view = TabView::new(
+                    Navigation::new(split_path.clone()),
+                    loaded_settings.sort_column,
+                    loaded_settings.sort_ascending,
+                );
+                split_view.column_state = ItemViewerColumnState::from_orders(
+                    loaded_settings.item_viewer_file_column_order.clone(),
+                    loaded_settings.item_viewer_drive_column_order.clone(),
+                    loaded_settings.recycle_bin_column_order.clone(),
+                    loaded_settings.item_viewer_file_column_sizes.clone(),
+                    loaded_settings.item_viewer_drive_column_sizes.clone(),
+                    loaded_settings.recycle_bin_column_sizes.clone(),
+                );
+                tab.split_view = Some(split_view);
+            }
+            tabs.push(tab);
             next_tab_id += 1;
         }
 
@@ -1398,15 +1431,20 @@ impl eframe::App for MainWindow {
             return;
         }
 
-        let tabs: Vec<PathBuf> = self
+        let tab_path = |nav: &Navigation| {
+            if nav.is_root() {
+                PathBuf::from(MY_PC_PATH)
+            } else {
+                nav.current.clone()
+            }
+        };
+
+        let tabs: Vec<SessionTabEntry> = self
             .tabs
             .iter()
-            .map(|tab| {
-                if tab.primary_view.nav.is_root() {
-                    PathBuf::from(MY_PC_PATH)
-                } else {
-                    tab.primary_view.nav.current.clone()
-                }
+            .map(|tab| SessionTabEntry {
+                path: tab_path(&tab.primary_view.nav),
+                split_path: tab.split_view.as_ref().map(|split| tab_path(&split.nav)),
             })
             .collect();
 
