@@ -358,7 +358,12 @@ pub fn draw_item_viewer(
                 action = Some(ItemViewerAction::ColumnSizesChanged);
             }
 
-            let available_height = ui.available_height();
+            // Bottom padding so the last row isn't flush against the
+            // window/pane border - reserved as real, unused rect space
+            // (rather than an extra table row) so it doesn't depend on
+            // TableBuilder's own height/scroll bookkeeping.
+            const BOTTOM_PADDING: f32 = 12.0;
+            let available_height = (ui.available_height() - BOTTOM_PADDING).max(0.0);
             // IMPORTANT: register background interaction before TableBuilder.
             let bg_response = table_background_response(ui);
             let ctx = ui.ctx().clone();
@@ -366,7 +371,7 @@ pub fn draw_item_viewer(
             let left_margin = 8.0;
             let table_rect = egui::Rect::from_min_max(
                 egui::pos2(table_rect.left() + left_margin, table_rect.top()),
-                table_rect.right_bottom(),
+                table_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
             );
 
             ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
@@ -536,14 +541,8 @@ pub fn draw_item_viewer(
                         let hovered_drop_target = &mut hovered_drop_target;
                         let filtered_indices = &filter_state.cached_indices;
 
-                        // One extra row at the end, past the real item count,
-                        // rendered empty - bottom padding so the last real
-                        // row isn't flush against the pane border.
-                        body.rows(layout.row_height, filtered_indices.len() + 1, |mut row| {
+                        body.rows(layout.row_height, filtered_indices.len(), |mut row| {
                             let idx = row.index();
-                            if idx >= filtered_indices.len() {
-                                return;
-                            }
                             let file = &files[filtered_indices[idx]];
                             let is_non_ntfs_drive =
                                 layout.is_drive_view && is_raw_physical_drive_path(&file.path);

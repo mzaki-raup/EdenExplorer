@@ -105,20 +105,22 @@ pub fn draw_gallery_view(
         .floor()
         .max(1.0) as usize;
     let rows = filtered_indices.len().div_ceil(columns);
-    // Bottom padding so the last row of tiles isn't flush against the pane border.
-    const BOTTOM_PADDING: f32 = 12.0;
-    let content_height = (rows as f32 * row_pitch + BOTTOM_PADDING).max(ui.available_height());
+    let content_height = (rows as f32 * row_pitch).max(ui.available_height());
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut best_hovered_tile: Option<(f32, bool, PathBuf, egui::Rect)> = None;
     let mut current_hovered_drop_target: Option<PathBuf> = None;
     let mut current_hovered_drop_target_rect: Option<egui::Rect> = None;
     let gallery_rect = ui.available_rect_before_wrap();
+    // Bottom padding so the last row of tiles isn't flush against the pane
+    // border - reserved as real, unused rect space rather than relying on
+    // the scroll area's own virtual content-height bookkeeping.
+    const BOTTOM_PADDING: f32 = 12.0;
     let scroll_rect = egui::Rect::from_min_max(
         egui::pos2(
             gallery_rect.left(),
             gallery_rect.top() + GALLERY_TOOLBAR_GAP,
         ),
-        gallery_rect.right_bottom(),
+        gallery_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
     );
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
