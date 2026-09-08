@@ -47,7 +47,13 @@ pub fn draw_icon_picker(
         ui.add_space(4.0);
         egui::ScrollArea::vertical()
             .id_salt("icon_picker_scroll")
-            .max_height(180.0)
+            .max_height(280.0)
+            // A ScrollArea otherwise shrinks to whatever vertical space is
+            // left in its parent's layout budget, which shrinks the further
+            // down a long settings page a picker sits (e.g. a submenu
+            // item's icon field, well below its parent's). Forcing a
+            // minimum keeps every picker on the page the same height.
+            .min_scrolled_height(280.0)
             .show(ui, |ui| {
                 if filtered.is_empty() {
                     ui.label(i18n.tr("icon_picker_no_results"));

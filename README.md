@@ -282,6 +282,14 @@
 - [x] Browse network shares - type a `\\SERVER` or `\\SERVER\Share` path in the address bar, or click **Network** in the sidebar, to list and open SMB shares
 - [x] **Shared Network** sidebar category that auto-detects computers advertising file shares on the local network (SMB/NetBIOS browsing), alongside a manual **Network** entry for typing a server name directly
 - [x] **Export/Import Settings** - back up or transfer general settings, favorites, tags, and both theme palettes as a single JSON file, from the Settings window
+- [x] **Tags sidebar section** with colored tag icons - click a tag to open (or reuse) a dedicated tab listing every tagged file/folder with Name/Type/Location/Size/Modified columns
+- [x] **Reorderable tags** - drag to reorder tags in Settings, reflected live in the sidebar
+- [x] **Favorites management page** in Settings - rename, delete, change icon, change target folder, and reorder favorites, all in one place
+- [x] **Custom favorite/context-menu icons from image files** - browse for an `.ico`/`.png`/`.jpg`/`.bmp`/`.gif`, automatically copied into the app's own data folder (so it keeps working after Export/Import Settings) and resized to fit the sidebar/context menu
+- [x] **Searchable icon picker** - choose from the full Phosphor icon set (1,500+ glyphs) with live search, used for both Custom Context Menu and Favorites icons
+- [x] **Auto-refresh after custom context menu commands** - the file list now updates automatically after a custom command finishes (e.g. a script that creates/moves files), no manual refresh needed
+- [x] Real Windows "This PC" shell icon in the sidebar and tab (instead of a generic drive icon)
+- [x] Standardized settings form styling - consistent field padding, background/text contrast, and readable selected-text color across every Settings page
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Add multi-tagging of objects
