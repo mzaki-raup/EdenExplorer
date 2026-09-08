@@ -57,6 +57,7 @@ pub struct MainWindow {
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) hwnd: Option<HWND>,
     pub(crate) last_window_size: Option<(f32, f32)>,
+    pub(crate) last_window_position: Option<(f32, f32)>,
     pub(crate) sidebar_collapsed: bool,
     /// Whether the OS window had keyboard focus as of the last frame - used
     /// to detect the window regaining focus (e.g. after running an external
@@ -262,6 +263,7 @@ impl Default for MainWindow {
 
             hwnd: None,
             last_window_size: None,
+            last_window_position: None,
             clipboard_paths: Vec::new(),
             clipboard_set: HashSet::new(),
             clipboard_is_cut: false,
@@ -550,6 +552,27 @@ impl eframe::App for MainWindow {
             } else {
                 // First time, just record the size
                 self.last_window_size = Some(current_size);
+            }
+        }
+
+        // Auto-save window position when it changes (including dragging the
+        // window to a new spot), the same way the size above is auto-saved.
+        if let Some(viewport_rect) = ui.ctx().input(|i| i.viewport().inner_rect) {
+            let current_position = (viewport_rect.min.x, viewport_rect.min.y);
+
+            if let Some(last_position) = self.last_window_position {
+                let moved = (current_position.0 - last_position.0).abs() > 1.0
+                    || (current_position.1 - last_position.1).abs() > 1.0;
+
+                if moved {
+                    crate::core::indexer::save_window_position(
+                        current_position.0,
+                        current_position.1,
+                    );
+                    self.last_window_position = Some(current_position);
+                }
+            } else {
+                self.last_window_position = Some(current_position);
             }
         }
 

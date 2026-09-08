@@ -350,6 +350,30 @@ fn tags_cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("tags.bin"))
 }
 
+fn window_position_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("window_position.bin"))
+}
+
+/// Last on-screen top-left corner of the app window, in physical pixels.
+pub fn load_window_position() -> Option<(f32, f32)> {
+    let path = window_position_cache_path()?;
+    let data = std::fs::read(&path).ok()?;
+    let (pos, _) = postcard::take_from_bytes::<(f32, f32)>(&data).ok()?;
+    Some(pos)
+}
+
+pub fn save_window_position(x: f32, y: f32) {
+    let Some(path) = window_position_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(&(x, y)) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 /// Where user-browsed custom icons (for a custom context menu command, a
 /// favorite, ...) get copied to.
 pub fn custom_icons_dir() -> Option<PathBuf> {
