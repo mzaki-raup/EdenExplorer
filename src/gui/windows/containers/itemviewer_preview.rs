@@ -10,6 +10,7 @@ use crate::gui::windows::containers::itemviewer_helper::handle_editing_file_name
 use crate::gui::windows::containers::structs::{ExplorerState, RenameState};
 use chrono::{DateTime, Local};
 use eframe::egui;
+use egui::TextBuffer;
 use egui_extras::{Size, StripBuilder};
 use egui_phosphor::regular;
 use std::path::{Path, PathBuf};
@@ -387,6 +388,83 @@ fn is_video_extension(path: &Path) -> bool {
         .is_some_and(|ext| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(ext)))
 }
 
+/// Renders `text` as a selectable-but-read-only block, backed by a real
+/// `TextEdit` widget rather than a `Label` (its `TextBuffer` is `&str`,
+/// whose `insert_text`/`delete_char_range` are no-ops - the standard egui
+/// idiom for "selectable, but not editable"). A `Label`'s own text
+/// selection has no public way to read back the current selection, which
+/// is why this needs to be a `TextEdit`: `TextEditState::load` exposes the
+/// cursor range directly.
+///
+/// Right-clicking while some text is selected copies that selection to the
+/// clipboard. Both `Label` and `TextEdit` collapse the selection to the
+/// click point on *any* pointer button press (including the right button)
+/// before the widget itself gets a chance to react to the click - so by
+/// the time a right-click is detected the selection would already be
+/// gone. To work around this, the selection is read from the state as it
+/// was at the *end of last frame* (before this frame's press event can
+/// touch it) the moment the right-button press is seen, rather than
+/// waiting for `secondary_clicked()`.
+fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, palette: &ThemePalette) {
+    let text_edit_id = ui.make_persistent_id("preview_pane_text_edit");
+    let panel_rect = ui.available_rect_before_wrap();
+
+    let secondary_just_pressed =
+        ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
+
+    if secondary_just_pressed
+        && let Some(pointer_pos) = ui.input(|i| i.pointer.interact_pos())
+        && panel_rect.contains(pointer_pos)
+        && let Some(state) = egui::widgets::text_edit::TextEditState::load(ui.ctx(), text_edit_id)
+        && let Some(range) = state.cursor.char_range()
+    {
+        let char_range = range.as_sorted_char_range();
+        if char_range.start != char_range.end {
+            let selected = text.char_range(char_range).to_owned();
+            ui.ctx().copy_text(selected);
+        }
+    }
+
+    let mut text_ref: &str = text;
+    ui.add(
+        egui::TextEdit::multiline(&mut text_ref)
+            .id(text_edit_id)
+            .font(egui::FontId::monospace(palette.text_size))
+            .frame(egui::Frame::NONE)
+            .desired_width(f32::INFINITY),
+    );
+}
+
+/// Right-click-to-copy for the *rendered* Markdown preview, which (unlike
+/// the plain-text preview) is drawn as many separate selectable `Label`s -
+/// one per heading/paragraph/run - so there's no single buffer to read a
+/// selection range out of the way `draw_selectable_text_with_copy` does for
+/// `TextEdit`. Instead this leans on egui's own built-in multi-widget label
+/// selection/copy machinery (the same thing `Ctrl+C` triggers) by injecting
+/// a synthetic `Copy` event the moment a right-click is seen, before any of
+/// this frame's labels have rendered.
+///
+/// Caveat: egui collapses a label's selection to the click point on *any*
+/// button press, including the right one, before that label reacts to the
+/// click - so if the click lands on a label that's only *partially*
+/// selected (typically the first or last one touched by the drag), that
+/// label ends up contributing its *entire* text to the copy instead of
+/// just the selected portion. Labels elsewhere in the selection (not under
+/// the pointer) are unaffected. This mirrors the same trade-off documented
+/// on `draw_selectable_text_with_copy`.
+fn arm_markdown_copy_on_right_click(ui: &mut egui::Ui) {
+    let panel_rect = ui.available_rect_before_wrap();
+    let secondary_just_pressed =
+        ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Secondary));
+
+    if secondary_just_pressed
+        && let Some(pointer_pos) = ui.input(|i| i.pointer.interact_pos())
+        && panel_rect.contains(pointer_pos)
+    {
+        ui.ctx().input_mut(|i| i.events.push(egui::Event::Copy));
+    }
+}
+
 fn draw_preview_content(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -518,14 +596,7 @@ fn draw_preview_content(
                 .id_salt("preview_pane_text")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(text)
-                                .monospace()
-                                .size(palette.text_size),
-                        )
-                        .wrap(),
-                    );
+                    draw_selectable_text_with_copy(ui, &text, palette);
                 });
         }
         Some(PreviewPayload::Markdown(markdown)) => {
@@ -533,6 +604,7 @@ fn draw_preview_content(
                 .id_salt("preview_pane_markdown")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    arm_markdown_copy_on_right_click(ui);
                     draw_markdown(ui, palette, &markdown);
                 });
         }
