@@ -77,6 +77,9 @@ pub enum ItemViewerContextAction {
     AddFavorite(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
-    Delete(Vec<PathBuf>),
+    /// The `bool` is whether to skip the Recycle Bin and delete permanently
+    /// (Shift+Delete, or deleting an item that's already in the Recycle Bin
+    /// - both match native Explorer).
+    Delete(Vec<PathBuf>, bool),
     Properties(Vec<PathBuf>),
 }

@@ -30,6 +30,14 @@ pub struct ExplorerState {
     pub windows_context_menu_cache: Option<WindowsContextMenuCache>,
     pub navigation_history: HashMap<PathBuf, PathBuf>, // parent_dir -> last_visited_child
     pub navigation_selection: Option<PathBuf>,         // path to select after navigation loads
+    /// Armed when a single click lands on an item that was already the sole
+    /// selection - matching Windows Explorer's "click, pause, click again"
+    /// rename gesture. If a genuine double-click follows quickly, the arm is
+    /// cancelled and the item opens as usual; otherwise, once the pause
+    /// (`CLICK_TO_RENAME_DELAY`) elapses with the selection unchanged, rename
+    /// mode starts. Not armed in the Columns/Column Preview views, which
+    /// only rename via the right-click menu.
+    pub click_to_rename_arm: Option<(PathBuf, f64)>,
 }
 
 pub struct WindowsContextMenuCache {
@@ -1007,6 +1015,7 @@ pub struct TagsState {
     pub drag_state: Option<TagDragState>,
     pub delete_confirmation: Option<u64>,
     pub pending_action: Option<ItemViewerAction>,
+    pub column_state: TagColumnState,
 }
 
 impl Default for TagsState {
@@ -1019,6 +1028,121 @@ impl Default for TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
+            column_state: TagColumnState::default(),
+        }
+    }
+}
+
+/// Columns shown in the "tagged items" table for one tag group (see
+/// `draw_tag_view`). Kept separate from `ItemViewerHeaderColumn` since this
+/// table is a virtual list (not a real directory listing) with its own,
+/// smaller column set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TagColumn {
+    Name,
+    Type,
+    Location,
+    Size,
+    Modified,
+}
+
+impl TagColumn {
+    pub fn index(self) -> usize {
+        match self {
+            TagColumn::Name => 0,
+            TagColumn::Type => 1,
+            TagColumn::Location => 2,
+            TagColumn::Size => 3,
+            TagColumn::Modified => 4,
+        }
+    }
+
+    pub fn i18n_key(self) -> &'static str {
+        match self {
+            TagColumn::Name => "explorer_cols_name",
+            TagColumn::Type => "explorer_cols_type",
+            TagColumn::Location => "explorer_cols_location",
+            TagColumn::Size => "explorer_cols_size",
+            TagColumn::Modified => "explorer_cols_modified",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TagColumnFitRequest {
+    Column(TagColumn),
+    All,
+}
+
+#[derive(Clone, Debug)]
+pub struct TagColumnState {
+    pub order: Vec<TagColumn>,
+    widths: [f32; 5],
+    pub pending_fit_request: Option<TagColumnFitRequest>,
+    /// Same render-time-driven "fit once, on first appearance" trick used by
+    /// the main item viewer's `ItemViewerColumnState` - see its doc comment.
+    pub auto_fit_checked: bool,
+    pub layout_generation: u64,
+}
+
+impl Default for TagColumnState {
+    fn default() -> Self {
+        Self {
+            order: vec![
+                TagColumn::Name,
+                TagColumn::Type,
+                TagColumn::Location,
+                TagColumn::Size,
+                TagColumn::Modified,
+            ],
+            widths: [260.0, 110.0, 150.0, 90.0, 150.0],
+            pending_fit_request: None,
+            auto_fit_checked: false,
+            layout_generation: 0,
+        }
+    }
+}
+
+impl TagColumnState {
+    pub fn width(&self, column: TagColumn) -> f32 {
+        self.widths[column.index()]
+    }
+
+    pub fn set_width(&mut self, column: TagColumn, width: f32) {
+        self.widths[column.index()] = width;
+    }
+
+    pub fn move_left(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx > 0
+        {
+            self.order.swap(idx, idx - 1);
+        }
+    }
+
+    pub fn move_right(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx + 1 < self.order.len()
+        {
+            self.order.swap(idx, idx + 1);
+        }
+    }
+
+    pub fn move_to_start(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx > 0
+        {
+            let column = self.order.remove(idx);
+            self.order.insert(0, column);
+        }
+    }
+
+    pub fn move_to_end(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx + 1 < self.order.len()
+        {
+            let column = self.order.remove(idx);
+            self.order.push(column);
         }
     }
 }
@@ -1058,6 +1182,7 @@ impl TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
+            column_state: TagColumnState::default(),
         }
     }
 

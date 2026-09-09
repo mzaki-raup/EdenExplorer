@@ -6,7 +6,8 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
-use crate::gui::windows::containers::structs::ExplorerState;
+use crate::gui::windows::containers::itemviewer_helper::handle_editing_file_name;
+use crate::gui::windows::containers::structs::{ExplorerState, RenameState};
 use chrono::{DateTime, Local};
 use eframe::egui;
 use egui_extras::{Size, StripBuilder};
@@ -30,10 +31,12 @@ pub fn draw_preview_view(
     preview_selection: &mut Option<PathBuf>,
     icon_cache: &IconCache,
     palette: &ThemePalette,
+    rename_state: &mut Option<RenameState>,
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
 
     let mut action = None;
+    let now = ui.input(|i| i.time);
 
     StripBuilder::new(ui)
         .size(Size::remainder())
@@ -105,6 +108,30 @@ pub fn draw_preview_view(
                                     } else {
                                         rect.left() + 8.0
                                     };
+                                    let is_renaming = rename_state
+                                        .as_ref()
+                                        .map(|rs| rs.path == file.path)
+                                        .unwrap_or(false);
+
+                                    if is_renaming {
+                                        let text_rect = egui::Rect::from_min_max(
+                                            egui::pos2(text_x, rect.top()),
+                                            rect.right_bottom(),
+                                        );
+                                        if let Some(rename_action) = handle_editing_file_name(
+                                            ui,
+                                            i18n,
+                                            file,
+                                            is_selected,
+                                            palette,
+                                            text_rect,
+                                            rename_state,
+                                        ) {
+                                            action = Some(rename_action);
+                                        }
+                                        continue;
+                                    }
+
                                     let max_text_width = (rect.right() - text_x - 4.0).max(0.0);
                                     let name_font_id =
                                         egui::FontId::proportional(palette.text_size);
@@ -130,17 +157,34 @@ pub fn draw_preview_view(
                                     }
 
                                     if resp.clicked() {
-                                        explorer_state.selected_paths.clear();
-                                        explorer_state.selected_paths.insert(file.path.clone());
-                                        explorer_state.selection_focus = Some(idx);
-                                        explorer_state.selection_anchor = Some(idx);
-                                        *preview_selection = Some(file.path.clone());
-                                        if !file.is_dir {
-                                            preview_service.request(&file.path);
+                                        let was_sole_selected = explorer_state
+                                            .selected_paths
+                                            .len()
+                                            == 1
+                                            && explorer_state.selected_paths.contains(&file.path);
+
+                                        explorer_state.click_to_rename_arm = None;
+
+                                        if was_sole_selected && !resp.double_clicked() {
+                                            // Slow second click on an already-selected item -
+                                            // arm the rename gesture (see `poll_click_to_rename`)
+                                            // instead of re-selecting.
+                                            explorer_state.click_to_rename_arm =
+                                                Some((file.path.clone(), now));
+                                        } else {
+                                            explorer_state.selected_paths.clear();
+                                            explorer_state.selected_paths.insert(file.path.clone());
+                                            explorer_state.selection_focus = Some(idx);
+                                            explorer_state.selection_anchor = Some(idx);
+                                            *preview_selection = Some(file.path.clone());
+                                            if !file.is_dir {
+                                                preview_service.request(&file.path);
+                                            }
                                         }
                                     }
 
                                     if resp.double_clicked() {
+                                        explorer_state.click_to_rename_arm = None;
                                         action = Some(if file.is_dir {
                                             ItemViewerAction::Open(file.path.clone())
                                         } else {

@@ -8,7 +8,9 @@ use crate::gui::utils::{
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::sidebar::draw_sidebar_item;
-use crate::gui::windows::containers::structs::TagsState;
+use crate::gui::windows::containers::structs::{
+    TagColumn, TagColumnFitRequest, TagColumnState, TagsState,
+};
 use crate::gui::windows::settings::reorder_buttons;
 use eframe::egui;
 use egui::FontId;
@@ -443,6 +445,144 @@ struct TagViewRow {
     modified: Option<String>,
 }
 
+fn measure_text_width(ui: &mut egui::Ui, text: &str, font_id: &FontId) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+    })
+}
+
+const TAG_HEADER_TOP_PADDING: f32 = 6.0;
+
+fn tag_column_min_width(column: TagColumn) -> f32 {
+    match column {
+        TagColumn::Name => 160.0,
+        TagColumn::Type => 70.0,
+        TagColumn::Location => 150.0,
+        TagColumn::Size => 60.0,
+        TagColumn::Modified => 100.0,
+    }
+}
+
+/// Content-based width for every tag-view column, computed fresh from
+/// `rows` whenever a fit is requested (mirrors
+/// `compute_item_viewer_column_widths` for the regular folder/recycle-bin
+/// table).
+fn compute_tag_column_widths(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    rows: &[TagViewRow],
+    font_id: &FontId,
+) -> [f32; 5] {
+    let icon_padding = 22.0;
+    let mut widths = [
+        measure_text_width(ui, &i18n.tr(TagColumn::Name.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Type.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Location.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Size.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Modified.i18n_key()), font_id),
+    ];
+
+    for row in rows {
+        widths[TagColumn::Name.index()] = widths[TagColumn::Name.index()]
+            .max(measure_text_width(ui, &row.name, font_id) + icon_padding);
+        widths[TagColumn::Type.index()] =
+            widths[TagColumn::Type.index()].max(measure_text_width(ui, &row.type_name, font_id));
+        widths[TagColumn::Location.index()] = widths[TagColumn::Location.index()]
+            .max(measure_text_width(ui, &row.location, font_id));
+        let size_text = row.size.map(format_size).unwrap_or_default();
+        widths[TagColumn::Size.index()] =
+            widths[TagColumn::Size.index()].max(measure_text_width(ui, &size_text, font_id));
+        widths[TagColumn::Modified.index()] = widths[TagColumn::Modified.index()].max(
+            measure_text_width(ui, row.modified.as_deref().unwrap_or(""), font_id),
+        );
+    }
+
+    for column in [
+        TagColumn::Name,
+        TagColumn::Type,
+        TagColumn::Location,
+        TagColumn::Size,
+        TagColumn::Modified,
+    ] {
+        widths[column.index()] = widths[column.index()].max(tag_column_min_width(column));
+    }
+
+    widths
+}
+
+fn draw_tag_header_context_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    clicked_column: TagColumn,
+    column_state: &mut TagColumnState,
+    order_index: Option<usize>,
+    order_len: usize,
+) {
+    if ui
+        .button(i18n.tr("itemviewer_size_column_to_fit"))
+        .clicked()
+    {
+        column_state.pending_fit_request = Some(TagColumnFitRequest::Column(clicked_column));
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+        ui.close();
+    }
+
+    if ui
+        .button(i18n.tr("itemviewer_size_all_columns_to_fit"))
+        .clicked()
+    {
+        column_state.pending_fit_request = Some(TagColumnFitRequest::All);
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+        ui.close();
+    }
+
+    if clicked_column != TagColumn::Name {
+        ui.separator();
+
+        let can_move_left = order_index.is_some_and(|idx| idx > 0);
+        let can_move_right = order_index.is_some_and(|idx| idx + 1 < order_len);
+
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move left"))
+            .clicked()
+        {
+            column_state.move_left(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move right"))
+            .clicked()
+        {
+            column_state.move_right(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move to start"))
+            .clicked()
+        {
+            column_state.move_to_start(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move to end"))
+            .clicked()
+        {
+            column_state.move_to_end(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+    }
+}
+
 /// Renders the virtual "tagged items" list for one tag group: every file/
 /// folder tagged with it, shown as its own table (name, type, location,
 /// size, modified) rather than a real filesystem directory listing.
@@ -452,7 +592,7 @@ pub fn draw_tag_view(
     i18n: &I18n,
     icon_cache: &IconCache,
     palette: &ThemePalette,
-    tags_state: &TagsState,
+    tags_state: &mut TagsState,
     group_id: u64,
     file_type_cache: &mut HashMap<String, String>,
     date_style: DateStyle,
@@ -515,122 +655,222 @@ pub fn draw_tag_view(
         .collect();
 
     let row_height = 22.0;
-    let header_height = 26.0;
+    let header_height = row_height + TAG_HEADER_TOP_PADDING * 2.0;
+    let font_id = egui::FontId::proportional(palette.text_size);
 
-    TableBuilder::new(ui)
-        .striped(false)
-        .resizable(true)
-        .vscroll(true)
-        .sense(egui::Sense::click())
-        .column(Column::initial(260.0).at_least(160.0).resizable(true))
-        .column(Column::initial(110.0).at_least(70.0).resizable(true))
-        .column(Column::remainder().at_least(150.0).resizable(true))
-        .column(Column::initial(90.0).at_least(60.0).resizable(true))
-        .column(Column::initial(150.0).at_least(100.0).resizable(true))
-        .header(header_height, |mut header| {
-            for key in [
-                "explorer_cols_name",
-                "explorer_cols_type",
-                "explorer_cols_location",
-                "explorer_cols_size",
-                "explorer_cols_modified",
-            ] {
-                header.col(|ui| {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(i18n.tr(key))
-                                .size(palette.text_size)
-                                .color(palette.text_header_section),
-                        )
-                        .selectable(false),
-                    );
-                });
+    let column_state = &mut tags_state.column_state;
+
+    let mut fit_request = column_state.pending_fit_request.take();
+
+    // Auto-fit on the very first render of this (freshly opened) group's
+    // table, same "fit once, then leave the user's manual resizes alone"
+    // behavior as the regular folder/recycle-bin table.
+    if fit_request.is_none() && !column_state.auto_fit_checked {
+        column_state.auto_fit_checked = true;
+        let sizes_are_default = TagColumnState::default().order == column_state.order
+            && [
+                TagColumn::Name,
+                TagColumn::Type,
+                TagColumn::Location,
+                TagColumn::Size,
+                TagColumn::Modified,
+            ]
+            .iter()
+            .all(|c| column_state.width(*c) == TagColumnState::default().width(*c));
+
+        if sizes_are_default {
+            fit_request = Some(TagColumnFitRequest::All);
+        }
+    }
+
+    if let Some(fit_request) = fit_request {
+        let widths = compute_tag_column_widths(ui, i18n, &rows, &font_id);
+
+        match fit_request {
+            TagColumnFitRequest::All => {
+                for column in [
+                    TagColumn::Name,
+                    TagColumn::Type,
+                    TagColumn::Location,
+                    TagColumn::Size,
+                    TagColumn::Modified,
+                ] {
+                    column_state.set_width(column, widths[column.index()]);
+                }
             }
-        })
-        .body(|body| {
-            body.rows(row_height, rows.len(), |mut row| {
-                let item = &rows[row.index()];
+            TagColumnFitRequest::Column(column) => {
+                column_state.set_width(column, widths[column.index()]);
+            }
+        }
 
-                row.col(|ui| {
-                    ui.horizontal(|ui| {
-                        if let Some(icon) = icon_cache.get(&item.path, item.is_dir) {
-                            ui.add(
-                                egui::Image::new(&icon)
-                                    .fit_to_exact_size(egui::vec2(16.0, 16.0)),
-                            );
-                        }
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+    }
+
+    let order = column_state.order.clone();
+    let table_id_salt = egui::Id::new(("tag_view_table", group_id, column_state.layout_generation));
+
+    // Same left inset as the regular folder/recycle-bin table (see
+    // `left_margin` in itemviewer.rs), so the header/row content lines up
+    // consistently across every view.
+    const LEFT_MARGIN: f32 = 8.0;
+    let table_rect = ui.available_rect_before_wrap();
+    let table_rect = egui::Rect::from_min_max(
+        egui::pos2(table_rect.left() + LEFT_MARGIN, table_rect.top()),
+        table_rect.right_bottom(),
+    );
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
+    ui.push_id(table_id_salt, |ui| {
+        let mut table = TableBuilder::new(ui)
+            .striped(false)
+            .resizable(true)
+            .vscroll(true)
+            .sense(egui::Sense::click());
+
+        for column in &order {
+            table = table.column(
+                Column::initial(tags_state.column_state.width(*column))
+                    .at_least(tag_column_min_width(*column))
+                    .resizable(true),
+            );
+        }
+
+        table
+            .header(header_height, |mut header| {
+                for column in order.clone() {
+                    header.col(|ui| {
+                        ui.add_space(TAG_HEADER_TOP_PADDING);
+                        let cell_id = ui.id().with(("tag_header_cell", column));
+                        let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
+
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(&item.name).size(palette.text_size),
+                                egui::RichText::new(i18n.tr(column.i18n_key()))
+                                    .size(palette.text_size)
+                                    .color(palette.text_header_section),
                             )
                             .selectable(false),
                         );
-                    });
-                });
-                row.col(|ui| {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(&item.type_name).size(palette.text_size))
-                            .selectable(false),
-                    );
-                });
-                row.col(|ui| {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(&item.location).size(palette.text_size))
-                            .selectable(false),
-                    )
-                    .on_hover_text(&item.location);
-                });
-                row.col(|ui| {
-                    let text = item.size.map(format_size).unwrap_or_default();
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(text).size(palette.text_size))
-                            .selectable(false),
-                    );
-                });
-                row.col(|ui| {
-                    let text = item.modified.clone().unwrap_or_default();
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(text).size(palette.text_size))
-                            .selectable(false),
-                    );
-                });
 
-                let resp = row.response();
-                if resp.double_clicked() {
-                    action = Some(if item.is_dir {
-                        ItemViewerAction::Open(item.path.clone())
-                    } else {
-                        ItemViewerAction::OpenWithDefault(vec![item.path.clone()])
+                        if cell_resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                        }
+
+                        let order_index = order.iter().position(|c| *c == column);
+
+                        Popup::context_menu(&cell_resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                draw_tag_header_context_menu(
+                                    ui,
+                                    i18n,
+                                    column,
+                                    &mut tags_state.column_state,
+                                    order_index,
+                                    order.len(),
+                                );
+                            });
                     });
                 }
+            })
+            .body(|body| {
+                body.rows(row_height, rows.len(), |mut row| {
+                    let item = &rows[row.index()];
 
-                let is_tagged = tags_state.is_tagged(&item.path);
-                Popup::context_menu(&resp)
-                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                    .show(|ui| {
-                        let file_item = FileItem {
-                            name: item.name.clone(),
-                            path: item.path.clone(),
-                            is_dir: item.is_dir,
-                            is_hidden: false,
-                            recycle_bin_pidl: None,
-                            file_size: item.size,
-                            modified_time: item.modified.clone(),
-                            created_time: None,
-                            deleted_time: None,
-                            modified_time_raw: None,
-                            created_time_raw: None,
-                            deleted_time_raw: None,
-                            original_directory: Some(item.location.clone()),
-                            total_space: None,
-                            free_space: None,
-                        };
-                        handle_context_menu_actions_tags(
-                            ui, i18n, &file_item, &mut action, palette, is_tagged,
-                        );
-                    });
+                    for column in &order {
+                        row.col(|ui| match column {
+                            TagColumn::Name => {
+                                ui.horizontal(|ui| {
+                                    if let Some(icon) = icon_cache.get(&item.path, item.is_dir) {
+                                        ui.add(
+                                            egui::Image::new(&icon)
+                                                .fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                                        );
+                                    }
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&item.name).size(palette.text_size),
+                                        )
+                                        .selectable(false),
+                                    );
+                                });
+                            }
+                            TagColumn::Type => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&item.type_name).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                            TagColumn::Location => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&item.location).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                )
+                                .on_hover_text(&item.location);
+                            }
+                            TagColumn::Size => {
+                                let text = item.size.map(format_size).unwrap_or_default();
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                            TagColumn::Modified => {
+                                let text = item.modified.clone().unwrap_or_default();
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                        });
+                    }
+
+                    let resp = row.response();
+                    if resp.double_clicked() {
+                        action = Some(if item.is_dir {
+                            ItemViewerAction::Open(item.path.clone())
+                        } else {
+                            ItemViewerAction::OpenWithDefault(vec![item.path.clone()])
+                        });
+                    }
+
+                    let is_tagged = tags_state.is_tagged(&item.path);
+                    Popup::context_menu(&resp)
+                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            let file_item = FileItem {
+                                name: item.name.clone(),
+                                path: item.path.clone(),
+                                is_dir: item.is_dir,
+                                is_hidden: false,
+                                recycle_bin_pidl: None,
+                                file_size: item.size,
+                                modified_time: item.modified.clone(),
+                                created_time: None,
+                                deleted_time: None,
+                                modified_time_raw: None,
+                                created_time_raw: None,
+                                deleted_time_raw: None,
+                                original_directory: Some(item.location.clone()),
+                                total_space: None,
+                                free_space: None,
+                            };
+                            handle_context_menu_actions_tags(
+                                ui, i18n, &file_item, &mut action, palette, is_tagged,
+                            );
+                        });
+                });
             });
-        });
+    });
+    });
 
     action
 }

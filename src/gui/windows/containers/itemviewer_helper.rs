@@ -368,6 +368,7 @@ pub fn handle_context_menu_actions(
         {
             *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
                 context_paths.clone(),
+                true,
             )));
             ui.close();
         }
@@ -515,6 +516,25 @@ pub fn handle_context_menu_actions(
     if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
             context_paths.clone(),
+            false,
+        )));
+        ui.close();
+    }
+
+    // Shift+Delete is unreliable to detect in some environments (the
+    // modifier state isn't always seen at the moment the Delete key event
+    // arrives), so this menu entry gives permanent delete a keyboard-free
+    // path as well.
+    if menu_item_button(
+        ui,
+        regular::TRASH,
+        &i18n.tr("recycle_bin_delete_permanently"),
+    )
+    .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+            context_paths.clone(),
+            true,
         )));
         ui.close();
     }
@@ -1052,6 +1072,37 @@ pub fn handle_editing_file_name(
         // Store original length to detect changes
         let original_len = rename_state.new_name.len();
 
+        // Matching Windows Explorer: the base filename is pre-selected so
+        // typing immediately replaces it, but the ".ext" is left unselected
+        // (and out of the way) so a plain Enter doesn't clobber it. Folders
+        // have no extension concept, so their whole name is selected.
+        //
+        // Both the cursor range AND the focus request are set *before*
+        // `ui.add()` runs (rather than requesting focus afterward, which
+        // would only take effect starting next frame - a visible one-frame
+        // flash of the full, unselected name before the highlight caught
+        // up). Setting both here means the widget picks up already focused,
+        // with the right selection, on the very first frame it's drawn.
+        let just_requested_focus = rename_state.should_focus;
+        if just_requested_focus {
+            let select_end = if file.is_dir {
+                rename_state.new_name.chars().count()
+            } else {
+                std::path::Path::new(&rename_state.new_name)
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().chars().count())
+                    .unwrap_or_else(|| rename_state.new_name.chars().count())
+            };
+            let mut state = egui::widgets::text_edit::TextEditState::load(ui.ctx(), edit_id)
+                .unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(select_end),
+            )));
+            state.store(ui.ctx(), edit_id);
+            ui.memory_mut(|mem| mem.request_focus(edit_id));
+        }
+
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut rename_state.new_name)
                 .id(edit_id)
@@ -1060,9 +1111,7 @@ pub fn handle_editing_file_name(
         );
 
         // ✅ Focus once
-        let just_requested_focus = rename_state.should_focus;
         if rename_state.should_focus {
-            ui.memory_mut(|mem| mem.request_focus(edit_id));
             edit_response.request_focus();
             if edit_response.has_focus() {
                 rename_state.should_focus = false;
@@ -1398,8 +1447,13 @@ pub fn handle_global_actions(
                 return;
             };
 
+            // Shift+Delete skips the Recycle Bin and deletes permanently,
+            // matching native Explorer; a plain Delete always goes to the
+            // Recycle Bin (deleting while already inside the Recycle Bin is
+            // handled separately and is already permanent either way).
+            let permanent = i.modifiers.shift || is_recycle_bin_view;
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-                paths,
+                paths, permanent,
             )));
         }
     });
@@ -1969,6 +2023,11 @@ pub fn handle_keyboard_navigation(
     action
 }
 
+/// How long after a qualifying single click (see `handle_row_click`) to wait
+/// before committing to rename rather than open - matches the pause Windows
+/// Explorer gives you between the two clicks of its rename gesture.
+pub const CLICK_TO_RENAME_DELAY: f64 = 0.35;
+
 pub fn handle_row_click(
     row_idx: usize,
     file: &FileItem,
@@ -1978,10 +2037,19 @@ pub fn handle_row_click(
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
     is_recycle_bin_view: bool,
+    is_drive_view: bool,
+    is_double_click: bool,
+    now: f64,
 ) -> Option<ItemViewerAction> {
     if drag_state.active {
         return None;
     }
+
+    // Any click other than the qualifying "second click on an
+    // already-selected item" (handled below, which re-arms it itself)
+    // cancels a pending rename arm - e.g. clicking a different item, or
+    // shift/ctrl-extending the selection.
+    explorer_state.click_to_rename_arm = None;
 
     if modifiers.shift {
         if let Some(anchor_idx) = explorer_state.selection_anchor {
@@ -2028,11 +2096,27 @@ pub fn handle_row_click(
             if is_recycle_bin_view {
                 return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
             }
-            return Some(if file.is_dir {
-                ItemViewerAction::Open(file.path.clone())
-            } else {
-                ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
-            });
+            if is_double_click {
+                return Some(if file.is_dir {
+                    ItemViewerAction::Open(file.path.clone())
+                } else {
+                    ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
+                });
+            }
+            if is_drive_view {
+                // Drives don't support the click-to-rename gesture (renaming
+                // a volume label isn't wired up here) - a plain second click
+                // on an already-selected drive is just a no-op.
+                return None;
+            }
+            // A slow second click on an already-selected item - arm the
+            // rename gesture instead of opening immediately. A per-frame
+            // poll (see `poll_click_to_rename`) fires the actual rename
+            // once the delay elapses, unless this arm gets cancelled first
+            // (a genuine double-click is handled above; anything else is
+            // handled at the top of this function).
+            explorer_state.click_to_rename_arm = Some((file.path.clone(), now));
+            None
         } else {
             explorer_state.selection_anchor = Some(row_idx);
             explorer_state.selection_focus = Some(row_idx);
@@ -2040,6 +2124,49 @@ pub fn handle_row_click(
             Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
         }
     }
+}
+
+/// Checks whether a rename arm from `handle_row_click` has waited out
+/// `CLICK_TO_RENAME_DELAY` and, if so, starts the actual rename - matching
+/// Windows Explorer's "click, pause, click again" gesture. Called once per
+/// frame from each view that supports it (Details/Detail Preview, Gallery,
+/// Preview - not Columns/Column Preview, which only rename via the
+/// right-click menu).
+pub fn poll_click_to_rename(
+    files: &[FileItem],
+    explorer_state: &mut ExplorerState,
+    rename_state: &mut Option<RenameState>,
+    now: f64,
+) {
+    let Some((path, armed_at)) = explorer_state.click_to_rename_arm.clone() else {
+        return;
+    };
+
+    if now - armed_at < CLICK_TO_RENAME_DELAY {
+        return;
+    }
+
+    explorer_state.click_to_rename_arm = None;
+
+    // Only fire if nothing else already started editing, and the armed
+    // item is still the sole selection (it could have changed in the
+    // meantime via e.g. a keyboard shortcut).
+    if rename_state.is_some() {
+        return;
+    }
+    if explorer_state.selected_paths.len() != 1 || !explorer_state.selected_paths.contains(&path) {
+        return;
+    }
+    let Some(file) = files.iter().find(|f| f.path == path) else {
+        return;
+    };
+
+    *rename_state = Some(RenameState {
+        path: file.path.clone(),
+        new_name: file.name.clone(),
+        should_focus: true,
+        validation_error_show: false,
+    });
 }
 
 pub fn draw_table_text(
@@ -2420,6 +2547,19 @@ fn compute_item_viewer_column_widths(
                 font_id,
                 palette.text_normal,
             ));
+            widths.deleted_width = widths.deleted_width.max(measure_text_width(
+                ui,
+                file.deleted_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+            widths.original_directory_width =
+                widths.original_directory_width.max(measure_text_width(
+                    ui,
+                    file.original_directory.as_deref().unwrap_or("—"),
+                    font_id,
+                    palette.text_normal,
+                ));
         }
     }
 
@@ -2429,6 +2569,8 @@ fn compute_item_viewer_column_widths(
     widths.modified_width = widths.modified_width.max(120.0);
     widths.created_width = widths.created_width.max(120.0);
     widths.usage_width = widths.usage_width.max(150.0);
+    widths.deleted_width = widths.deleted_width.max(120.0);
+    widths.original_directory_width = widths.original_directory_width.max(150.0);
 
     widths
 }

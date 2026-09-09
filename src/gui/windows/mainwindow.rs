@@ -75,6 +75,13 @@ pub struct MainWindow {
     /// refresh in case the launched program never takes focus at all (e.g.
     /// a script that finishes before its console window would even show).
     pub(crate) pending_command_refreshes: Vec<std::time::Instant>,
+    /// A paste (or cut-move) currently running on a background thread - the
+    /// native `IFileOperation` copy/move is otherwise a blocking COM call
+    /// that would freeze the whole UI thread for as long as it takes,
+    /// noticeably even for small files since most of that time is shell
+    /// overhead (context-menu handlers, antivirus, cloud-sync overlay
+    /// providers reacting to every item) rather than actual I/O.
+    pub(crate) pending_paste: Option<crate::gui::windows::mainwindow_imp::PendingPaste>,
 
     // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
@@ -287,6 +294,7 @@ impl Default for MainWindow {
             sidebar_collapsed: false,
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
+            pending_paste: None,
             theme_dirty: true,
             window_override_set: false,
             dragdrop: None,
@@ -1406,6 +1414,7 @@ impl eframe::App for MainWindow {
         if draw_tag_picker_popup(ui.ctx(), &self.i18n, &palette, &mut self.tags_state) {
             tags_changed = true;
         }
+        self.poll_pending_paste();
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());

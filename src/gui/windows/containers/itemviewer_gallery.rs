@@ -261,6 +261,9 @@ pub fn draw_gallery_view(
                                 drag_state,
                                 explorer_state,
                                 false,
+                                false,
+                                response.double_clicked(),
+                                response.ctx.input(|i| i.time),
                             ) {
                                 action = Some(a);
                             }

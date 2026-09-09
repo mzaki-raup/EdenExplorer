@@ -224,6 +224,70 @@ pub(crate) fn persist_directory_settings_snapshot(
     }
 }
 
+/// A paste/cut-move running on a background thread - see `paste_clipboard_native`.
+pub struct PendingPaste {
+    rx: Receiver<windows::core::Result<()>>,
+    target_dir: PathBuf,
+    before_entries: HashSet<PathBuf>,
+    paths: Vec<PathBuf>,
+    is_cut: bool,
+    side: SplitSide,
+}
+
+/// Runs the actual `IFileOperation` copy/move. Called from a freshly spawned
+/// thread (see `paste_clipboard_native`), so it initializes its own COM
+/// apartment first - `IFileOperation`/`IShellItem` are apartment-threaded COM
+/// objects and can't be created on a thread that hasn't called
+/// `CoInitializeEx` (the main thread does this once at startup; a spawned
+/// thread starts with no COM apartment of its own).
+fn perform_native_paste(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> windows::core::Result<()> {
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+    };
+    use windows::Win32::UI::Shell::{
+        FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem,
+        SHCreateItemFromParsingName,
+    };
+    use windows::core::HSTRING;
+
+    unsafe {
+        let co_init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let result = (|| -> windows::core::Result<()> {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+            // No FOF_RENAMEONCOLLISION - a folder pasted onto one with the same
+            // name should merge/overwrite (matching native Explorer's prompt),
+            // not silently get renamed to "Folder (1)".
+            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR)?;
+
+            let target_item: IShellItem =
+                SHCreateItemFromParsingName(&HSTRING::from(target_dir.to_string_lossy().to_string()), None)?;
+
+            for path in paths {
+                let source_item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
+
+                if is_cut {
+                    file_op.MoveItem(&source_item, &target_item, None, None)?;
+                } else {
+                    file_op.CopyItem(&source_item, &target_item, None, None)?;
+                }
+            }
+
+            file_op.PerformOperations()
+        })();
+
+        if co_init.is_ok() {
+            CoUninitialize();
+        }
+
+        result
+    }
+}
+
 impl Drop for MainWindow {
     fn drop(&mut self) {
         self.cleanup_resources();
@@ -1039,9 +1103,7 @@ impl MainWindow {
                 let _ = copy_text_to_clipboard(&text);
             }
             ItemViewerContextAction::Paste => {
-                if let Err(e) = self.paste_clipboard_native() {
-                    eprintln!("Paste failed: {}", e);
-                }
+                self.paste_clipboard_native();
             }
             ItemViewerContextAction::Restore(paths) => {
                 let recycle_bin_pidls: Vec<Vec<u8>> = {
@@ -1147,8 +1209,8 @@ impl MainWindow {
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
             }
-            ItemViewerContextAction::Delete(paths) => {
-                let allow_undo = !self.current_nav().is_recycle_bin();
+            ItemViewerContextAction::Delete(paths, permanent) => {
+                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
                 if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
                     eprintln!("Native delete failed: {:?}", e);
 
@@ -1175,71 +1237,82 @@ impl MainWindow {
         }
     }
 
-    pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
-        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-        use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem,
-            SHCreateItemFromParsingName,
-        };
-        use windows::core::HSTRING;
-
+    /// Kicks off a paste (or cut-move) on a background thread instead of
+    /// blocking the caller - see the `pending_paste` field doc comment for
+    /// why `IFileOperation` needs to run off the UI thread. Wakes the UI
+    /// immediately once the background thread finishes (via the app's
+    /// shared egui context), rather than waiting for the next unrelated
+    /// repaint.
+    pub fn paste_clipboard_native(&mut self) {
         let paths = match get_clipboard_files() {
             Some(p) if !p.is_empty() => p,
-            _ => return Ok(()),
+            _ => return,
         };
 
         if self.current_nav().is_recycle_bin() {
-            return Ok(());
+            return;
         }
 
         let is_cut = is_clipboard_cut();
         let target_dir = self.current_nav().current.clone();
         let before_entries = Self::directory_child_paths(&target_dir);
+        let side = self.focused_split;
 
-        unsafe {
-            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+        let (tx, rx) = unbounded();
+        let thread_paths = paths.clone();
+        let thread_target_dir = target_dir.clone();
+        std::thread::spawn(move || {
+            let result = perform_native_paste(&thread_paths, &thread_target_dir, is_cut);
+            let _ = tx.send(result);
+            crate::gui::windows::windowsoverrides::request_repaint();
+        });
 
-            // No FOF_RENAMEONCOLLISION - a folder pasted onto one with the same
-            // name should merge/overwrite (matching native Explorer's prompt),
-            // not silently get renamed to "Folder (1)".
-            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR)?;
+        self.pending_paste = Some(PendingPaste {
+            rx,
+            target_dir,
+            before_entries,
+            paths,
+            is_cut,
+            side,
+        });
+    }
 
-            let target_item: IShellItem = SHCreateItemFromParsingName(
-                &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
-                None,
-            )?;
+    /// Checks whether a background paste kicked off by `paste_clipboard_native`
+    /// has finished, and if so applies its result (selection, tags, refresh).
+    /// Called once per frame from the main update loop.
+    pub fn poll_pending_paste(&mut self) {
+        let Some(pending) = &self.pending_paste else {
+            return;
+        };
 
-            for path in &paths {
-                let source_item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(path.to_string_lossy().to_string()),
-                    None,
-                )?;
+        let Ok(result) = pending.rx.try_recv() else {
+            return;
+        };
 
-                if is_cut {
-                    file_op.MoveItem(&source_item, &target_item, None, None)?;
-                } else {
-                    file_op.CopyItem(&source_item, &target_item, None, None)?;
-                }
-            }
+        let pending = self.pending_paste.take().unwrap();
 
-            file_op.PerformOperations()?;
+        if let Err(e) = result {
+            eprintln!("Paste failed: {}", e);
+            return;
         }
 
-        if is_cut && self.move_tagged_paths_to_dir(&paths, &target_dir) {
+        if pending.is_cut && self.move_tagged_paths_to_dir(&pending.paths, &pending.target_dir) {
             self.persist_tags();
         }
 
-        let pasted_paths = Self::selection_paths_after_paste(&target_dir, &before_entries, &paths);
+        let pasted_paths = Self::selection_paths_after_paste(
+            &pending.target_dir,
+            &pending.before_entries,
+            &pending.paths,
+        );
         if !pasted_paths.is_empty() {
-            let side = self.focused_split;
             self.active_tab_mut()
-                .view_mut(side)
+                .view_mut(pending.side)
                 .explorer_state
                 .pending_selection_paths = Some(pasted_paths);
         }
 
         self.load_path();
-        Ok(())
     }
 
     fn directory_child_paths(dir: &Path) -> HashSet<PathBuf> {

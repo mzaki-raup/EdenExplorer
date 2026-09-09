@@ -94,6 +94,17 @@ pub fn draw_item_viewer(
 
     let mut action: Option<ItemViewerAction> = None;
 
+    // Applies to Details/Detail Preview and (via their own call sites)
+    // Gallery/Preview - not Columns/Column Preview, which only rename via
+    // the right-click menu.
+    let now = ui.input(|i| i.time);
+    poll_click_to_rename(files, explorer_state, rename_state, now);
+    if let Some((_, armed_at)) = explorer_state.click_to_rename_arm {
+        let remaining = CLICK_TO_RENAME_DELAY - (now - armed_at);
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.0)));
+    }
+
     let filter_changed = filter_state.dirty
         || filter_state.query != filter_state.last_query
         || filter_state.last_files_len != files.len()
@@ -250,6 +261,7 @@ pub fn draw_item_viewer(
             preview_selection,
             icon_cache,
             palette,
+            rename_state,
         )
         .or(action);
     }
@@ -682,6 +694,9 @@ pub fn draw_item_viewer(
                                     drag_state,
                                     explorer_state,
                                     is_recycle_bin_view,
+                                    is_drive_view,
+                                    row_resp.double_clicked(),
+                                    row_resp.ctx.input(|i| i.time),
                                 ) {
                                     if is_detail_preview
                                         && !file.is_dir
