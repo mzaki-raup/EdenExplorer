@@ -33,6 +33,19 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - **`locales/`** — translation files (English, Indonesian, Japanese, multiple Chinese variants)
 - **`scripts/`, `logo/`** — build/release helper scripts and branding assets
 - **`.releaserc.json`** — semantic-release configuration for automated releases
+- **`.claude/skills/`** — project skills capturing reusable project knowledge:
+  `eden-explorer-ui-test` (build/launch/drive the app for live verification),
+  `egui-patterns-reference` (documented egui techniques used here),
+  `egui-design-review` (UI/UX consistency checklist),
+  `i18n-sync-check` (locale-parity checker script)
+
+## Project documentation
+- **`README.md`** — public-facing overview, feature list, roadmap, build/debug instructions, keyboard shortcuts
+- **`PRD.md`** — product requirements: positioning, personas, principles, capability inventory, known gaps, planned and proposed enhancements, open questions
+- **`CHECKLIST.md`** — phase-by-phase delivery tracking (`Completed` / `In-Progress` / `Pending`)
+- **`CLAUDE.md`** — engineering guide: architecture map, conventions, safety rules, recorded mistakes, operational instructions
+- **`SUMMARY.md`** — this file
+- **`SECURITY.md`** — security policy
 
 ## Key features
 - Root-level drive view on startup with detailed storage info
@@ -49,11 +62,14 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Native Recycle Bin support
 - Multi-language UI (English, Indonesian, Japanese, Chinese variants) via Fluent i18n
 - Persistent settings via an efficient binary cache; column sort/view state persists per directory
-- Built-in performance benchmarking system
 - Rich keyboard shortcut set (tab management, navigation, rename, properties, refresh, etc.)
+- Six view modes (Details, Detail+Preview, Gallery, Columns, Column+Preview, Preview) with per-directory column layout, fit-to-content, and reordering
+- Preview pane for text, Markdown (rendered), images, animated GIFs, video, PDF/Word text extraction, and zip archive listings — with selectable text and right-click copy
+- Delete to Recycle Bin plus an explicit "Delete Permanently" action using the native Windows confirmation
+- Explorer-style click-pause-click inline rename (extension excluded from the selection)
 
 ## Roadmap (from README)
-Upcoming alpha features: multi-tagging of objects, deeper theme customization (custom layouts, mix/match UI), and network device support.
+Upcoming alpha features: multi-tagging of objects, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
 
 ## Distribution
 Distributed as a standalone Windows executable (no install) via GitHub Releases at `github.com/mtucciarone/EdenExplorer/releases`, with an automated release workflow (GitHub Actions + semantic-release).

@@ -231,7 +231,6 @@
   <li><b>Efficient caching</b> for directories and metadata</li>
   <li><b>Streaming directory enumeration</b></li>
   <li><b>Low memory footprint</b></li>
-  <li><b>Built-in benchmarking system</b></li>
 </ul>
 
 </td>
@@ -254,7 +253,6 @@
 - [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
-- [x] **Performance benchmarking system** with real-time measurement and comparison tools
 - [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
@@ -294,6 +292,13 @@
 - [x] Thicker, accent-colored borders throughout the UI, including a visible outer border around the whole window
 - [x] **Tab close menu** - right-click a tab for Close, Close Other Tabs, Close Tabs to the Right, and Close Tabs to the Left (pinned tabs are always kept)
 - [x] **Window position memory** - the app reopens at the exact screen position it was last closed at, not just the last size
+- [x] **Delete Permanently** - a context-menu action that bypasses the Recycle Bin, with the native Windows "are you sure you want to permanently delete" confirmation
+- [x] **Click-to-rename gesture** - click an already-selected item, pause, then click again to rename in place (Explorer-style), with only the base filename selected and the extension left out
+- [x] **Selectable preview text** - select text in the Text or Markdown preview pane and right-click to copy it to the clipboard
+- [x] **Rendered Markdown preview** - headings, bold/italic, lists, code blocks, block quotes, rules, task lists, and simple tables, instead of raw source
+- [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
+- [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
+- [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Add multi-tagging of objects
@@ -355,7 +360,6 @@ cargo test
   RUST_BACKTRACE=1 cargo run
   ```
 - Attach a debugger (e.g. [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) in VS Code, or `windbg`/`x64dbg`) to `target/debug/EdenExplorer.exe` for breakpoint-level debugging of the native Windows API calls.
-- The app includes a **built-in performance benchmarking system** for measuring filesystem/indexing performance directly from the UI.
 - Since this app relies on NT-level filesystem access and Windows Shell APIs, test file operations (drag-and-drop, context menu, recycle bin, portable devices) on real hardware/drives — these code paths are not covered by unit tests.
 
 ### Release process
