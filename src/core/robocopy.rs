@@ -49,23 +49,47 @@ pub struct RobocopyJobSpec {
     is_folder_job: bool,
     is_move: bool,
     bytes: u64,
+    /// Set only for a single-file job whose item needs to end up under a
+    /// different name than it has at the source (see `next_available_name`)
+    /// - robocopy always copies a file under its source name, so this is
+    /// applied as a plain `fs::rename` on `dest_dir.join(file_names[0])`
+    /// right after that job's robocopy process exits successfully. Folder
+    /// renames don't need this: a folder's dest name is just
+    /// `dest_dir`'s own last component, so `build_jobs` bakes the new name
+    /// into `dest_dir` directly instead.
+    rename_to: Option<String>,
 }
 
 /// Splits a paste (or cut-move) into robocopy jobs - see the module doc
-/// comment for why folders and files need different job shapes. Returns
-/// the jobs plus the combined byte total (used to turn per-job progress
-/// into one overall fraction).
-pub fn build_jobs(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> (Vec<RobocopyJobSpec>, u64) {
+/// comment for why folders and files need different job shapes. `renames`
+/// maps a source path to the name it should end up with in `target_dir`
+/// instead of its own name (see `next_available_name`) - entries not in
+/// `renames` keep their original name and, if they're plain files, still
+/// get grouped into one shared multi-file job with every other
+/// non-renamed file from the same parent directory; a renamed file always
+/// gets its own job, since robocopy's multi-file-list syntax has no way to
+/// give one of the listed files a different destination name than the
+/// others. Returns the jobs plus the combined byte total (used to turn
+/// per-job progress into one overall fraction).
+pub fn build_jobs(
+    paths: &[PathBuf],
+    target_dir: &Path,
+    is_cut: bool,
+    renames: &HashMap<PathBuf, String>,
+) -> (Vec<RobocopyJobSpec>, u64) {
     let mut jobs = Vec::new();
     let mut total_bytes = 0u64;
     let mut files_by_parent: HashMap<PathBuf, Vec<String>> = HashMap::new();
 
     for path in paths {
+        let rename_to = renames.get(path).cloned();
+
         if path.is_dir() {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
+            let name = rename_to.unwrap_or_else(|| {
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            });
             let bytes = calculate_folder_size_fast(path.clone());
             total_bytes += bytes;
             jobs.push(RobocopyJobSpec {
@@ -75,6 +99,7 @@ pub fn build_jobs(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> (Vec<Ro
                 is_folder_job: true,
                 is_move: is_cut,
                 bytes,
+                rename_to: None,
             });
         } else {
             let parent = path
@@ -87,7 +112,39 @@ pub fn build_jobs(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> (Vec<Ro
                 .unwrap_or_default();
             let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
             total_bytes += bytes;
-            files_by_parent.entry(parent).or_default().push(name);
+
+            if let Some(new_name) = rename_to {
+                // Robocopy always writes a file under its SOURCE name - it
+                // has no way to write directly under `new_name`. Naively
+                // pointing `dest_dir` straight at `target_dir` would have
+                // robocopy write the copy under `name` first, which is
+                // exactly the path the existing, colliding file already
+                // occupies - silently overwriting the very file "Rename"
+                // was supposed to keep, before the rename-in-place below
+                // ever runs. Instead, stage the copy in a fresh (and
+                // therefore guaranteed collision-free) subdirectory of
+                // `target_dir`, and only move it to its final `new_name`
+                // - and only then - after the copy has fully and safely
+                // landed there; see the completion handling in `run_jobs`.
+                let stage_name = format!(
+                    ".eden-paste-stage-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or_default()
+                );
+                jobs.push(RobocopyJobSpec {
+                    source_dir: parent,
+                    dest_dir: target_dir.join(stage_name),
+                    file_names: vec![name],
+                    is_folder_job: false,
+                    is_move: is_cut,
+                    bytes,
+                    rename_to: Some(new_name),
+                });
+            } else {
+                files_by_parent.entry(parent).or_default().push(name);
+            }
         }
     }
 
@@ -103,10 +160,45 @@ pub fn build_jobs(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> (Vec<Ro
             is_folder_job: false,
             is_move: is_cut,
             bytes,
+            rename_to: None,
         });
     }
 
     (jobs, total_bytes)
+}
+
+/// Finds the first `<stem>-NNN<ext>` (files) or `<name>-NNN` (folders) that
+/// doesn't already exist in `target_dir`, starting at `-001` - the format
+/// the user asked for. Falls back to a timestamp-based suffix past `-999`,
+/// which should never actually happen in practice.
+pub fn next_available_name(target_dir: &Path, name: &str) -> String {
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()));
+
+    for n in 1..=999u32 {
+        let candidate = match &ext {
+            Some(ext) => format!("{stem}-{n:03}{ext}"),
+            None => format!("{stem}-{n:03}"),
+        };
+        if !target_dir.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+
+    let fallback_suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    match &ext {
+        Some(ext) => format!("{stem}-{fallback_suffix}{ext}"),
+        None => format!("{stem}-{fallback_suffix}"),
+    }
 }
 
 fn spawn_job(job: &RobocopyJobSpec) -> std::io::Result<Child> {
@@ -263,6 +355,33 @@ fn run_jobs(
                         let _ = tx.send(RobocopyUpdate::Finished(RoboFinish::Failed));
                         wake();
                         return;
+                    }
+                    // A rename job copied into an isolated staging
+                    // subdirectory (see `build_jobs`) precisely so this
+                    // step never has to touch - let alone overwrite -
+                    // whatever pre-existing file the user chose "Rename"
+                    // specifically to keep. Move the finished copy out to
+                    // its real name in the actual target directory, then
+                    // remove the now-empty staging folder.
+                    if let Some(new_name) = &job.rename_to {
+                        if let Some(original_name) = job.file_names.first() {
+                            let final_dir = job
+                                .dest_dir
+                                .parent()
+                                .map(Path::to_path_buf)
+                                .unwrap_or_else(|| job.dest_dir.clone());
+                            if std::fs::rename(
+                                job.dest_dir.join(original_name),
+                                final_dir.join(new_name),
+                            )
+                            .is_err()
+                            {
+                                let _ = tx.send(RobocopyUpdate::Finished(RoboFinish::Failed));
+                                wake();
+                                return;
+                            }
+                            let _ = std::fs::remove_dir(&job.dest_dir);
+                        }
                     }
                     *completed_bytes_base.lock().unwrap() += job.bytes;
                     {

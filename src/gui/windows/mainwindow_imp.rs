@@ -34,6 +34,7 @@ use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
@@ -247,13 +248,24 @@ pub struct PendingPaste {
     side: SplitSide,
 }
 
+/// The user's choice in the paste-conflict modal - see
+/// `PasteConflictPrompt` and `MainWindow::handle_paste_conflict_resolution`.
+/// "Cancel" isn't a variant here since it's handled inline by the modal
+/// (just clears `pending_paste_conflict`, nothing to resolve).
+#[derive(Clone, Copy)]
+pub enum PasteConflictAction {
+    Replace,
+    Skip,
+    Rename,
+}
+
 /// A paste `paste_clipboard_native` held back because one or more source
 /// items share a name with something already in the destination - robocopy
 /// has no interactive prompt of its own (unlike `IFileOperation`, which
 /// shows the native "This destination already has a file named..." dialog),
 /// so this is EdenExplorer's own equivalent. Resolved by the user picking
-/// Replace/Skip/Cancel in the modal drawn from this state (see
-/// `mainwindow.rs`'s update loop); "Replace" and "Skip" both then call
+/// Replace/Skip/Rename/Cancel in the modal drawn from this state (see
+/// `mainwindow.rs`'s update loop); Replace/Skip/Rename all then call
 /// `paste_clipboard_native`'s resume half with the resolved path list.
 pub struct PasteConflictPrompt {
     pub paths: Vec<PathBuf>,
@@ -1276,13 +1288,22 @@ impl MainWindow {
             return;
         }
 
-        self.start_robocopy_paste(paths, target_dir, before_entries, is_cut, side);
+        self.start_robocopy_paste(
+            paths,
+            target_dir,
+            before_entries,
+            is_cut,
+            side,
+            HashMap::new(),
+        );
     }
 
     /// Actually kicks off the background robocopy job and its notification/
     /// bookkeeping entries - shared by the no-conflict fast path in
-    /// `paste_clipboard_native` and by the Replace/Skip resolution of a
-    /// `PasteConflictPrompt` (see `handle_paste_conflict_resolution`).
+    /// `paste_clipboard_native` and by the Replace/Skip/Rename resolution of
+    /// a `PasteConflictPrompt` (see `handle_paste_conflict_resolution`).
+    /// `renames` maps a source path to the name it should be given in
+    /// `target_dir` instead of its own name - see `core::robocopy::build_jobs`.
     fn start_robocopy_paste(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1290,12 +1311,14 @@ impl MainWindow {
         before_entries: HashSet<PathBuf>,
         is_cut: bool,
         side: SplitSide,
+        renames: HashMap<PathBuf, String>,
     ) {
         if paths.is_empty() {
             return;
         }
 
-        let (jobs, total_bytes) = crate::core::robocopy::build_jobs(&paths, &target_dir, is_cut);
+        let (jobs, total_bytes) =
+            crate::core::robocopy::build_jobs(&paths, &target_dir, is_cut, &renames);
 
         let notification_id = self.notifications_state.start_operation(
             if is_cut {
@@ -1323,28 +1346,49 @@ impl MainWindow {
         );
     }
 
-    /// Applies the user's Replace/Skip choice from the paste-conflict modal
-    /// and starts the (possibly filtered) paste. `replace: false` drops
-    /// every source item whose name collided - if that empties the list
-    /// entirely, `start_robocopy_paste` is a no-op, matching "Skip
-    /// Existing" when literally everything was a duplicate.
-    pub fn handle_paste_conflict_resolution(&mut self, replace: bool) {
+    /// Applies the user's Replace/Skip/Rename choice from the paste-conflict
+    /// modal and starts the (possibly filtered/renamed) paste.
+    /// `Skip` drops every source item whose name collided - if that empties
+    /// the list entirely, `start_robocopy_paste` is a no-op, matching "Skip
+    /// Existing" when literally everything was a duplicate. `Rename` keeps
+    /// every item, computing a fresh `<name>-001`-style name (see
+    /// `core::robocopy::next_available_name`) for each one that collided.
+    pub fn handle_paste_conflict_resolution(&mut self, action: PasteConflictAction) {
         let Some(prompt) = self.pending_paste_conflict.take() else {
             return;
         };
 
-        let paths = if replace {
-            prompt.paths
-        } else {
-            prompt
+        let is_conflicting = |p: &Path| {
+            p.file_name()
+                .map(|n| {
+                    prompt
+                        .conflicting_names
+                        .iter()
+                        .any(|c| c == n.to_string_lossy().as_ref())
+                })
+                .unwrap_or(false)
+        };
+
+        let mut renames = HashMap::new();
+        let paths = match action {
+            PasteConflictAction::Replace => prompt.paths,
+            PasteConflictAction::Skip => prompt
                 .paths
                 .into_iter()
-                .filter(|p| {
-                    p.file_name()
-                        .map(|n| !prompt.conflicting_names.iter().any(|c| c == n.to_string_lossy().as_ref()))
-                        .unwrap_or(true)
-                })
-                .collect()
+                .filter(|p| !is_conflicting(p))
+                .collect(),
+            PasteConflictAction::Rename => {
+                for path in &prompt.paths {
+                    if is_conflicting(path) {
+                        if let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) {
+                            let new_name =
+                                crate::core::robocopy::next_available_name(&prompt.target_dir, &name);
+                            renames.insert(path.clone(), new_name);
+                        }
+                    }
+                }
+                prompt.paths
+            }
         };
 
         self.start_robocopy_paste(
@@ -1353,10 +1397,11 @@ impl MainWindow {
             prompt.before_entries,
             prompt.is_cut,
             prompt.side,
+            renames,
         );
     }
 
-    /// Draws the Replace/Skip/Cancel modal for a paste held back by
+    /// Draws the Replace/Skip/Rename/Cancel modal for a paste held back by
     /// `paste_clipboard_native` because of a name collision - a no-op when
     /// there's nothing pending. Called once per frame from the update loop.
     pub fn draw_paste_conflict_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
@@ -1375,12 +1420,19 @@ impl MainWindow {
             (count, preview, more)
         };
 
-        let mut resolution: Option<bool> = None;
+        let mut resolution: Option<PasteConflictAction> = None;
 
+        // No `.fixed_size(...)` here on purpose - an earlier version forced
+        // a fixed 460x260 regardless of how much content there actually
+        // was, which left a large dead gap below the buttons whenever the
+        // conflict list was short (egui top-aligns content in a Window, so
+        // extra forced height just becomes empty space at the bottom).
+        // `min_width` keeps it from looking cramped for a 1-2 item list
+        // without forcing a tall height nothing needs.
         egui::Window::new(self.i18n.tr("paste_conflict_title"))
             .collapsible(false)
             .resizable(false)
-            .fixed_size([420.0, 260.0])
+            .min_width(420.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .frame(
                 egui::Frame::popup(&ctx.style_of(ctx.theme()))
@@ -1395,8 +1447,17 @@ impl MainWindow {
                 ui.add_space(6.0);
                 ui.separator();
                 ui.add_space(4.0);
+                // Sized to the actual row count (capped at 6: 5 names + a
+                // possible "+N more" line) instead of a flat 100px - a
+                // flat cap reserved that much space even for a 1-2 item
+                // list, which is what left a gap between the button row
+                // and the window's bottom edge (a `ScrollArea` still
+                // claims its full `max_height` up front here, it doesn't
+                // shrink to whatever ends up actually drawn inside it).
+                let row_count = preview.len() + if more > 0 { 1 } else { 0 };
+                let list_height = (row_count as f32 * 18.0).clamp(18.0, 100.0);
                 egui::ScrollArea::vertical()
-                    .max_height(100.0)
+                    .max_height(list_height)
                     .show(ui, |ui| {
                         for name in &preview {
                             eden_text_label(ui, palette, name);
@@ -1412,10 +1473,20 @@ impl MainWindow {
                 ui.add_space(10.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if eden_button(ui, palette, &self.i18n.tr("paste_conflict_replace")).clicked() {
-                        resolution = Some(true);
+                        resolution = Some(PasteConflictAction::Replace);
                     }
                     if eden_button(ui, palette, &self.i18n.tr("paste_conflict_skip")).clicked() {
-                        resolution = Some(false);
+                        resolution = Some(PasteConflictAction::Skip);
+                    }
+                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_rename"))
+                        .on_hover_text(
+                            egui::RichText::new(self.i18n.tr("tooltip_paste_conflict_rename"))
+                                .size(palette.tooltip_text_size)
+                                .color(palette.tooltip_text_color),
+                        )
+                        .clicked()
+                    {
+                        resolution = Some(PasteConflictAction::Rename);
                     }
                     if eden_button(ui, palette, &self.i18n.tr("cancel")).clicked() {
                         self.pending_paste_conflict = None;
@@ -1423,8 +1494,8 @@ impl MainWindow {
                 });
             });
 
-        if let Some(replace) = resolution {
-            self.handle_paste_conflict_resolution(replace);
+        if let Some(action) = resolution {
+            self.handle_paste_conflict_resolution(action);
         }
     }
 

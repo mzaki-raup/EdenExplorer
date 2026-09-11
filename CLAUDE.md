@@ -377,6 +377,63 @@ PowerShell process) rather than the app's own code - if you're using the
   path *and* that the item about to be acted on is actually selected -
   every other test in this file that did that caught problems immediately
   and safely; every incident happened on a step that skipped it.
+- **The paste-conflict modal's first "Rename" implementation silently
+  destroyed the very file it was supposed to preserve.** Robocopy always
+  writes a copy under its *source* filename - it has no destination-rename
+  option. The first cut pointed a rename job's `dest_dir` straight at the
+  real target directory (same as every other job), meaning robocopy wrote
+  the new copy under the *original* colliding name first - directly
+  overwriting the pre-existing file - and only *then* renamed the fresh
+  copy to `<name>-001`. Net effect: the old file's content was gone, and
+  the new copy just ended up under a different name - "Rename" behaved
+  exactly like "Replace" from the user's perspective, which is what got
+  reported. Root-caused by reasoning through the job's actual robocopy
+  invocation rather than trusting a live test (this one has since chained
+  through unrelated navigation problems every time it's been attempted -
+  see the entries above and below). Fixed by staging a rename job's copy
+  in a fresh, guaranteed-empty subdirectory of the target dir instead - a
+  freshly-invented folder name can never collide with the file being
+  preserved - and only moving the finished copy out to its final `-001`
+  name (removing the empty staging folder afterward) once robocopy has
+  fully finished, meaning the original file is never opened for writing
+  at any point. If another "conflict resolution" style feature gets added
+  later, check for exactly this shape of bug: does a "keep both" or
+  "rename" path *ever* let the copy engine target the same path the
+  original occupies, even transiently mid-operation?
+- **A `ScrollArea::vertical().max_height(N)` reserves the full `N` up
+  front regardless of how much it actually ends up drawing inside it** -
+  it does not shrink to fit a shorter list. The paste-conflict modal used
+  a flat `max_height(100.0)` for a "which items collided" list that's
+  usually 1-3 lines, which (combined with an `egui::Window` that has
+  nothing else forcing its height) left a visible gap between the button
+  row and the window's bottom edge for any list shorter than what 100px
+  actually holds. Two separate things had to be fixed here, not one: an
+  earlier `.fixed_size([w, h])` on the `Window` itself (forces exact
+  height no matter what - removed, replaced with `.min_width` only so it
+  can't look too narrow for a 1-item list), *and* the ScrollArea's own
+  flat max_height (replaced with a height computed from the actual row
+  count, capped at the same ceiling). Fixing only the `Window`'s sizing
+  looked complete after a code read but the gap was still there, because
+  it was actually two independent sources of unclaimed space stacking on
+  top of each other - if a dialog still looks like it has dead space
+  after removing a `fixed_size`, check every `ScrollArea`/fixed-height
+  child inside it too, not just the `Window` call itself.
+- **A background handler wired up only inside the "has items" branch of
+  a view silently does nothing for the "folder is empty" branch, even
+  when the empty-state placeholder is drawn in the exact same visual
+  area.** The Details/Detail-Preview views' existing double-click-
+  background-to-navigate-up feature lived entirely inside `if
+  !visible_items_empty { ... }` (it's wired through
+  `table_background_response`, which only makes sense once there's an
+  actual table), so double-clicking the "This folder is empty" text did
+  nothing at all - not a broken gesture, a code path that was never
+  reached. When adding an interaction handler that's meant to apply
+  "whenever this general area is shown", double check it isn't
+  accidentally scoped to only one of that area's rendering branches
+  (populated vs. empty, loading vs. loaded, etc.) - grep for where the
+  early-return/placeholder branch is and confirm the handler's scope
+  actually covers it, rather than assuming it does because they're drawn
+  in the same physical space.
 
 ## Operational Instructions
 

@@ -158,6 +158,7 @@ pub fn draw_item_viewer(
     }
 
     if visible_items_empty && !is_custom_layout {
+        let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
@@ -165,6 +166,25 @@ pub fn draw_item_viewer(
                 ui.label(i18n.tr("folder_is_empty"));
             }
         });
+
+        // The populated-folder double-click-to-go-up handler below lives
+        // inside the `!visible_items_empty` table-drawing branch (it's
+        // wired through `table_background_response`, which only makes
+        // sense once there's a table), so an empty folder never reached
+        // it at all - double-clicking anywhere in the "This folder is
+        // empty" area silently did nothing. This mirrors just the
+        // navigate-up behavior for that case, on the same settings gate.
+        if !modal_input_blocked
+            && !is_recycle_bin_view
+            && settings_window.current_settings.double_click_navigates_up
+        {
+            let empty_resp =
+                ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
+            if empty_resp.double_clicked() {
+                tabbar_action.get_or_insert_with(Default::default).nav =
+                    Some(ItemViewerNavAction::Up);
+            }
+        }
     }
 
     if drag_active {
@@ -312,6 +332,7 @@ pub fn draw_item_viewer(
                               preview_selection: &mut Option<PathBuf>|
      -> Option<ItemViewerAction> {
         if visible_items_empty && is_detail_preview {
+            let empty_rect = ui.available_rect_before_wrap();
             ui.centered_and_justified(|ui| {
                 if is_loading && files.is_empty() {
                     ui.add(egui::Spinner::new().size(28.0));
@@ -319,6 +340,24 @@ pub fn draw_item_viewer(
                     ui.label(i18n.tr("folder_is_empty"));
                 }
             });
+
+            // See the matching comment on the plain-Details empty case
+            // above - the populated-folder handler lives inside the
+            // `!visible_items_empty` branch below and never runs here.
+            if !modal_input_blocked
+                && !is_recycle_bin_view
+                && settings_window.current_settings.double_click_navigates_up
+            {
+                let empty_resp = ui.interact(
+                    empty_rect,
+                    ui.id().with("empty_folder_bg_detail_preview"),
+                    egui::Sense::click(),
+                );
+                if empty_resp.double_clicked() {
+                    tabbar_action.get_or_insert_with(Default::default).nav =
+                        Some(ItemViewerNavAction::Up);
+                }
+            }
         }
 
         let mut current_hovered_drop_target: Option<PathBuf> = None;
