@@ -386,6 +386,41 @@ pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egu
     ui.button(egui::RichText::new(text).color(palette.text_normal))
 }
 
+/// A dialog's single highlighted/recommended action - filled with the
+/// user's accent color so it reads as the default choice at a glance.
+pub fn primary_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
+    apply_eden_text_overrides(ui, palette);
+    ui.add(
+        Button::new(RichText::new(text).color(Color32::WHITE))
+            .fill(palette.primary)
+            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    )
+}
+
+/// A dialog action that's valid but not the recommended one - outlined
+/// rather than filled, so it doesn't compete with the primary button.
+pub fn secondary_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
+    apply_eden_text_overrides(ui, palette);
+    ui.add(
+        Button::new(RichText::new(text).color(palette.text_normal))
+            .stroke(Stroke::new(1.0, palette.borders_default))
+            .fill(Color32::TRANSPARENT)
+            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    )
+}
+
+/// A dialog's lowest-emphasis action (Cancel) - text only, no fill or
+/// border, so it doesn't visually compete with the real choices.
+pub fn ghost_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
+    apply_eden_text_overrides(ui, palette);
+    ui.add(
+        Button::new(RichText::new(text).color(palette.text_normal.gamma_multiply(0.7)))
+            .fill(Color32::TRANSPARENT)
+            .stroke(Stroke::NONE)
+            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    )
+}
+
 pub fn eden_toggle_button(
     ui: &mut egui::Ui,
     palette: &ThemePalette,

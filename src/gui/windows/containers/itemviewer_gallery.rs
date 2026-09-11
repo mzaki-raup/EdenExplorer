@@ -319,10 +319,14 @@ pub fn draw_gallery_view(
                         });
                     }
 
-                    // See the matching fix/comment in itemviewer.rs - this
-                    // never got reset after a drop, leaving the drag ghost
-                    // and drop-target highlight stuck on screen.
+                    // See the matching fix/comment in itemviewer.rs - clearing
+                    // `active` alone isn't enough, since the per-tile re-arm
+                    // check above re-flips it true once the pointer drifts
+                    // >4px from a leftover `start_pos`. Clear `start_pos` and
+                    // `source_items` too.
                     drag_state.active = false;
+                    drag_state.start_pos = None;
+                    drag_state.source_items.clear();
                 }
 
                 if !modal_input_blocked {

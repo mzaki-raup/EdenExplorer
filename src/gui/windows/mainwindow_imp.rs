@@ -1405,7 +1405,10 @@ impl MainWindow {
     /// `paste_clipboard_native` because of a name collision - a no-op when
     /// there's nothing pending. Called once per frame from the update loop.
     pub fn draw_paste_conflict_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
-        use crate::core::utils::widgets::{eden_button, eden_text_label};
+        use crate::core::utils::widgets::{
+            ghost_dialog_button, primary_dialog_button, secondary_dialog_button,
+        };
+        use egui_phosphor::regular;
 
         // Cloned out inside its own block so this borrow of
         // `self.pending_paste_conflict` ends before the modal closure below,
@@ -1421,81 +1424,200 @@ impl MainWindow {
         };
 
         let mut resolution: Option<PasteConflictAction> = None;
+        let mut cancelled = false;
 
-        // Tried `.auto_sized()` here to fight the "old size stuck around"
-        // problem below, but it made things much worse: an auto-sized
-        // Window measures its content against a practically-unbounded
-        // available rect, and the nested `ScrollArea` responded to that by
-        // claiming a large chunk of it - the modal ballooned to nearly the
-        // whole app window instead of shrinking. Reverted `.auto_sized()`
-        // and dropped the `ScrollArea` entirely instead (it only ever held
-        // up to 6 short lines - a fixed cap, not something that actually
-        // needs scrolling), which removes the interaction that caused the
-        // blowup in the first place.
-        //
-        // The real fix for "this Window remembers an old, larger size"
-        // (egui keys that memory by the Window's Id, which defaults to its
-        // title - a fixed string reused every time this modal opens) is to
-        // fold `row_count` into the Id instead: whenever the conflict list
-        // is a different length than last time, egui treats it as a
-        // "new" window with no remembered size and sizes fresh from
-        // content; same length reuses the cached size, which is correct
-        // anyway since it needed the same height last time too.
-        let row_count = preview.len() + if more > 0 { 1 } else { 0 };
-        egui::Window::new(self.i18n.tr("paste_conflict_title"))
-            .id(egui::Id::new("paste_conflict_modal").with(row_count))
-            .collapsible(false)
-            .resizable(false)
-            .min_width(420.0)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .frame(
-                egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                    .corner_radius(egui::CornerRadius::same(8)),
-            )
+        // Dimming scrim behind the dialog, same pattern as the About
+        // window's `modal_bg` - clicking it cancels, matching the Cancel
+        // button rather than silently doing nothing.
+        let scrim_clicked = egui::Area::new(egui::Id::new("paste_conflict_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
             .show(ctx, |ui| {
-                eden_text_label(
-                    ui,
-                    palette,
-                    &format!("{} {}", count, self.i18n.tr("paste_conflict_message")),
-                );
-                ui.add_space(6.0);
-                ui.separator();
-                ui.add_space(4.0);
-                for name in &preview {
-                    eden_text_label(ui, palette, name);
-                }
-                if more > 0 {
-                    eden_text_label(
-                        ui,
-                        palette,
-                        &format!("+ {more} {}", self.i18n.tr("paste_conflict_more")),
-                    );
-                }
-                ui.add_space(10.0);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_replace")).clicked() {
-                        resolution = Some(PasteConflictAction::Replace);
-                    }
-                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_skip")).clicked() {
-                        resolution = Some(PasteConflictAction::Skip);
-                    }
-                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_rename"))
-                        .on_hover_text(
-                            egui::RichText::new(self.i18n.tr("tooltip_paste_conflict_rename"))
-                                .size(palette.tooltip_text_size)
-                                .color(palette.tooltip_text_color),
-                        )
-                        .clicked()
-                    {
-                        resolution = Some(PasteConflictAction::Rename);
-                    }
-                    if eden_button(ui, palette, &self.i18n.tr("cancel")).clicked() {
-                        self.pending_paste_conflict = None;
-                    }
-                });
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                ui.interact(
+                    rect,
+                    ui.id().with("paste_conflict_scrim_click"),
+                    egui::Sense::click(),
+                )
+                .clicked()
+            })
+            .inner;
+        if scrim_clicked {
+            cancelled = true;
+        }
+
+        // `egui::Window` is the wrong tool here and every previous attempt
+        // at this modal (a forced `fixed_size`, a flat-height `ScrollArea`,
+        // `.auto_sized()`, keying the Id by row count) was fighting the
+        // same root problem from a different angle: `Window` remembers its
+        // rendered size *per Id*, in the running app's memory, indefinitely
+        // - and once a bad size gets recorded under a given Id (e.g. from
+        // the `.auto_sized()` + `ScrollArea` combination that briefly
+        // blew this up to nearly full-window), every later `show()` call
+        // with that same Id keeps reusing it, no matter how correct the
+        // surrounding code becomes, because nothing ever tells egui to
+        // forget it. `egui::Area` (the same primitive already used for the
+        // hamburger menu and the notifications panel elsewhere in this
+        // file/module) has no such memory: it has no "remembered size" to
+        // go stale in the first place, since it lays out fresh from
+        // content every single frame. Switching to it sidesteps the whole
+        // class of bug instead of chasing another angle on it.
+        let popup_width = 440.0;
+        egui::Area::new(egui::Id::new("paste_conflict_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(egui::Margin::same(18))
+                    .shadow(egui::epaint::Shadow {
+                        offset: [0, 8],
+                        blur: 24,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(90),
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(popup_width);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                let icon_diameter = 34.0;
+                                let (icon_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(icon_diameter, icon_diameter),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(
+                                    icon_rect.center(),
+                                    icon_diameter / 2.0,
+                                    palette.drive_usage_warning.linear_multiply(0.18),
+                                );
+                                ui.painter().text(
+                                    icon_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    regular::WARNING_CIRCLE,
+                                    egui::FontId::proportional(18.0),
+                                    palette.drive_usage_warning,
+                                );
+                                ui.add_space(10.0);
+                                ui.vertical(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(self.i18n.tr("paste_conflict_title"))
+                                            .strong()
+                                            .size(palette.text_size + 2.0)
+                                            .color(ui.visuals().text_color()),
+                                    );
+                                    ui.add_space(2.0);
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} {}",
+                                            count,
+                                            self.i18n.tr("paste_conflict_message")
+                                        ))
+                                        .size(palette.text_size)
+                                        .color(palette.text_normal.gamma_multiply(0.75)),
+                                    );
+                                });
+                            });
+
+                            ui.add_space(14.0);
+
+                            egui::Frame::NONE
+                                .fill(palette.row_bg)
+                                .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+                                .stroke(egui::Stroke::new(1.0, palette.borders_default))
+                                .inner_margin(egui::Margin::symmetric(10, 6))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    for (i, name) in preview.iter().enumerate() {
+                                        if i > 0 {
+                                            ui.add_space(2.0);
+                                        }
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(regular::FILE)
+                                                    .size(palette.text_size + 1.0)
+                                                    .color(palette.icon_color),
+                                            );
+                                            ui.add_space(6.0);
+                                            ui.label(
+                                                egui::RichText::new(name)
+                                                    .size(palette.text_size)
+                                                    .color(palette.text_normal),
+                                            );
+                                        });
+                                    }
+                                    if more > 0 {
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "+ {more} {}",
+                                                self.i18n.tr("paste_conflict_more")
+                                            ))
+                                            .size(palette.text_size)
+                                            .italics()
+                                            .color(palette.text_normal.gamma_multiply(0.6)),
+                                        );
+                                    }
+                                });
+
+                            ui.add_space(16.0);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if primary_dialog_button(
+                                        ui,
+                                        palette,
+                                        &self.i18n.tr("paste_conflict_rename"),
+                                    )
+                                    .on_hover_text(
+                                        egui::RichText::new(
+                                            self.i18n.tr("tooltip_paste_conflict_rename"),
+                                        )
+                                        .size(palette.tooltip_text_size)
+                                        .color(palette.tooltip_text_color),
+                                    )
+                                    .clicked()
+                                    {
+                                        resolution = Some(PasteConflictAction::Rename);
+                                    }
+                                    ui.add_space(6.0);
+                                    if secondary_dialog_button(
+                                        ui,
+                                        palette,
+                                        &self.i18n.tr("paste_conflict_skip"),
+                                    )
+                                    .clicked()
+                                    {
+                                        resolution = Some(PasteConflictAction::Skip);
+                                    }
+                                    ui.add_space(6.0);
+                                    if secondary_dialog_button(
+                                        ui,
+                                        palette,
+                                        &self.i18n.tr("paste_conflict_replace"),
+                                    )
+                                    .clicked()
+                                    {
+                                        resolution = Some(PasteConflictAction::Replace);
+                                    }
+
+                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                        if ghost_dialog_button(ui, palette, &self.i18n.tr("cancel"))
+                                            .clicked()
+                                        {
+                                            cancelled = true;
+                                        }
+                                    });
+                                },
+                            );
+                        });
+                    });
             });
 
-        if let Some(action) = resolution {
+        if cancelled {
+            self.pending_paste_conflict = None;
+        } else if let Some(action) = resolution {
             self.handle_paste_conflict_resolution(action);
         }
     }
@@ -3439,58 +3561,70 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 sources,
                 target_dir,
             } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
-                    }
-
-                    file_op.PerformOperations().ok();
+                // Dropping an item onto the empty background of the folder
+                // it's already in (e.g. an accidental small drag past the
+                // 4px threshold) resolves `target_dir` to that item's own
+                // parent via the "drop on background = current dir" fallback
+                // in itemviewer.rs/itemviewer_gallery.rs. Moving something
+                // into the folder it's already in is a no-op, not a real
+                // move - filter those out before either the conflict check
+                // (source == dest isn't a "conflict" to ask Replace/Skip/
+                // Rename about) or the native call used to hit this exact
+                // case and surface a raw "source and destination filenames
+                // are the same" Windows dialog.
+                let sources: Vec<PathBuf> = sources
+                    .into_iter()
+                    .filter(|s| s.parent() != Some(target_dir.as_path()))
+                    .collect();
+                if sources.is_empty() {
+                    return;
                 }
 
-                explorer.notifications_state.record_finished(
-                    crate::gui::windows::containers::notifications::FileOpKind::Move,
-                    sources.len(),
-                    path_display_label(&target_dir),
-                    crate::gui::windows::containers::notifications::FileOpStatus::Completed,
-                );
+                // Route drag-and-drop moves through the same conflict-check
+                // + robocopy pipeline as clipboard paste (`paste_clipboard_native`)
+                // instead of calling `IFileOperation::MoveItem` directly. The
+                // native call used to let `IFileOperation` show its own
+                // "confirm replace" dialog on a name collision - a jarring,
+                // differently-styled prompt that also bypassed the app's
+                // Replace/Skip/Rename choices entirely. Reusing this pipeline
+                // gives drag-and-drop the exact same themed conflict modal,
+                // safe rename-on-collision staging, and progress notification
+                // that paste already has.
+                let before_entries = MainWindow::directory_child_paths(&target_dir);
+                let conflicting_names: Vec<String> = sources
+                    .iter()
+                    .filter_map(|p| {
+                        let name = p.file_name()?.to_string_lossy().to_string();
+                        target_dir.join(&name).exists().then_some(name)
+                    })
+                    .collect();
 
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
-                    explorer.persist_tags();
+                if !conflicting_names.is_empty() {
+                    explorer.pending_paste_conflict = Some(PasteConflictPrompt {
+                        paths: sources,
+                        target_dir,
+                        before_entries,
+                        is_cut: true,
+                        side,
+                        conflicting_names,
+                    });
+                } else {
+                    explorer.start_robocopy_paste(
+                        sources,
+                        target_dir,
+                        before_entries,
+                        true,
+                        side,
+                        HashMap::new(),
+                    );
                 }
 
                 {
-                    let side = explorer.focused_split;
                     let view = explorer.active_tab_mut().view_mut(side);
                     view.explorer_state.selected_paths.clear();
                     view.explorer_state.selection_anchor = None;
                     view.explorer_state.selection_focus = None;
                 }
-                explorer.load_path();
             }
             ItemViewerAction::ColumnSizesChanged => {
                 let snapshot =

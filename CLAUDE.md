@@ -489,6 +489,76 @@ PowerShell process) rather than the app's own code - if you're using the
   to resize itself as its content's *row count* changes, prefer keying
   its `Id` off that count over reaching for `.auto_sized()` - especially
   if anything inside it is a `ScrollArea`.
+- **Keying an `egui::Window`'s `Id` off a value that was already bad once
+  doesn't fix it - `egui::Window`'s remembered-size cache is keyed by Id
+  forever, per running session, and a fresh Id-generation *scheme* doesn't
+  help if the specific Id it produces for the current content already has
+  a bad size cached under it from before the scheme changed.** The
+  paste-conflict modal's "gap below the buttons" bug survived three
+  separate fix attempts (removing a forced `fixed_size`, a dynamic-height
+  `ScrollArea`, `.auto_sized()`, then keying `.id()` by row count - see
+  the entries above) because each one still used `egui::Window`, and the
+  user kept reporting the exact same gap after every one of them ("still
+  not fix!!"). The actual fix was to stop using `Window` for this modal
+  entirely and rebuild it on `egui::Area` + `egui::Frame::popup` (the same
+  primitive already used for the hamburger menu and the notifications
+  panel elsewhere in this codebase) - `Area` lays out fresh from content
+  every frame with no persisted size at all, so there is no cache to go
+  stale in the first place. If a `Window`'s size is misbehaving and a
+  couple of targeted fixes haven't stuck, don't reach for a fourth
+  Id-keying variation - switch to `Area` instead of continuing to fight
+  `Window`'s size memory from a new angle. Also worth remembering for next
+  time: after telling the user something is fixed, verify it live with an
+  actual fresh screenshot before saying so again - repeating "should be
+  fixed" based on code review alone (without re-testing) is what turned a
+  three-line bug into a session-long trust problem.
+- **Clearing `drag_state.active` on drop isn't enough by itself if
+  `drag_state.start_pos` is left set - a stale `start_pos` re-arms the
+  drag on the very next frame.** The row/tile-level "has the drag exceeded
+  a 4px threshold" check (`itemviewer.rs` and `itemviewer_gallery.rs`,
+  near the `drag_started()` handling) only compares `start_pos` to the
+  pointer's current `hover_pos()` - it never checks whether the mouse
+  button is actually still down. The drop-completion reset (see the
+  "ghost/highlight stayed on screen" entry above) only cleared `active`,
+  not `start_pos` or `source_items`. Once the pointer's `hover_pos()` next
+  drifted more than 4px from that leftover `start_pos` - which happens on
+  essentially any subsequent mouse movement, drag or not - `active` got
+  flipped back to `true` with no real drag in progress, and the ghost/
+  highlight reappeared and then stuck permanently (each further pointer
+  move just re-armed it again). This is exactly why the user's report
+  ("still there... cursor not refresh to default state") survived what
+  looked like a correct fix in the code. The Escape-cancel handler in
+  `itemviewer_helper.rs` already cleared all three fields
+  (`active`/`source_items`/`start_pos`) correctly - it was the reference
+  pattern that the drop-completion reset should have matched from the
+  start. When resetting a gesture-tracking struct with multiple fields
+  that jointly define "is a drag in progress", clear *all* of them at
+  every exit point, not just the one field a `.active`-style check happens
+  to read - grep for every other place that reads the struct's fields to
+  make sure none of them can revive it from a half-cleared state.
+- **`ItemViewerAction::MoveItems` (drag-and-drop within the app) called
+  `IFileOperation::MoveItem` directly instead of going through the same
+  conflict-check the clipboard-paste path already had.** This meant a
+  drag-and-drop onto a folder containing a same-named item popped a raw
+  native Windows "confirm replace" dialog - differently styled from the
+  app's own paste-conflict modal and without its Replace/Skip/Rename
+  choices - and dropping an item onto the empty background of the folder
+  it was already in (an easy accidental gesture, since the background
+  drop-target fallback resolves to `current_dir` on any release over empty
+  space) resolved `target_dir` to that item's own parent and triggered
+  `IFileOperation`'s "the source and destination filenames are the same"
+  error dialog for what should have been a silent no-op. Fixed by routing
+  `MoveItems` through the exact same conflict-detection +
+  `start_robocopy_paste` pipeline `paste_clipboard_native` already used
+  (setting `pending_paste_conflict` on a collision, letting
+  `handle_paste_conflict_resolution` do the rest), and by filtering out
+  any source whose `parent()` already equals `target_dir` before doing
+  anything else. When a codebase has two separate code paths that both
+  ultimately mean "move/copy these items into this folder" (clipboard
+  paste vs. drag-and-drop), check whether one of them quietly skipped
+  work the other one already does correctly (conflict detection, safe
+  rename-on-collision staging, self-move filtering) rather than assuming
+  parity because the end result (files moved) looks the same.
 
 ## Operational Instructions
 
