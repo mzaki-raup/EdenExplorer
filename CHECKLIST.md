@@ -26,6 +26,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Show / hide hidden objects toggle |
 | Completed | Type-to-filter in the current directory with fuzzy matching |
 | Completed | Cached filter indices for performance |
+| Completed | Status bar below every view (item count, files, folders, total size, size-aware selection summary) — present in every view including tag views and independently in both panes of a split |
 
 ## Phase 2 — Tabs, panes & window management
 

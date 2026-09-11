@@ -281,6 +281,37 @@ PowerShell process) rather than the app's own code - if you're using the
   and `SendKeys` for modifier combos) rather than spending time trying to
   make `PostMessage` double-clicks reliable; that path has already been
   tried and doesn't work.
+- **A hardcoded fudge-factor added to one sibling's requested height in a
+  `left_to_right` layout inflates the whole row - and everything nested
+  below it - because egui lets a `Ui`'s `max_rect` auto-grow to fit an
+  oversized `allocate_ui_with_layout` request.** In
+  `mainwindow.rs`, the sidebar column was allocated with
+  `ui.available_height() + 15.5` (an old visual tweak, cause unknown/undocumented). Because
+  the sidebar and the explorer column are siblings in one `left_to_right`
+  row that fills the entire central panel, that `+15.5` grew the row's own
+  `max_rect` by ~15px past the real window bottom, and that inflated bound
+  then propagated all the way down through the split-pane rect computation
+  (`split_rect`/`primary_rect`/`secondary_rect`) into each pane's
+  `draw_tab_content`. The practical symptom: a newly added status-bar strip,
+  sized as an exact small row pinned to the bottom via
+  `StripBuilder::size(Size::exact(status_height))`, computed a `max_rect`
+  that ended a few pixels *below the actual OS window's bottom edge* - so
+  it painted into real, off-screen coordinates. Nothing rendered, not even
+  a hardcoded-color fill on the topmost `Order::Foreground` layer, because
+  the paint commands were genuinely outside the render surface, not merely
+  clipped or z-ordered wrong. Existing scrollable/growable content never
+  exposed this because a few extra px of phantom space at the bottom is
+  invisible when nothing is pinned exactly to it. Diagnosed by comparing
+  `ui.ctx().viewport_rect()` (the real window) against `ui.max_rect()` at
+  each layout stage from `CentralPanel::show` downward via temporary
+  `eprintln!`s, which showed the mismatch first appearing exactly at the
+  sidebar's `allocate_ui_with_layout` call. Fixed by removing the `+ 15.5`.
+  If a similar "nothing renders, even on the Foreground layer, even though
+  the code executes every frame" symptom shows up again, compare
+  `ui.max_rect()`/`ui.clip_rect()` against `ui.ctx().viewport_rect()` at
+  each layout nesting level before assuming a z-order/clipping bug - a
+  rect that's simply larger than the physical window won't render no matter
+  what layer it's painted on.
 
 ## Operational Instructions
 

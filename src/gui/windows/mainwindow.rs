@@ -696,7 +696,7 @@ impl eframe::App for MainWindow {
                             .stroke(egui::Stroke::new(1.5, palette.borders_default));
 
                         ui.allocate_ui_with_layout(
-                            egui::vec2(sidebar_width, ui.available_height() + 15.5),
+                            egui::vec2(sidebar_width, ui.available_height()),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| {
                                 egui::Frame::NONE.show(ui, |ui| {
