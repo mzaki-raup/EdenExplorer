@@ -47,6 +47,10 @@ pub struct AppSettings {
     pub pinned_tabs: Vec<PathBuf>,
     pub time_format_24h: bool,
     pub date_style: crate::core::fs::DateStyle,
+    /// `chrono` strftime pattern used when `date_style ==
+    /// DateStyle::Custom`. Ignored for every other style.
+    #[serde(default)]
+    pub custom_date_format: String,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
     pub language: String,

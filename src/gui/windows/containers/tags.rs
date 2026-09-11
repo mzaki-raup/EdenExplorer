@@ -597,6 +597,7 @@ pub fn draw_tag_view(
     file_type_cache: &mut HashMap<String, String>,
     date_style: DateStyle,
     time_format_24h: bool,
+    custom_date_format: &str,
 ) -> Option<ItemViewerAction> {
     let mut action = None;
 
@@ -639,7 +640,12 @@ pub fn draw_tag_view(
             };
             let size = metadata.as_ref().filter(|_| !is_dir).map(|m| m.len());
             let modified = metadata.as_ref().and_then(|m| m.modified().ok()).and_then(|t| {
-                filetime_to_string(system_time_to_filetime(t), date_style, time_format_24h)
+                filetime_to_string(
+                    system_time_to_filetime(t),
+                    date_style,
+                    time_format_24h,
+                    custom_date_format,
+                )
             });
 
             TagViewRow {

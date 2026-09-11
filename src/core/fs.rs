@@ -50,8 +50,16 @@ pub fn parse_tag_view_path(path: &Path) -> Option<u64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DateStyle {
     Iso,
+    /// Short numeric date. Deliberately dd/mm/yyyy, not the US m/d/yyyy the
+    /// variant name suggests - the name is kept as-is since it's persisted
+    /// via postcard by variant name and renaming it would need a migration
+    /// for no user-visible benefit.
     UsShort,
     Long,
+    /// User-supplied `chrono` strftime pattern (see `custom_date_format` in
+    /// settings) - falls back to `UsShort`'s format if the pattern is empty
+    /// or fails to format, so a bad/incomplete pattern never shows nothing.
+    Custom,
 }
 
 impl Default for DateStyle {
@@ -60,10 +68,13 @@ impl Default for DateStyle {
     }
 }
 
+const DEFAULT_SHORT_DATE_FMT: &str = "%d/%m/%Y";
+
 pub fn filetime_to_string(
     filetime: i64,
     date_style: DateStyle,
     time_format_24h: bool,
+    custom_date_format: &str,
 ) -> Option<String> {
     if filetime == 0 {
         return None;
@@ -78,15 +89,26 @@ pub fn filetime_to_string(
     let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
     let dt_local: DateTime<Local> = dt_utc.into();
 
-    let date_fmt = match date_style {
-        DateStyle::Iso => "%Y-%m-%d",
-        DateStyle::UsShort => "%-m/%-d/%Y",
-        DateStyle::Long => "%B %-d, %Y",
-    };
     let time_fmt = if time_format_24h {
         "%H:%M"
     } else {
         "%-I:%M %p"
+    };
+
+    if date_style == DateStyle::Custom && !custom_date_format.trim().is_empty() {
+        // A custom pattern may already embed its own time portion (or none
+        // at all) - honor exactly what the user typed instead of always
+        // appending the 12h/24h time format after it.
+        let formatted = format_with_pattern(&dt_local, custom_date_format);
+        if let Some(formatted) = formatted {
+            return Some(formatted);
+        }
+    }
+
+    let date_fmt = match date_style {
+        DateStyle::Iso => "%Y-%m-%d",
+        DateStyle::UsShort | DateStyle::Custom => DEFAULT_SHORT_DATE_FMT,
+        DateStyle::Long => "%B %-d, %Y",
     };
 
     Some(
@@ -94,6 +116,32 @@ pub fn filetime_to_string(
             .format(&format!("{date_fmt} {time_fmt}"))
             .to_string(),
     )
+}
+
+/// Renders the current moment with a custom pattern, for a live preview next
+/// to the pattern text field in Settings. Returns `None` if the pattern is
+/// empty or invalid, so the caller can show "invalid pattern" instead of a
+/// silently-wrong preview.
+pub fn preview_custom_date_format(pattern: &str) -> Option<String> {
+    if pattern.trim().is_empty() {
+        return None;
+    }
+    format_with_pattern(&Local::now(), pattern)
+}
+
+/// Applies a user-typed `chrono` strftime pattern, returning `None` if the
+/// pattern contains a specifier chrono can't parse (`StrftimeItems` surfaces
+/// that as an error item rather than panicking) - the caller falls back to
+/// the default short format in that case, so a malformed custom pattern
+/// degrades gracefully instead of showing garbled or missing dates.
+fn format_with_pattern(dt_local: &DateTime<Local>, pattern: &str) -> Option<String> {
+    use chrono::format::{Item, StrftimeItems};
+
+    if StrftimeItems::new(pattern).any(|item| matches!(item, Item::Error)) {
+        return None;
+    }
+
+    Some(dt_local.format(pattern).to_string())
 }
 
 /// Convert PathBuf -> UTF-16
@@ -238,6 +286,7 @@ pub fn scan_dir_async(
     tx: Sender<FileItem>,
     date_style: DateStyle,
     time_format_24h: bool,
+    custom_date_format: String,
 ) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
@@ -327,10 +376,18 @@ pub fn scan_dir_async(
                     let modified_time_filetime = *entry.LastWriteTime.QuadPart();
                     let created_time_filetime = *entry.CreationTime.QuadPart();
 
-                    let modified_time =
-                        filetime_to_string(modified_time_filetime, date_style, time_format_24h);
-                    let created_time =
-                        filetime_to_string(created_time_filetime, date_style, time_format_24h);
+                    let modified_time = filetime_to_string(
+                        modified_time_filetime,
+                        date_style,
+                        time_format_24h,
+                        &custom_date_format,
+                    );
+                    let created_time = filetime_to_string(
+                        created_time_filetime,
+                        date_style,
+                        time_format_24h,
+                        &custom_date_format,
+                    );
 
                     let modified_time_raw = if modified_time_filetime == 0 {
                         None
@@ -576,6 +633,7 @@ pub fn get_shell_item_metadata(
     item: &IShellItem,
     date_style: DateStyle,
     time_format_24h: bool,
+    custom_date_format: &str,
 ) -> (
     Option<u64>,
     Option<String>,
@@ -618,14 +676,14 @@ pub fn get_shell_item_metadata(
         )
     };
 
-    let modified_time =
-        modified_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+    let modified_time = modified_time_raw
+        .and_then(|ft| filetime_to_string(ft, date_style, time_format_24h, custom_date_format));
 
-    let created_time =
-        created_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+    let created_time = created_time_raw
+        .and_then(|ft| filetime_to_string(ft, date_style, time_format_24h, custom_date_format));
 
-    let deleted_time =
-        deleted_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+    let deleted_time = deleted_time_raw
+        .and_then(|ft| filetime_to_string(ft, date_style, time_format_24h, custom_date_format));
 
     let original_name = unsafe { original_name.and_then(|name| name.to_string().ok()) };
 

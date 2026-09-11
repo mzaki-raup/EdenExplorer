@@ -143,6 +143,7 @@ pub fn draw_tab_content(
                         file_type_cache,
                         settings_window.current_settings.date_style,
                         settings_window.current_settings.time_format_24h,
+                        &settings_window.current_settings.custom_date_format,
                     );
                 } else if view.display_mode == ItemViewerDisplayMode::Gallery {
                     pending_action = draw_item_viewer(

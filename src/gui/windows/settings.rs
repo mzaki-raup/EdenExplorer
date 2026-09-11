@@ -106,6 +106,7 @@ impl Default for AppSettings {
             pinned_tabs: Vec::new(),
             time_format_24h: false,
             date_style: DateStyle::default(),
+            custom_date_format: String::new(),
             sort_column: SortColumn::Name,
             sort_ascending: true,
             language: "en-US".to_string(),
@@ -677,6 +678,7 @@ fn draw_general_section(
                         DateStyle::Iso => i18n.tr("settings_datestyle_iso_label"),
                         DateStyle::UsShort => i18n.tr("settings_datestyle_us_short_label"),
                         DateStyle::Long => i18n.tr("settings_datestyle_long_label"),
+                        DateStyle::Custom => i18n.tr("settings_datestyle_custom_label"),
                     },
                     |ui| {
                         ui.selectable_value(
@@ -694,6 +696,11 @@ fn draw_general_section(
                             DateStyle::Long,
                             i18n.tr("settings_datestyle_long"),
                         );
+                        ui.selectable_value(
+                            &mut selected_style,
+                            DateStyle::Custom,
+                            i18n.tr("settings_datestyle_custom"),
+                        );
                     },
                 );
 
@@ -703,6 +710,55 @@ fn draw_general_section(
                 }
             },
         );
+
+        if settings.current_settings.date_style == DateStyle::Custom {
+            setting_row(
+                ui,
+                |ui| {
+                    setting_label(
+                        ui,
+                        &i18n.tr("settings_datestyle_custom_label"),
+                        Some((&i18n.tr("tooltip_settings_datestyle_custom"), palette)),
+                        palette,
+                    );
+                },
+                |ui| {
+                    let response = ui.add_sized(
+                        [SETTINGS_COMBO_WIDTH, ui.spacing().interact_size.y],
+                        egui::TextEdit::singleline(&mut settings.current_settings.custom_date_format)
+                            .hint_text(i18n.tr("settings_datestyle_custom_placeholder")),
+                    );
+                    if response.changed() {
+                        *action = Some(SettingsAction::ApplySettings);
+                    }
+                },
+            );
+
+            // Live preview (or an "invalid pattern" notice) directly under
+            // the field, so a typo is obvious immediately rather than only
+            // showing up later in the Modified/Created columns.
+            setting_row(
+                ui,
+                |ui| {
+                    ui.add_space(0.0);
+                },
+                |ui| {
+                    let preview =
+                        crate::core::fs::preview_custom_date_format(&settings.current_settings.custom_date_format);
+                    match preview {
+                        Some(text) => {
+                            ui.weak(text);
+                        }
+                        None => {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(220, 90, 90),
+                                i18n.tr("settings_datestyle_custom_invalid"),
+                            );
+                        }
+                    }
+                },
+            );
+        }
 
         ui.horizontal(|ui| {
             if setting_checkbox(

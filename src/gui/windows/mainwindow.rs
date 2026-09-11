@@ -134,6 +134,7 @@ impl Default for MainWindow {
             sort_ascending,
             language,
             date_style,
+            custom_date_format,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
@@ -157,6 +158,7 @@ impl Default for MainWindow {
             pinned_tabs: pinned_tabs.clone(),
             time_format_24h,
             date_style,
+            custom_date_format,
             sort_column,
             sort_ascending,
             language,
@@ -558,6 +560,7 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
                         self.settings_window.current_settings.date_style,
+                        &self.settings_window.current_settings.custom_date_format,
                         &self
                             .settings_window
                             .current_settings

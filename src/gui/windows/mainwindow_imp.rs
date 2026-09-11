@@ -571,6 +571,7 @@ impl MainWindow {
             self.settings_window.current_settings.sort_ascending,
             &self.settings_window.current_settings.language,
             self.settings_window.current_settings.date_style,
+            &self.settings_window.current_settings.custom_date_format,
             &self
                 .settings_window
                 .current_settings
@@ -739,6 +740,7 @@ impl MainWindow {
             tx,
             self.settings_window.current_settings.date_style,
             self.settings_window.current_settings.time_format_24h,
+            self.settings_window.current_settings.custom_date_format.clone(),
         );
         let folder_scanning_enabled = self
             .settings_window
@@ -876,6 +878,7 @@ impl MainWindow {
                     &item,
                     self.settings_window.current_settings.date_style,
                     self.settings_window.current_settings.time_format_24h,
+                    &self.settings_window.current_settings.custom_date_format,
                 );
 
                 recycle_items.push(FileItem::new(
@@ -1953,6 +1956,7 @@ impl MainWindow {
                         _sort_ascending,
                         _language,
                         _date_style,
+                        _custom_date_format,
                         _item_viewer_file_column_order,
                         _item_viewer_drive_column_order,
                         _recycle_bin_column_order,
