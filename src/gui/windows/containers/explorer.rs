@@ -270,6 +270,23 @@ pub fn draw_tab_content(
 
                     ui.spacing_mut().item_spacing.x = STATUS_ICON_GAP;
 
+                    // An explicit fixed inner margin, rather than relying on
+                    // `Align::Center` to split the row's extra height evenly -
+                    // the icon glyphs' own line-box metrics carry a lot more
+                    // empty space above the visible glyph than below it, so
+                    // an equal top/bottom margin still reads as "mostly
+                    // touching the bottom" once the glyph's own internal
+                    // lopsidedness is added on top. Skewing the margin
+                    // (less on top, more on bottom) compensates for that and
+                    // was tuned by pixel-sampling a live screenshot.
+                    egui::Frame::NONE
+                        .inner_margin(egui::Margin {
+                            left: 0,
+                            right: 0,
+                            top: (STATUS_BAR_VPAD - 4.0) as i8,
+                            bottom: (STATUS_BAR_VPAD + 4.0) as i8,
+                        })
+                        .show(ui, |ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(RIGHT_MARGIN);
 
@@ -329,6 +346,7 @@ pub fn draw_tab_content(
                             ui.label(RichText::new(selected_text).font(font_id.clone()).color(text_color));
                         }
                     });
+                        });
                 }
             });
         });

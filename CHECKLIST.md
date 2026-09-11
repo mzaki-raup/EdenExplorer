@@ -87,6 +87,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | User-defined custom context-menu commands with custom icons |
 | Completed | Auto-refresh of the file list after a custom command completes |
 | In-Progress | **Shift+Delete keyboard shortcut** — code path exists and is symmetric with the working plain-Delete path, but the Shift modifier has been measured as not reaching the handler at keypress time. "Delete Permanently" in the context menu is the reliable path today. *Next: root-cause the egui/winit modifier propagation, or document it as a platform limitation.* |
+| In-Progress | **Top-right notification bell + operation history panel** — Phase A complete and live-verified: bell button with an in-progress badge, click-to-open panel listing copy/move/delete operations (icon, item count, destination, status), a bottom-right completion toast, and Clear/Clear All. Wired to the *existing* `IFileOperation` engine (paste/cut-move shows a real in-progress transition since it already runs on a background thread; delete and drag-drop moves are still synchronous today, so they're recorded already-finished). *Next (Phase B): replace the copy/move/paste engine with a robocopy-backed one supporting multi-thread transfer, cancel, and restartable pause/resume, surfaced through this same panel - Delete stays on `IFileOperation`/Recycle Bin per the architecture decision recorded in this file's history.* |
 
 ## Phase 5 — Preview system
 

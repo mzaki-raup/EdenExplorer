@@ -14,6 +14,7 @@ use crate::gui::theme::{
 };
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
+use crate::gui::windows::containers::notifications::{draw_notifications_button, draw_toast, NotificationsState};
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
@@ -82,6 +83,9 @@ pub struct MainWindow {
     /// overhead (context-menu handlers, antivirus, cloud-sync overlay
     /// providers reacting to every item) rather than actual I/O.
     pub(crate) pending_paste: Option<crate::gui::windows::mainwindow_imp::PendingPaste>,
+    /// Tracked copy/move/delete operations shown by the top-right
+    /// notification bell - see `containers::notifications`.
+    pub(crate) notifications_state: NotificationsState,
 
     // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
@@ -297,6 +301,7 @@ impl Default for MainWindow {
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
             pending_paste: None,
+            notifications_state: NotificationsState::default(),
             theme_dirty: true,
             window_override_set: false,
             dragdrop: None,
@@ -884,6 +889,35 @@ impl eframe::App for MainWindow {
                                             egui::vec2(controls_width, 32.0),
                                         );
 
+                                        // Notification bell - sits just left of the window
+                                        // controls, in the same row, so it's genuinely in the
+                                        // app's top-right corner rather than buried in the
+                                        // sidebar's own topbar.
+                                        let bell_width = 40.0;
+                                        let bell_rect = egui::Rect::from_min_size(
+                                            egui::pos2(
+                                                controls_rect.min.x - bell_width,
+                                                controls_rect.min.y,
+                                            ),
+                                            egui::vec2(bell_width, controls_rect.height()),
+                                        );
+                                        ui.scope_builder(
+                                            egui::UiBuilder::new().max_rect(bell_rect),
+                                            |ui| {
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        draw_notifications_button(
+                                                            ui,
+                                                            &self.i18n,
+                                                            &palette,
+                                                            &mut self.notifications_state,
+                                                        );
+                                                    },
+                                                );
+                                            },
+                                        );
+
                                         ui.scope_builder(
                                             egui::UiBuilder::new().max_rect(controls_rect),
                                             |ui| {
@@ -1418,6 +1452,7 @@ impl eframe::App for MainWindow {
             tags_changed = true;
         }
         self.poll_pending_paste();
+        draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());

@@ -224,6 +224,15 @@ pub(crate) fn persist_directory_settings_snapshot(
     }
 }
 
+/// A short, human-readable label for a destination folder shown in a
+/// notification row - the folder's own name, or the full path for a drive
+/// root (which has no file name component).
+fn path_display_label(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
 /// A paste/cut-move running on a background thread - see `paste_clipboard_native`.
 pub struct PendingPaste {
     rx: Receiver<windows::core::Result<()>>,
@@ -232,6 +241,9 @@ pub struct PendingPaste {
     paths: Vec<PathBuf>,
     is_cut: bool,
     side: SplitSide,
+    /// The notification entry created for this operation - see
+    /// `containers::notifications`.
+    notification_id: u64,
 }
 
 /// Runs the actual `IFileOperation` copy/move. Called from a freshly spawned
@@ -1214,14 +1226,28 @@ impl MainWindow {
             }
             ItemViewerContextAction::Delete(paths, permanent) => {
                 let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
-                if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
+                let destination_label = if allow_undo {
+                    self.i18n.tr("recycle_bin")
+                } else {
+                    String::new()
+                };
+                let delete_status = if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
                     eprintln!("Native delete failed: {:?}", e);
 
                     // fallback (rare, but safe)
                     for path in &paths {
                         self.delete_path(path);
                     }
-                }
+                    crate::gui::windows::containers::notifications::FileOpStatus::Failed
+                } else {
+                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                };
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Delete,
+                    paths.len(),
+                    destination_label,
+                    delete_status,
+                );
 
                 let mut tags_changed = false;
                 for path in &paths {
@@ -1261,6 +1287,16 @@ impl MainWindow {
         let before_entries = Self::directory_child_paths(&target_dir);
         let side = self.focused_split;
 
+        let notification_id = self.notifications_state.start_operation(
+            if is_cut {
+                crate::gui::windows::containers::notifications::FileOpKind::Move
+            } else {
+                crate::gui::windows::containers::notifications::FileOpKind::Copy
+            },
+            paths.len(),
+            path_display_label(&target_dir),
+        );
+
         let (tx, rx) = unbounded();
         let thread_paths = paths.clone();
         let thread_target_dir = target_dir.clone();
@@ -1277,6 +1313,7 @@ impl MainWindow {
             paths,
             is_cut,
             side,
+            notification_id,
         });
     }
 
@@ -1296,8 +1333,17 @@ impl MainWindow {
 
         if let Err(e) = result {
             eprintln!("Paste failed: {}", e);
+            self.notifications_state.finish_operation(
+                pending.notification_id,
+                crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+            );
             return;
         }
+
+        self.notifications_state.finish_operation(
+            pending.notification_id,
+            crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+        );
 
         if pending.is_cut && self.move_tagged_paths_to_dir(&pending.paths, &pending.target_dir) {
             self.persist_tags();
@@ -2163,6 +2209,13 @@ impl MainWindow {
 
             file_op.PerformOperations().ok();
         }
+
+        self.notifications_state.record_finished(
+            crate::gui::windows::containers::notifications::FileOpKind::Move,
+            sources.len(),
+            path_display_label(&target_dir),
+            crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+        );
 
         {
             let side = self.focused_split;
@@ -3246,6 +3299,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 
                     file_op.PerformOperations().ok();
                 }
+
+                explorer.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Move,
+                    sources.len(),
+                    path_display_label(&target_dir),
+                    crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+                );
 
                 if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
                     explorer.persist_tags();

@@ -312,6 +312,23 @@ PowerShell process) rather than the app's own code - if you're using the
   each layout nesting level before assuming a z-order/clipping bug - a
   rect that's simply larger than the physical window won't render no matter
   what layer it's painted on.
+- **Equal top/bottom `egui::Frame` inner margin does not produce equal
+  visual whitespace around icon-font glyphs, because the glyph's own ink
+  isn't vertically centered within its line-height box.** The status bar's
+  Phosphor icons (`explorer.rs`, the footer `strip.cell`) were given an
+  equal `STATUS_BAR_VPAD` margin top and bottom, expecting symmetric
+  padding - but pixel-sampling a live screenshot showed a ~9px gap above
+  the divider and only ~1px before the icons started rendering, i.e. most
+  of the glyphs' line-height box is empty space *above* the ink, not below
+  it. The fix was not to make the margin "more correct" some other way,
+  but to deliberately use an *unequal* margin (`VPAD - 4` top, `VPAD + 4`
+  bottom, tuned by re-sampling pixels after each change) so the visible
+  gap comes out equal despite the glyph's own lopsided box. If another
+  icon-adjacent row looks off-center despite seemingly-correct centering
+  logic, sample actual pixel rows (a quick `Bitmap.GetPixel` loop over a
+  screenshot, scanning for where the background color stops) rather than
+  trusting `Align::Center`/equal margins to be visually equal - egui centers
+  the glyph's box, not its ink.
 
 ## Operational Instructions
 

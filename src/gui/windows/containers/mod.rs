@@ -6,6 +6,7 @@ pub mod itemviewer_gallery;
 pub mod itemviewer_helper;
 pub mod itemviewer_navbar;
 pub mod itemviewer_preview;
+pub mod notifications;
 pub mod sidebar;
 pub mod structs;
 pub mod tabs;
