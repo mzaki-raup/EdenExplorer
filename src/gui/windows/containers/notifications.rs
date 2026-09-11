@@ -126,10 +126,13 @@ impl NotificationsState {
             .count()
     }
 
-    /// Drops every operation that isn't still running.
-    pub fn clear_finished(&mut self) {
-        self.operations
-            .retain(|o| o.status == FileOpStatus::InProgress);
+    /// Drops every tracked operation, including ones still `InProgress` -
+    /// this only clears them from the panel/badge, it doesn't touch the
+    /// underlying `IFileOperation` call actually running on its background
+    /// thread. If that thread later calls `finish_operation` for an id that
+    /// was cleared here, it's a harmless no-op (see that function).
+    pub fn clear_all(&mut self) {
+        self.operations.clear();
     }
 }
 
@@ -217,6 +220,12 @@ pub fn draw_notifications_button(
         regular::BELL
     };
 
+    // A few px of breathing room on the right, inside the bell's own slot -
+    // the in-progress badge extends past the icon's own glyph, and without
+    // this it can crowd right up against whatever sits immediately to the
+    // right of this widget (the window's minimize button, in practice).
+    ui.add_space(4.0);
+
     let resp = clickable_icon(ui, icon, palette)
         .on_hover_text(
             RichText::new(i18n.tr("tooltip_notifications"))
@@ -264,7 +273,7 @@ pub fn draw_notifications_button(
                                 && eden_button(ui, palette, &i18n.tr("notifications_clear_all"))
                                     .clicked()
                             {
-                                state.clear_finished();
+                                state.clear_all();
                             }
                         });
                     });
@@ -351,10 +360,12 @@ fn draw_operation_row(
         });
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if op.status != FileOpStatus::InProgress
-                && clickable_icon(ui, regular::X, palette)
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
+            // Dismissing an in-progress row only removes it from the panel -
+            // it doesn't cancel the underlying operation (there's no cancel
+            // path yet, see `NotificationsState::clear_all`'s doc comment).
+            if clickable_icon(ui, regular::X, palette)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
             {
                 *to_remove = Some(op.id);
             }

@@ -892,11 +892,16 @@ impl eframe::App for MainWindow {
                                         // Notification bell - sits just left of the window
                                         // controls, in the same row, so it's genuinely in the
                                         // app's top-right corner rather than buried in the
-                                        // sidebar's own topbar.
+                                        // sidebar's own topbar. `bell_gap` keeps its own
+                                        // clickable area (and the in-progress badge, which
+                                        // extends a few px past the icon's own glyph) from
+                                        // overlapping the minimize button immediately to its
+                                        // right.
+                                        let bell_gap = 10.0;
                                         let bell_width = 40.0;
                                         let bell_rect = egui::Rect::from_min_size(
                                             egui::pos2(
-                                                controls_rect.min.x - bell_width,
+                                                controls_rect.min.x - bell_width - bell_gap,
                                                 controls_rect.min.y,
                                             ),
                                             egui::vec2(bell_width, controls_rect.height()),
