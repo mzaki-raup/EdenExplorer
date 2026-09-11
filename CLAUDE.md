@@ -468,6 +468,27 @@ PowerShell process) rather than the app's own code - if you're using the
   *triggered* the handler is also the state something else is still
   reading afterward (here, `drag_active` for the ghost) - firing the
   action is not the same as ending the gesture that produced it.
+- **`.auto_sized()` on an `egui::Window` that contains a `ScrollArea`
+  can make the window balloon to nearly the size of the whole app,
+  rather than shrinking to content.** This was the very next thing tried
+  for the paste-conflict modal's "remembered size" problem (see the entry
+  above) and made it dramatically worse: an auto-sized Window measures
+  content against a close-to-unbounded available rect on its sizing pass,
+  and the modal's internal `ScrollArea::vertical().max_height(...)`
+  responded to that by claiming a large slice of it instead of respecting
+  its own cap. The actual fix ended up not needing `.auto_sized()` at
+  all: the conflict list is capped at 6 rows by construction (5 names +
+  a "+N more" line) so it never genuinely needs to scroll, and dropping
+  the `ScrollArea` entirely removed the interaction that caused the
+  blowup. The "remembered size" problem itself was solved separately, by
+  folding the row count into the Window's `Id` (`.id(Id::new(...)
+  .with(row_count))`) instead of relying on `.auto_sized()` - a
+  differently-sized conflict list is treated as a distinct Id with no
+  stale remembered size, while a same-sized one correctly reuses the
+  cached size (which needed to be that size anyway). If a `Window` needs
+  to resize itself as its content's *row count* changes, prefer keying
+  its `Id` off that count over reaching for `.auto_sized()` - especially
+  if anything inside it is a `ScrollArea`.
 
 ## Operational Instructions
 

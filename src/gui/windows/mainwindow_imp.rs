@@ -1422,20 +1422,30 @@ impl MainWindow {
 
         let mut resolution: Option<PasteConflictAction> = None;
 
-        // `.auto_sized()` is load-bearing, not cosmetic: without it, egui
-        // remembers this Window's rendered size (keyed by its title, which
-        // is stable) across every future show within the session, so even
-        // with content-driven sizing below, the FIRST time this modal ever
-        // appeared with a long collision list would leave every later,
-        // shorter one stuck rendering at that old, larger remembered size -
-        // the exact "gap below the buttons" complaint, just coming from a
-        // different source than the two already fixed (a forced
-        // `fixed_size`, and a flat-height `ScrollArea`) - this is what
-        // actually made it stick around after both of those were fixed.
+        // Tried `.auto_sized()` here to fight the "old size stuck around"
+        // problem below, but it made things much worse: an auto-sized
+        // Window measures its content against a practically-unbounded
+        // available rect, and the nested `ScrollArea` responded to that by
+        // claiming a large chunk of it - the modal ballooned to nearly the
+        // whole app window instead of shrinking. Reverted `.auto_sized()`
+        // and dropped the `ScrollArea` entirely instead (it only ever held
+        // up to 6 short lines - a fixed cap, not something that actually
+        // needs scrolling), which removes the interaction that caused the
+        // blowup in the first place.
+        //
+        // The real fix for "this Window remembers an old, larger size"
+        // (egui keys that memory by the Window's Id, which defaults to its
+        // title - a fixed string reused every time this modal opens) is to
+        // fold `row_count` into the Id instead: whenever the conflict list
+        // is a different length than last time, egui treats it as a
+        // "new" window with no remembered size and sizes fresh from
+        // content; same length reuses the cached size, which is correct
+        // anyway since it needed the same height last time too.
+        let row_count = preview.len() + if more > 0 { 1 } else { 0 };
         egui::Window::new(self.i18n.tr("paste_conflict_title"))
+            .id(egui::Id::new("paste_conflict_modal").with(row_count))
             .collapsible(false)
             .resizable(false)
-            .auto_sized()
             .min_width(420.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .frame(
@@ -1451,29 +1461,16 @@ impl MainWindow {
                 ui.add_space(6.0);
                 ui.separator();
                 ui.add_space(4.0);
-                // Sized to the actual row count (capped at 6: 5 names + a
-                // possible "+N more" line) instead of a flat 100px - a
-                // flat cap reserved that much space even for a 1-2 item
-                // list, which is what left a gap between the button row
-                // and the window's bottom edge (a `ScrollArea` still
-                // claims its full `max_height` up front here, it doesn't
-                // shrink to whatever ends up actually drawn inside it).
-                let row_count = preview.len() + if more > 0 { 1 } else { 0 };
-                let list_height = (row_count as f32 * 18.0).clamp(18.0, 100.0);
-                egui::ScrollArea::vertical()
-                    .max_height(list_height)
-                    .show(ui, |ui| {
-                        for name in &preview {
-                            eden_text_label(ui, palette, name);
-                        }
-                        if more > 0 {
-                            eden_text_label(
-                                ui,
-                                palette,
-                                &format!("+ {more} {}", self.i18n.tr("paste_conflict_more")),
-                            );
-                        }
-                    });
+                for name in &preview {
+                    eden_text_label(ui, palette, name);
+                }
+                if more > 0 {
+                    eden_text_label(
+                        ui,
+                        palette,
+                        &format!("+ {more} {}", self.i18n.tr("paste_conflict_more")),
+                    );
+                }
                 ui.add_space(10.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if eden_button(ui, palette, &self.i18n.tr("paste_conflict_replace")).clicked() {
