@@ -299,6 +299,7 @@
 - [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
 - [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
 - [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder
+- [x] **Paste and drag-and-drop conflict resolution** - pasting or dragging a file/folder onto a location that already has an item with the same name shows a Replace / Skip Existing / Rename dialog instead of silently overwriting anything; Rename safely keeps both copies, auto-numbering the new one (`name-001`, `name-002`, ...)
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Add multi-tagging of objects
