@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 /// How long a completion toast stays on screen before auto-hiding.
 const TOAST_DURATION: Duration = Duration::from_secs(4);
-const PANEL_WIDTH: f32 = 320.0;
+const PANEL_WIDTH: f32 = 460.0;
 const PANEL_MAX_HEIGHT: f32 = 340.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,15 +153,21 @@ fn status_icon(status: FileOpStatus) -> &'static str {
     }
 }
 
-/// Reuses the theme's own semantic colors (the same ones the drive-usage
-/// bar picks from) rather than hardcoding red/green, so a notification
-/// row's status color follows the user's chosen accent/palette instead of
-/// looking the same regardless of theme.
+/// Every status uses the user's own accent color (`palette.primary`) rather
+/// than a fixed red/green - `drive_usage_normal`/`drive_usage_critical`
+/// looked like an improvement over a hardcoded literal, but they're
+/// themselves fixed literals in `get_default_palette` that
+/// `regenerate_base_derived_colors` never re-derives from the accent, so
+/// switching to them didn't actually make the panel follow a custom accent
+/// color at all. The icon glyph (checkmark/warning/x) and the status text
+/// already distinguish Completed/Failed/Cancelled, so the color itself
+/// doesn't need to carry that meaning too - `Cancelled` alone stays neutral
+/// since "nothing happened" doesn't need the accent's emphasis.
 fn status_color(status: FileOpStatus, palette: &ThemePalette) -> Color32 {
     match status {
-        FileOpStatus::InProgress => palette.primary,
-        FileOpStatus::Completed => palette.drive_usage_normal,
-        FileOpStatus::Failed => palette.drive_usage_critical,
+        FileOpStatus::InProgress | FileOpStatus::Completed | FileOpStatus::Failed => {
+            palette.primary
+        }
         FileOpStatus::Cancelled => palette.icon_color,
     }
 }
@@ -343,36 +349,51 @@ fn draw_operation_row(
     to_remove: &mut Option<u64>,
 ) {
     ui.horizontal(|ui| {
+        // A fixed slot for the kind icon, with the circle and glyph both
+        // drawn directly via the painter at the SAME center point - drawing
+        // the circle at a hand-picked offset and the glyph separately via
+        // `ui.label` (as this used to) left them uncoordinated, since the
+        // label's actual glyph position depends on font/line-height metrics
+        // that don't match a guessed offset. The small upward nudge on the
+        // glyph compensates for Phosphor icon ink sitting low in its own
+        // line box (the same effect documented in CLAUDE.md for the status
+        // bar's padding).
+        let (icon_rect, _) =
+            ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
         ui.painter().circle_filled(
-            ui.cursor().min + egui::vec2(8.0, 10.0),
+            icon_rect.center(),
             10.0,
             status_color(op.status, palette).gamma_multiply(0.18),
         );
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new(kind_icon(op.kind))
-                .font(FontId::default())
-                .color(status_color(op.status, palette)),
+        ui.painter().text(
+            icon_rect.center() - egui::vec2(0.0, 1.0),
+            Align2::CENTER_CENTER,
+            kind_icon(op.kind),
+            FontId::default(),
+            status_color(op.status, palette),
         );
 
-        ui.vertical(|ui| {
-            ui.set_width(PANEL_WIDTH - 90.0);
-            ui.label(
-                RichText::new(operation_title(i18n, op))
-                    .size(palette.text_size)
-                    .color(ui.visuals().text_color()),
-            );
-            ui.horizontal(|ui| {
+        let content_width = PANEL_WIDTH - 24.0 - 28.0 - 24.0;
+        ui.scope(|ui| {
+            ui.set_width(content_width);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.label(
-                    RichText::new(status_icon(op.status))
-                        .font(FontId::proportional(11.0))
-                        .color(status_color(op.status, palette)),
+                    RichText::new(operation_title(i18n, op))
+                        .size(palette.text_size)
+                        .color(ui.visuals().text_color()),
                 );
-                ui.label(
-                    RichText::new(status_label(i18n, op.status))
-                        .size(palette.tooltip_text_size)
-                        .color(palette.icon_color),
-                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(status_label(i18n, op.status))
+                            .size(palette.tooltip_text_size)
+                            .color(palette.icon_color),
+                    );
+                    ui.label(
+                        RichText::new(status_icon(op.status))
+                            .font(FontId::proportional(11.0))
+                            .color(status_color(op.status, palette)),
+                    );
+                });
             });
         });
 
