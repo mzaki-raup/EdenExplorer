@@ -82,6 +82,11 @@ pub struct MainWindow {
     /// doc comment in `mainwindow_imp.rs`.
     pub(crate) pending_robocopy_pastes:
         HashMap<u64, crate::gui::windows::mainwindow_imp::PendingPaste>,
+    /// A paste held back for the user to resolve a name collision - see
+    /// `PasteConflictPrompt`'s doc comment in `mainwindow_imp.rs`. Drawn as
+    /// a modal from the update loop.
+    pub(crate) pending_paste_conflict:
+        Option<crate::gui::windows::mainwindow_imp::PasteConflictPrompt>,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
@@ -300,6 +305,7 @@ impl Default for MainWindow {
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
+            pending_paste_conflict: None,
             notifications_state: NotificationsState::default(),
             theme_dirty: true,
             window_override_set: false,
@@ -1456,6 +1462,7 @@ impl eframe::App for MainWindow {
             tags_changed = true;
         }
         self.poll_pending_paste();
+        self.draw_paste_conflict_modal(ui.ctx(), &palette);
         draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);

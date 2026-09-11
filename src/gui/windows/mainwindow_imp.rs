@@ -247,6 +247,26 @@ pub struct PendingPaste {
     side: SplitSide,
 }
 
+/// A paste `paste_clipboard_native` held back because one or more source
+/// items share a name with something already in the destination - robocopy
+/// has no interactive prompt of its own (unlike `IFileOperation`, which
+/// shows the native "This destination already has a file named..." dialog),
+/// so this is EdenExplorer's own equivalent. Resolved by the user picking
+/// Replace/Skip/Cancel in the modal drawn from this state (see
+/// `mainwindow.rs`'s update loop); "Replace" and "Skip" both then call
+/// `paste_clipboard_native`'s resume half with the resolved path list.
+pub struct PasteConflictPrompt {
+    pub paths: Vec<PathBuf>,
+    pub target_dir: PathBuf,
+    pub before_entries: HashSet<PathBuf>,
+    pub is_cut: bool,
+    pub side: SplitSide,
+    /// File/folder names that collided, for display in the modal - not
+    /// necessarily every one of `paths`, just the ones that already exist
+    /// in `target_dir`.
+    pub conflicting_names: Vec<String>,
+}
+
 impl Drop for MainWindow {
     fn drop(&mut self) {
         self.cleanup_resources();
@@ -1214,11 +1234,13 @@ impl MainWindow {
     }
 
     /// Kicks off a paste (or cut-move) using the robocopy-backed engine
-    /// (see `core::robocopy`) instead of blocking the caller. Multiple
-    /// pastes can be in flight at once - each gets its own notification id
-    /// and its own `PendingPaste` entry in `pending_robocopy_pastes`, so a
-    /// second paste started while the first is still copying doesn't
-    /// clobber it.
+    /// (see `core::robocopy`) - or, if any source item shares a name with
+    /// something already in the destination, holds it for confirmation
+    /// instead (robocopy has no interactive overwrite prompt of its own;
+    /// see `PasteConflictPrompt`'s doc comment). Multiple pastes can be in
+    /// flight at once - each gets its own notification id and its own
+    /// `PendingPaste` entry in `pending_robocopy_pastes`, so a second paste
+    /// started while the first is still copying doesn't clobber it.
     pub fn paste_clipboard_native(&mut self) {
         let paths = match get_clipboard_files() {
             Some(p) if !p.is_empty() => p,
@@ -1233,6 +1255,45 @@ impl MainWindow {
         let target_dir = self.current_nav().current.clone();
         let before_entries = Self::directory_child_paths(&target_dir);
         let side = self.focused_split;
+
+        let conflicting_names: Vec<String> = paths
+            .iter()
+            .filter_map(|p| {
+                let name = p.file_name()?.to_string_lossy().to_string();
+                target_dir.join(&name).exists().then_some(name)
+            })
+            .collect();
+
+        if !conflicting_names.is_empty() {
+            self.pending_paste_conflict = Some(PasteConflictPrompt {
+                paths,
+                target_dir,
+                before_entries,
+                is_cut,
+                side,
+                conflicting_names,
+            });
+            return;
+        }
+
+        self.start_robocopy_paste(paths, target_dir, before_entries, is_cut, side);
+    }
+
+    /// Actually kicks off the background robocopy job and its notification/
+    /// bookkeeping entries - shared by the no-conflict fast path in
+    /// `paste_clipboard_native` and by the Replace/Skip resolution of a
+    /// `PasteConflictPrompt` (see `handle_paste_conflict_resolution`).
+    fn start_robocopy_paste(
+        &mut self,
+        paths: Vec<PathBuf>,
+        target_dir: PathBuf,
+        before_entries: HashSet<PathBuf>,
+        is_cut: bool,
+        side: SplitSide,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
 
         let (jobs, total_bytes) = crate::core::robocopy::build_jobs(&paths, &target_dir, is_cut);
 
@@ -1260,6 +1321,111 @@ impl MainWindow {
                 side,
             },
         );
+    }
+
+    /// Applies the user's Replace/Skip choice from the paste-conflict modal
+    /// and starts the (possibly filtered) paste. `replace: false` drops
+    /// every source item whose name collided - if that empties the list
+    /// entirely, `start_robocopy_paste` is a no-op, matching "Skip
+    /// Existing" when literally everything was a duplicate.
+    pub fn handle_paste_conflict_resolution(&mut self, replace: bool) {
+        let Some(prompt) = self.pending_paste_conflict.take() else {
+            return;
+        };
+
+        let paths = if replace {
+            prompt.paths
+        } else {
+            prompt
+                .paths
+                .into_iter()
+                .filter(|p| {
+                    p.file_name()
+                        .map(|n| !prompt.conflicting_names.iter().any(|c| c == n.to_string_lossy().as_ref()))
+                        .unwrap_or(true)
+                })
+                .collect()
+        };
+
+        self.start_robocopy_paste(
+            paths,
+            prompt.target_dir,
+            prompt.before_entries,
+            prompt.is_cut,
+            prompt.side,
+        );
+    }
+
+    /// Draws the Replace/Skip/Cancel modal for a paste held back by
+    /// `paste_clipboard_native` because of a name collision - a no-op when
+    /// there's nothing pending. Called once per frame from the update loop.
+    pub fn draw_paste_conflict_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
+        use crate::core::utils::widgets::{eden_button, eden_text_label};
+
+        // Cloned out inside its own block so this borrow of
+        // `self.pending_paste_conflict` ends before the modal closure below,
+        // which needs to clear that same field on Cancel.
+        let (count, preview, more) = {
+            let Some(prompt) = self.pending_paste_conflict.as_ref() else {
+                return;
+            };
+            let count = prompt.conflicting_names.len();
+            let preview: Vec<String> = prompt.conflicting_names.iter().take(5).cloned().collect();
+            let more = count.saturating_sub(preview.len());
+            (count, preview, more)
+        };
+
+        let mut resolution: Option<bool> = None;
+
+        egui::Window::new(self.i18n.tr("paste_conflict_title"))
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size([420.0, 260.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .frame(
+                egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                    .corner_radius(egui::CornerRadius::same(8)),
+            )
+            .show(ctx, |ui| {
+                eden_text_label(
+                    ui,
+                    palette,
+                    &format!("{} {}", count, self.i18n.tr("paste_conflict_message")),
+                );
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical()
+                    .max_height(100.0)
+                    .show(ui, |ui| {
+                        for name in &preview {
+                            eden_text_label(ui, palette, name);
+                        }
+                        if more > 0 {
+                            eden_text_label(
+                                ui,
+                                palette,
+                                &format!("+ {more} {}", self.i18n.tr("paste_conflict_more")),
+                            );
+                        }
+                    });
+                ui.add_space(10.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_replace")).clicked() {
+                        resolution = Some(true);
+                    }
+                    if eden_button(ui, palette, &self.i18n.tr("paste_conflict_skip")).clicked() {
+                        resolution = Some(false);
+                    }
+                    if eden_button(ui, palette, &self.i18n.tr("cancel")).clicked() {
+                        self.pending_paste_conflict = None;
+                    }
+                });
+            });
+
+        if let Some(replace) = resolution {
+            self.handle_paste_conflict_resolution(replace);
+        }
     }
 
     /// Drains every robocopy-backed paste's progress/result and applies

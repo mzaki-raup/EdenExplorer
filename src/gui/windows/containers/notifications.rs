@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 /// How long a completion toast stays on screen before auto-hiding.
 const TOAST_DURATION: Duration = Duration::from_secs(4);
 const PANEL_WIDTH: f32 = 460.0;
-const PANEL_MAX_HEIGHT: f32 = 340.0;
+const PANEL_MAX_HEIGHT: f32 = 480.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileOpKind {

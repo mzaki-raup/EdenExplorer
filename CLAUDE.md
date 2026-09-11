@@ -353,6 +353,30 @@ PowerShell process) rather than the app's own code - if you're using the
   gotcha already documented above - it cost real risk here specifically
   because the destination that frame happened to be a sensitive,
   non-scratch path rather than another throwaway folder.
+- **It happened again in the very next testing session, this time landing
+  on a different real folder (`D:\test-delete`, one of the user's own
+  pre-existing tabs) instead of the intended scratch folder.** Root cause
+  this time: this app restores every tab from the last session on launch,
+  so the tab strip is full of the user's own real tabs from the start -
+  a coordinate-based click meant for "whatever tab is currently active"
+  can land on a stale/unintended tab if a previous action shifted which
+  tab was active, or if tab widths shifted enough to move a tab header
+  out from under a previously-good coordinate. No data was lost (the
+  delete this time actually failed with a native HRESULT error before
+  anything was removed, confirmed both from the folder's untouched
+  contents afterward and from the debug console output), but it's the
+  same underlying gap as the entry above: coordinate-based navigation
+  trusted without re-verifying between steps. Also surfaced a false
+  negative in the ui-test skill's `focus.ps1`: it reported "EdenExplorer
+  is not running" once, when the process was in fact still alive
+  (confirmed via `tasklist`) - transient, but worth a re-check via
+  `tasklist`/`Get-Process` before believing a "not running" result enough
+  to declare the app crashed. **The actual, durable fix going forward:**
+  before any destructive keystroke (Delete, a paste that might overwrite,
+  etc.), take a screenshot and confirm both the active tab's breadcrumb
+  path *and* that the item about to be acted on is actually selected -
+  every other test in this file that did that caught problems immediately
+  and safely; every incident happened on a step that skipped it.
 
 ## Operational Instructions
 
