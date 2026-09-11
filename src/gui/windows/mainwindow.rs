@@ -76,13 +76,12 @@ pub struct MainWindow {
     /// refresh in case the launched program never takes focus at all (e.g.
     /// a script that finishes before its console window would even show).
     pub(crate) pending_command_refreshes: Vec<std::time::Instant>,
-    /// A paste (or cut-move) currently running on a background thread - the
-    /// native `IFileOperation` copy/move is otherwise a blocking COM call
-    /// that would freeze the whole UI thread for as long as it takes,
-    /// noticeably even for small files since most of that time is shell
-    /// overhead (context-menu handlers, antivirus, cloud-sync overlay
-    /// providers reacting to every item) rather than actual I/O.
-    pub(crate) pending_paste: Option<crate::gui::windows::mainwindow_imp::PendingPaste>,
+    /// Paste (or cut-move) operations currently running via the
+    /// robocopy-backed engine (`core::robocopy`), keyed by the notification
+    /// id `paste_clipboard_native` created for each - see `PendingPaste`'s
+    /// doc comment in `mainwindow_imp.rs`.
+    pub(crate) pending_robocopy_pastes:
+        HashMap<u64, crate::gui::windows::mainwindow_imp::PendingPaste>,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
@@ -300,7 +299,7 @@ impl Default for MainWindow {
             sidebar_collapsed: false,
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
-            pending_paste: None,
+            pending_robocopy_pastes: HashMap::new(),
             notifications_state: NotificationsState::default(),
             theme_dirty: true,
             window_override_set: false,

@@ -233,71 +233,18 @@ fn path_display_label(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
-/// A paste/cut-move running on a background thread - see `paste_clipboard_native`.
+/// Metadata for a paste (or cut-move) running via the robocopy-backed
+/// engine (see `core::robocopy`) - kept in `MainWindow::pending_robocopy_pastes`,
+/// keyed by the notification id `paste_clipboard_native` created for it, so
+/// `poll_pending_paste` can apply the right side effects (tag remapping,
+/// selecting the pasted items, refreshing the view) once that specific
+/// operation reaches a terminal state.
 pub struct PendingPaste {
-    rx: Receiver<windows::core::Result<()>>,
     target_dir: PathBuf,
     before_entries: HashSet<PathBuf>,
     paths: Vec<PathBuf>,
     is_cut: bool,
     side: SplitSide,
-    /// The notification entry created for this operation - see
-    /// `containers::notifications`.
-    notification_id: u64,
-}
-
-/// Runs the actual `IFileOperation` copy/move. Called from a freshly spawned
-/// thread (see `paste_clipboard_native`), so it initializes its own COM
-/// apartment first - `IFileOperation`/`IShellItem` are apartment-threaded COM
-/// objects and can't be created on a thread that hasn't called
-/// `CoInitializeEx` (the main thread does this once at startup; a spawned
-/// thread starts with no COM apartment of its own).
-fn perform_native_paste(paths: &[PathBuf], target_dir: &Path, is_cut: bool) -> windows::core::Result<()> {
-    use windows::Win32::System::Com::{
-        CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
-    };
-    use windows::Win32::UI::Shell::{
-        FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem,
-        SHCreateItemFromParsingName,
-    };
-    use windows::core::HSTRING;
-
-    unsafe {
-        let co_init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-
-        let result = (|| -> windows::core::Result<()> {
-            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
-
-            // No FOF_RENAMEONCOLLISION - a folder pasted onto one with the same
-            // name should merge/overwrite (matching native Explorer's prompt),
-            // not silently get renamed to "Folder (1)".
-            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR)?;
-
-            let target_item: IShellItem =
-                SHCreateItemFromParsingName(&HSTRING::from(target_dir.to_string_lossy().to_string()), None)?;
-
-            for path in paths {
-                let source_item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(path.to_string_lossy().to_string()),
-                    None,
-                )?;
-
-                if is_cut {
-                    file_op.MoveItem(&source_item, &target_item, None, None)?;
-                } else {
-                    file_op.CopyItem(&source_item, &target_item, None, None)?;
-                }
-            }
-
-            file_op.PerformOperations()
-        })();
-
-        if co_init.is_ok() {
-            CoUninitialize();
-        }
-
-        result
-    }
 }
 
 impl Drop for MainWindow {
@@ -1266,12 +1213,12 @@ impl MainWindow {
         }
     }
 
-    /// Kicks off a paste (or cut-move) on a background thread instead of
-    /// blocking the caller - see the `pending_paste` field doc comment for
-    /// why `IFileOperation` needs to run off the UI thread. Wakes the UI
-    /// immediately once the background thread finishes (via the app's
-    /// shared egui context), rather than waiting for the next unrelated
-    /// repaint.
+    /// Kicks off a paste (or cut-move) using the robocopy-backed engine
+    /// (see `core::robocopy`) instead of blocking the caller. Multiple
+    /// pastes can be in flight at once - each gets its own notification id
+    /// and its own `PendingPaste` entry in `pending_robocopy_pastes`, so a
+    /// second paste started while the first is still copying doesn't
+    /// clobber it.
     pub fn paste_clipboard_native(&mut self) {
         let paths = match get_clipboard_files() {
             Some(p) if !p.is_empty() => p,
@@ -1287,6 +1234,8 @@ impl MainWindow {
         let before_entries = Self::directory_child_paths(&target_dir);
         let side = self.focused_split;
 
+        let (jobs, total_bytes) = crate::core::robocopy::build_jobs(&paths, &target_dir, is_cut);
+
         let notification_id = self.notifications_state.start_operation(
             if is_cut {
                 crate::gui::windows::containers::notifications::FileOpKind::Move
@@ -1297,71 +1246,56 @@ impl MainWindow {
             path_display_label(&target_dir),
         );
 
-        let (tx, rx) = unbounded();
-        let thread_paths = paths.clone();
-        let thread_target_dir = target_dir.clone();
-        std::thread::spawn(move || {
-            let result = perform_native_paste(&thread_paths, &thread_target_dir, is_cut);
-            let _ = tx.send(result);
-            crate::gui::windows::windowsoverrides::request_repaint();
-        });
+        let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
+        self.notifications_state
+            .attach_robocopy_job(notification_id, handle);
 
-        self.pending_paste = Some(PendingPaste {
-            rx,
-            target_dir,
-            before_entries,
-            paths,
-            is_cut,
-            side,
+        self.pending_robocopy_pastes.insert(
             notification_id,
-        });
+            PendingPaste {
+                target_dir,
+                before_entries,
+                paths,
+                is_cut,
+                side,
+            },
+        );
     }
 
-    /// Checks whether a background paste kicked off by `paste_clipboard_native`
-    /// has finished, and if so applies its result (selection, tags, refresh).
-    /// Called once per frame from the main update loop.
+    /// Drains every robocopy-backed paste's progress/result and applies
+    /// completion side effects (selection, tag remapping, refresh) for any
+    /// that just succeeded - failed/cancelled ones just get their
+    /// bookkeeping dropped, there's nothing left to apply. Called once per
+    /// frame from the main update loop.
     pub fn poll_pending_paste(&mut self) {
-        let Some(pending) = &self.pending_paste else {
-            return;
-        };
+        for (id, succeeded) in self.notifications_state.poll_robocopy_jobs() {
+            let Some(pending) = self.pending_robocopy_pastes.remove(&id) else {
+                continue;
+            };
 
-        let Ok(result) = pending.rx.try_recv() else {
-            return;
-        };
+            if !succeeded {
+                continue;
+            }
 
-        let pending = self.pending_paste.take().unwrap();
+            if pending.is_cut && self.move_tagged_paths_to_dir(&pending.paths, &pending.target_dir)
+            {
+                self.persist_tags();
+            }
 
-        if let Err(e) = result {
-            eprintln!("Paste failed: {}", e);
-            self.notifications_state.finish_operation(
-                pending.notification_id,
-                crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+            let pasted_paths = Self::selection_paths_after_paste(
+                &pending.target_dir,
+                &pending.before_entries,
+                &pending.paths,
             );
-            return;
+            if !pasted_paths.is_empty() {
+                self.active_tab_mut()
+                    .view_mut(pending.side)
+                    .explorer_state
+                    .pending_selection_paths = Some(pasted_paths);
+            }
+
+            self.load_path();
         }
-
-        self.notifications_state.finish_operation(
-            pending.notification_id,
-            crate::gui::windows::containers::notifications::FileOpStatus::Completed,
-        );
-
-        if pending.is_cut && self.move_tagged_paths_to_dir(&pending.paths, &pending.target_dir) {
-            self.persist_tags();
-        }
-
-        let pasted_paths = Self::selection_paths_after_paste(
-            &pending.target_dir,
-            &pending.before_entries,
-            &pending.paths,
-        );
-        if !pasted_paths.is_empty() {
-            self.active_tab_mut()
-                .view_mut(pending.side)
-                .explorer_state
-                .pending_selection_paths = Some(pasted_paths);
-        }
-
-        self.load_path();
     }
 
     fn directory_child_paths(dir: &Path) -> HashSet<PathBuf> {

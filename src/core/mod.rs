@@ -6,6 +6,7 @@ pub mod launch;
 pub mod network;
 pub mod portable;
 pub mod preview;
+pub mod robocopy;
 pub mod tab_groups;
 pub mod utils;
 pub mod video;

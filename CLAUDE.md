@@ -329,6 +329,30 @@ PowerShell process) rather than the app's own code - if you're using the
   screenshot, scanning for where the background color stops) rather than
   trusting `Align::Center`/equal margins to be visually equal - egui centers
   the glyph's box, not its ink.
+- **A synthetic double-click meant to enter a sidebar test folder instead
+  entered `%LOCALAPPDATA%\ExplorerEden` (the app's own real settings
+  folder), and the paste that followed wrote 2000 scratch test files
+  straight into it**, briefly mixing throwaway data in with
+  `settings.bin`/`favorites/`/`tags.bin`/etc. This was caught immediately
+  from the resulting screenshot (the breadcrumb read "...AppData > Local >
+  ExplorerEden", not the intended path) and cleaned up by deleting only
+  files matching the test data's own naming pattern
+  (`^file[0-9]+\.bin$`, verified via `find -regex` to match exactly the
+  2000 files created, and to exclude every real settings filename) -
+  never a blind `rm -rf` of the whole folder. This is the exact class of
+  mistake the Safety Rules section above already warns about (verify
+  you're in an isolated scratch folder *before* interacting, because a
+  stray click can land somewhere real) - the addition here is what to do
+  *after* it happens anyway: don't panic-delete broadly, identify a
+  pattern that provably matches only the injected data, dry-run it as a
+  count/list first, and diff that count against what you actually
+  created before deleting anything. Root cause was never fully pinned
+  down (a sidebar item at the clicked coordinates apparently didn't match
+  what the previous screenshot showed there), which is itself a
+  restatement of the "stale coordinates from a previous screenshot"
+  gotcha already documented above - it cost real risk here specifically
+  because the destination that frame happened to be a sensitive,
+  non-scratch path rather than another throwaway folder.
 
 ## Operational Instructions
 

@@ -1,9 +1,11 @@
+use crate::core::robocopy::{RoboFinish, RobocopyHandle, RobocopyUpdate};
 use crate::core::utils::widgets::{clickable_icon, eden_button};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use eframe::egui;
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, RichText, Stroke};
 use egui_phosphor::regular;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// How long a completion toast stays on screen before auto-hiding.
@@ -21,12 +23,11 @@ pub enum FileOpKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileOpStatus {
     InProgress,
+    /// Stopped by the user via the panel's Pause button - robocopy jobs
+    /// only, see `core::robocopy`. Resumable.
+    Paused,
     Completed,
     Failed,
-    /// Not produced yet - today's synchronous `IFileOperation` calls have no
-    /// cancel path. Reserved for the robocopy-backed engine, which will let
-    /// an in-progress operation actually be cancelled from the panel.
-    #[allow(dead_code)]
     Cancelled,
 }
 
@@ -51,6 +52,11 @@ pub struct FileOperation {
     #[allow(dead_code)]
     pub started_at: Instant,
     pub finished_at: Option<Instant>,
+    /// 0.0..=1.0 - only ever set for robocopy-backed operations (see
+    /// `core::robocopy`); `IFileOperation`-backed ones have no progress
+    /// callback to source this from, so they stay `None` and the panel
+    /// just shows their status text with no bar.
+    pub progress: Option<f32>,
 }
 
 struct ActiveToast {
@@ -65,6 +71,12 @@ pub struct NotificationsState {
     pub panel_open: bool,
     next_id: u64,
     active_toast: Option<ActiveToast>,
+    /// Live/paused robocopy jobs, keyed by their operation's id - present
+    /// only for copy/move operations running the robocopy-backed engine,
+    /// and removed once a job reaches a terminal state. Its mere presence
+    /// is what the panel uses to decide whether to show Pause/Resume/
+    /// Cancel controls for a row instead of the plain dismiss button.
+    robocopy_jobs: HashMap<u64, RobocopyHandle>,
 }
 
 impl NotificationsState {
@@ -88,9 +100,110 @@ impl NotificationsState {
                 destination_label,
                 started_at: Instant::now(),
                 finished_at: None,
+                progress: None,
             },
         );
         id
+    }
+
+    /// Attaches a live robocopy job to an operation created via
+    /// `start_operation` - its presence is what makes the panel show
+    /// Pause/Resume/Cancel controls for that row instead of the plain
+    /// dismiss button.
+    pub fn attach_robocopy_job(&mut self, id: u64, handle: RobocopyHandle) {
+        self.robocopy_jobs.insert(id, handle);
+    }
+
+    pub fn has_robocopy_job(&self, id: u64) -> bool {
+        self.robocopy_jobs.contains_key(&id)
+    }
+
+    pub fn pause_job(&mut self, id: u64) {
+        if let Some(handle) = self.robocopy_jobs.get(&id) {
+            handle.request_pause();
+        }
+    }
+
+    pub fn resume_job(&mut self, id: u64) {
+        if let Some(handle) = self.robocopy_jobs.get_mut(&id) {
+            handle.resume();
+        }
+        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+            op.status = FileOpStatus::InProgress;
+        }
+    }
+
+    pub fn cancel_job(&mut self, id: u64) {
+        if let Some(handle) = self.robocopy_jobs.get(&id) {
+            handle.request_cancel();
+        }
+    }
+
+    /// Drains every tracked robocopy job's progress/result channel, updating
+    /// each operation's status/progress in place. Returns `(id, succeeded)`
+    /// for every operation that just reached a terminal state
+    /// (Completed/Failed/Cancelled - not Paused, which isn't terminal) this
+    /// call. The caller owns paste-completion side effects (tag remapping,
+    /// selecting the pasted items, refreshing the view) that only make
+    /// sense when `succeeded` is true, but needs to know about failed/
+    /// cancelled ids too so it can drop its own per-operation bookkeeping
+    /// (see `PendingPaste` in `mainwindow_imp.rs`) rather than leaking it.
+    /// Call once per frame.
+    pub fn poll_robocopy_jobs(&mut self) -> Vec<(u64, bool)> {
+        let mut terminal = Vec::new();
+
+        for (&id, handle) in self.robocopy_jobs.iter() {
+            while let Ok(update) = handle.rx.try_recv() {
+                match update {
+                    RobocopyUpdate::Progress(frac) => {
+                        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+                            op.progress = Some(frac);
+                        }
+                    }
+                    RobocopyUpdate::Finished(RoboFinish::Completed) => {
+                        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+                            op.status = FileOpStatus::Completed;
+                            op.progress = Some(1.0);
+                            op.finished_at = Some(Instant::now());
+                        }
+                        self.active_toast = Some(ActiveToast {
+                            op_id: id,
+                            shown_at: Instant::now(),
+                        });
+                        terminal.push((id, true));
+                    }
+                    RobocopyUpdate::Finished(RoboFinish::Failed) => {
+                        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+                            op.status = FileOpStatus::Failed;
+                            op.finished_at = Some(Instant::now());
+                        }
+                        self.active_toast = Some(ActiveToast {
+                            op_id: id,
+                            shown_at: Instant::now(),
+                        });
+                        terminal.push((id, false));
+                    }
+                    RobocopyUpdate::Finished(RoboFinish::Cancelled) => {
+                        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+                            op.status = FileOpStatus::Cancelled;
+                            op.finished_at = Some(Instant::now());
+                        }
+                        terminal.push((id, false));
+                    }
+                    RobocopyUpdate::Finished(RoboFinish::Paused) => {
+                        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+                            op.status = FileOpStatus::Paused;
+                        }
+                    }
+                }
+            }
+        }
+
+        for &(id, _) in &terminal {
+            self.robocopy_jobs.remove(&id);
+        }
+
+        terminal
     }
 
     /// Records an operation that already ran to completion synchronously
@@ -147,6 +260,7 @@ fn kind_icon(kind: FileOpKind) -> &'static str {
 fn status_icon(status: FileOpStatus) -> &'static str {
     match status {
         FileOpStatus::InProgress => regular::SPINNER,
+        FileOpStatus::Paused => regular::PAUSE_CIRCLE,
         FileOpStatus::Completed => regular::CHECK_CIRCLE,
         FileOpStatus::Failed => regular::WARNING_CIRCLE,
         FileOpStatus::Cancelled => regular::X_CIRCLE,
@@ -165,9 +279,10 @@ fn status_icon(status: FileOpStatus) -> &'static str {
 /// since "nothing happened" doesn't need the accent's emphasis.
 fn status_color(status: FileOpStatus, palette: &ThemePalette) -> Color32 {
     match status {
-        FileOpStatus::InProgress | FileOpStatus::Completed | FileOpStatus::Failed => {
-            palette.primary
-        }
+        FileOpStatus::InProgress
+        | FileOpStatus::Paused
+        | FileOpStatus::Completed
+        | FileOpStatus::Failed => palette.primary,
         FileOpStatus::Cancelled => palette.icon_color,
     }
 }
@@ -183,6 +298,7 @@ fn kind_label(i18n: &I18n, kind: FileOpKind) -> String {
 fn status_label(i18n: &I18n, status: FileOpStatus) -> String {
     match status {
         FileOpStatus::InProgress => i18n.tr("notifications_status_in_progress"),
+        FileOpStatus::Paused => i18n.tr("notifications_status_paused"),
         FileOpStatus::Completed => i18n.tr("notifications_status_completed"),
         FileOpStatus::Failed => i18n.tr("notifications_status_failed"),
         FileOpStatus::Cancelled => i18n.tr("notifications_status_cancelled"),
@@ -313,16 +429,28 @@ pub fn draw_notifications_button(
                         );
                         ui.add_space(8.0);
                     } else {
-                        let mut to_remove = None;
+                        let mut actions = Vec::new();
                         egui::ScrollArea::vertical()
                             .max_height(PANEL_MAX_HEIGHT)
                             .show(ui, |ui| {
                                 for op in &state.operations {
-                                    draw_operation_row(ui, i18n, palette, op, &mut to_remove);
+                                    let has_job = state.has_robocopy_job(op.id);
+                                    if let Some(action) =
+                                        draw_operation_row(ui, i18n, palette, op, has_job)
+                                    {
+                                        actions.push(action);
+                                    }
                                 }
                             });
-                        if let Some(id) = to_remove {
-                            state.operations.retain(|o| o.id != id);
+                        for action in actions {
+                            match action {
+                                RowAction::Dismiss(id) => {
+                                    state.operations.retain(|o| o.id != id);
+                                }
+                                RowAction::Pause(id) => state.pause_job(id),
+                                RowAction::Resume(id) => state.resume_job(id),
+                                RowAction::Cancel(id) => state.cancel_job(id),
+                            }
                         }
                     }
                 });
@@ -341,13 +469,26 @@ pub fn draw_notifications_button(
     }
 }
 
+enum RowAction {
+    /// Remove this row from the panel only - doesn't touch any underlying
+    /// operation (there's nothing to cancel for a plain `IFileOperation`
+    /// call, and for a robocopy job this action is only ever offered once
+    /// the job has already reached a terminal state).
+    Dismiss(u64),
+    Pause(u64),
+    Resume(u64),
+    Cancel(u64),
+}
+
 fn draw_operation_row(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
     op: &FileOperation,
-    to_remove: &mut Option<u64>,
-) {
+    has_robocopy_job: bool,
+) -> Option<RowAction> {
+    let mut action = None;
+
     ui.horizontal(|ui| {
         // A fixed slot for the kind icon, with the circle and glyph both
         // drawn directly via the painter at the SAME center point - drawing
@@ -373,45 +514,118 @@ fn draw_operation_row(
             status_color(op.status, palette),
         );
 
-        let content_width = PANEL_WIDTH - 24.0 - 28.0 - 24.0;
+        // Live-controllable rows (robocopy jobs still in progress or
+        // paused) get two icon buttons instead of the plain dismiss X -
+        // dismissing those would leave the underlying process running with
+        // no way left to stop or resume it.
+        let controllable = has_robocopy_job
+            && matches!(op.status, FileOpStatus::InProgress | FileOpStatus::Paused);
+        let controls_width = if controllable { 52.0 } else { 28.0 };
+
+        let content_width = PANEL_WIDTH - 24.0 - controls_width - 24.0;
         ui.scope(|ui| {
             ui.set_width(content_width);
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.label(
-                    RichText::new(operation_title(i18n, op))
-                        .size(palette.text_size)
-                        .color(ui.visuals().text_color()),
-                );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.vertical(|ui| {
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.label(
-                        RichText::new(status_label(i18n, op.status))
-                            .size(palette.tooltip_text_size)
-                            .color(palette.icon_color),
+                        RichText::new(operation_title(i18n, op))
+                            .size(palette.text_size)
+                            .color(ui.visuals().text_color()),
                     );
-                    ui.label(
-                        RichText::new(status_icon(op.status))
-                            .font(FontId::proportional(11.0))
-                            .color(status_color(op.status, palette)),
-                    );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(status_label(i18n, op.status))
+                                .size(palette.tooltip_text_size)
+                                .color(palette.icon_color),
+                        );
+                        ui.label(
+                            RichText::new(status_icon(op.status))
+                                .font(FontId::proportional(11.0))
+                                .color(status_color(op.status, palette)),
+                        );
+                    });
                 });
+
+                // Only robocopy jobs ever have a progress fraction -
+                // `IFileOperation`-backed operations have no progress
+                // callback to source one from (see `FileOperation::progress`'s
+                // doc comment), so this bar simply doesn't appear for them.
+                if let Some(frac) = op.progress {
+                    if matches!(op.status, FileOpStatus::InProgress | FileOpStatus::Paused) {
+                        ui.add_space(3.0);
+                        let bar_height = 4.0;
+                        let (bar_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(content_width, bar_height),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(
+                            bar_rect,
+                            CornerRadius::same(2),
+                            palette.icon_color.gamma_multiply(0.15),
+                        );
+                        let fill_width = bar_rect.width() * frac.clamp(0.0, 1.0);
+                        if fill_width > 0.5 {
+                            let fill_rect = egui::Rect::from_min_size(
+                                bar_rect.min,
+                                egui::vec2(fill_width, bar_height),
+                            );
+                            ui.painter().rect_filled(
+                                fill_rect,
+                                CornerRadius::same(2),
+                                palette.primary,
+                            );
+                        }
+                    }
+                }
             });
         });
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Dismissing an in-progress row only removes it from the panel -
-            // it doesn't cancel the underlying operation (there's no cancel
-            // path yet, see `NotificationsState::clear_all`'s doc comment).
-            if clickable_icon(ui, regular::X, palette)
+            if controllable {
+                if clickable_icon(ui, regular::PROHIBIT, palette)
+                    .on_hover_text(
+                        RichText::new(i18n.tr("tooltip_notifications_cancel"))
+                            .size(palette.tooltip_text_size)
+                            .color(palette.tooltip_text_color),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    action = Some(RowAction::Cancel(op.id));
+                }
+                let (icon, tooltip_key) = if op.status == FileOpStatus::Paused {
+                    (regular::PLAY, "tooltip_notifications_resume")
+                } else {
+                    (regular::PAUSE_CIRCLE, "tooltip_notifications_pause")
+                };
+                if clickable_icon(ui, icon, palette)
+                    .on_hover_text(
+                        RichText::new(i18n.tr(tooltip_key))
+                            .size(palette.tooltip_text_size)
+                            .color(palette.tooltip_text_color),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    action = Some(if op.status == FileOpStatus::Paused {
+                        RowAction::Resume(op.id)
+                    } else {
+                        RowAction::Pause(op.id)
+                    });
+                }
+            } else if clickable_icon(ui, regular::X, palette)
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
             {
-                *to_remove = Some(op.id);
+                action = Some(RowAction::Dismiss(op.id));
             }
         });
     });
     ui.add_space(6.0);
     ui.separator();
     ui.add_space(2.0);
+
+    action
 }
 
 /// Draws the transient completion toast (if any operation finished
