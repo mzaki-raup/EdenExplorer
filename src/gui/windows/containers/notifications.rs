@@ -153,11 +153,15 @@ fn status_icon(status: FileOpStatus) -> &'static str {
     }
 }
 
+/// Reuses the theme's own semantic colors (the same ones the drive-usage
+/// bar picks from) rather than hardcoding red/green, so a notification
+/// row's status color follows the user's chosen accent/palette instead of
+/// looking the same regardless of theme.
 fn status_color(status: FileOpStatus, palette: &ThemePalette) -> Color32 {
     match status {
         FileOpStatus::InProgress => palette.primary,
-        FileOpStatus::Completed => Color32::from_rgb(88, 176, 96),
-        FileOpStatus::Failed => Color32::from_rgb(220, 90, 90),
+        FileOpStatus::Completed => palette.drive_usage_normal,
+        FileOpStatus::Failed => palette.drive_usage_critical,
         FileOpStatus::Cancelled => palette.icon_color,
     }
 }
@@ -235,15 +239,28 @@ pub fn draw_notifications_button(
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     if in_progress > 0 {
+        // The badge fills with the user's own accent color rather than a
+        // fixed red, so it follows their chosen theme like the rest of the
+        // app - the text color is then picked for contrast against
+        // whatever that accent turns out to be (same luminance check used
+        // for selection text in `itemviewer_preview.rs`).
         let badge_center = resp.rect.right_top() + egui::vec2(-2.0, 2.0);
+        let fill_luminance = 0.299 * palette.primary.r() as f32
+            + 0.587 * palette.primary.g() as f32
+            + 0.114 * palette.primary.b() as f32;
+        let badge_text_color = if fill_luminance > 140.0 {
+            Color32::BLACK
+        } else {
+            Color32::WHITE
+        };
         ui.painter()
-            .circle_filled(badge_center, 7.0, Color32::from_rgb(220, 90, 90));
+            .circle_filled(badge_center, 7.0, palette.primary);
         ui.painter().text(
             badge_center,
             Align2::CENTER_CENTER,
             in_progress.to_string(),
             FontId::proportional(9.0),
-            Color32::WHITE,
+            badge_text_color,
         );
     }
 
