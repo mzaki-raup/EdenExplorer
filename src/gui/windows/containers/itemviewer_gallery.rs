@@ -318,6 +318,11 @@ pub fn draw_gallery_view(
                             target_dir,
                         });
                     }
+
+                    // See the matching fix/comment in itemviewer.rs - this
+                    // never got reset after a drop, leaving the drag ghost
+                    // and drop-target highlight stuck on screen.
+                    drag_state.active = false;
                 }
 
                 if !modal_input_blocked {

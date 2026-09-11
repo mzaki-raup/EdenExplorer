@@ -434,6 +434,40 @@ PowerShell process) rather than the app's own code - if you're using the
   early-return/placeholder branch is and confirm the handler's scope
   actually covers it, rather than assuming it does because they're drawn
   in the same physical space.
+- **`egui::Window` remembers its rendered size across every future `show`
+  call with the same title/Id within a session - it does not shrink back
+  down on its own just because a later call's content got shorter.** The
+  paste-conflict modal's "gap below the buttons" complaint survived two
+  real, correct fixes (removing a forced `fixed_size`, then sizing the
+  internal `ScrollArea` to actual row count instead of a flat height)
+  because neither of those addressed this third, independent cause: the
+  very first time that modal was ever shown with a longer collision list,
+  egui cached that larger size, and every later, shorter list kept
+  rendering at the old cached size regardless of how little content it
+  actually had. The fix is `.auto_sized()` on the `Window` builder, which
+  disables the size-memory lookup entirely and recomputes from content
+  every frame. If a `Window`/`Area`'s size looks "stuck" at an old value
+  despite content-driven sizing code looking correct, suspect this before
+  spending more time on the sizing math itself - especially for a Window
+  whose title (and therefore Id) is a fixed string reused across many
+  shows with varying content.
+- **A per-frame `if pointer_released { ... }` drop handler that only ever
+  *starts* an action, and never explicitly ends the drag state that got
+  it there, leaves the drag visually "stuck" until something unrelated
+  happens to reset it.** Both the Details/Detail-Preview and Gallery
+  views' internal drag-and-drop handling fired an `ItemViewerAction::
+  MoveItems` on drop but never set `drag_state.active = false` afterward
+  - since the ghost label and drop-target highlight are both driven
+  straight off that flag, they stayed on screen through the whole move
+  operation and beyond, until the user started a fresh drag (which resets
+  it as a side effect of arming a new one) or happened to trigger one of
+  the few other reset sites. Fixed by unconditionally clearing
+  `drag_state.active` inside the `pointer_released` branch, regardless of
+  whether a valid drop target was found. When adding a "this fires once
+  when the gesture ends" handler, check explicitly whether the state that
+  *triggered* the handler is also the state something else is still
+  reading afterward (here, `drag_active` for the ghost) - firing the
+  action is not the same as ending the gesture that produced it.
 
 ## Operational Instructions
 

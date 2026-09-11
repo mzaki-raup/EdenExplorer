@@ -80,7 +80,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Rename gesture disabled on drives / "This PC" |
 | Completed | Rename support in the Preview view |
 | Completed | Live invalid-character filtering while renaming |
-| Completed | Drag and drop within the item viewer |
+| Completed | Drag and drop within the item viewer — including that the drag ghost/drop-target highlight now actually clears the instant a drop completes (Details, Detail Preview, and Gallery views); it previously stayed on screen indefinitely since `drag_state.active` was never reset after firing the move, only when something unrelated happened to reset it later |
 | Completed | Drag and drop onto breadcrumb folders and directory tabs |
 | Completed | Drag and drop out to native Windows targets (Desktop, Explorer, apps) |
 | Completed | Optional Windows shell context-menu integration (registry entries) |

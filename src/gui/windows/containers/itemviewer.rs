@@ -922,6 +922,17 @@ pub fn draw_item_viewer(
                             target_dir,
                         });
                     }
+
+                    // The drag ends here regardless of whether it landed on
+                    // a valid target - `drag_active` (and therefore the
+                    // ghost label drawn near the top of this function, plus
+                    // the drop-target highlight below) is driven straight
+                    // off `drag_state.active`, and nothing else in this
+                    // per-frame flow ever clears it after a drop. Left
+                    // unset, the ghost/highlight stayed on screen until
+                    // something unrelated happened to reset it (starting a
+                    // fresh drag, clicking to deselect, etc.).
+                    drag_state.active = false;
                 }
 
                 if !modal_input_blocked {

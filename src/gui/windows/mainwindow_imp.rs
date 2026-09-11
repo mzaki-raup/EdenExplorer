@@ -1422,16 +1422,20 @@ impl MainWindow {
 
         let mut resolution: Option<PasteConflictAction> = None;
 
-        // No `.fixed_size(...)` here on purpose - an earlier version forced
-        // a fixed 460x260 regardless of how much content there actually
-        // was, which left a large dead gap below the buttons whenever the
-        // conflict list was short (egui top-aligns content in a Window, so
-        // extra forced height just becomes empty space at the bottom).
-        // `min_width` keeps it from looking cramped for a 1-2 item list
-        // without forcing a tall height nothing needs.
+        // `.auto_sized()` is load-bearing, not cosmetic: without it, egui
+        // remembers this Window's rendered size (keyed by its title, which
+        // is stable) across every future show within the session, so even
+        // with content-driven sizing below, the FIRST time this modal ever
+        // appeared with a long collision list would leave every later,
+        // shorter one stuck rendering at that old, larger remembered size -
+        // the exact "gap below the buttons" complaint, just coming from a
+        // different source than the two already fixed (a forced
+        // `fixed_size`, and a flat-height `ScrollArea`) - this is what
+        // actually made it stick around after both of those were fixed.
         egui::Window::new(self.i18n.tr("paste_conflict_title"))
             .collapsible(false)
             .resizable(false)
+            .auto_sized()
             .min_width(420.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .frame(
