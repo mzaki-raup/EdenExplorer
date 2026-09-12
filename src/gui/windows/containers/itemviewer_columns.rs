@@ -412,6 +412,7 @@ fn draw_columns_core(
                                                     &mut *settings_window,
                                                     hwnd,
                                                     icon_cache,
+                                                    false,
                                                 );
                                             });
                                     }

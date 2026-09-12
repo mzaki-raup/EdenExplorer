@@ -316,6 +316,7 @@ pub fn draw_tags(
                                                     &mut action,
                                                     palette,
                                                     is_tagged,
+                                                    Some(group_id),
                                                 );
                                                 if let Some(a) = action {
                                                     tags_state.pending_action = Some(a);
@@ -870,7 +871,13 @@ pub fn draw_tag_view(
                                 free_space: None,
                             };
                             handle_context_menu_actions_tags(
-                                ui, i18n, &file_item, &mut action, palette, is_tagged,
+                                ui,
+                                i18n,
+                                &file_item,
+                                &mut action,
+                                palette,
+                                is_tagged,
+                                Some(group_id),
                             );
                         });
                 });
@@ -1055,20 +1062,31 @@ pub fn draw_tag_picker_popup(
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
 
                     for (group_id, group_name, group_color, item_count) in &group_choices {
-                        let button_label = format!("{} ({})", group_name, item_count);
+                        let all_tagged = tags_state
+                            .groups
+                            .iter()
+                            .find(|group| group.id == *group_id)
+                            .is_some_and(|group| {
+                                picker.paths.iter().all(|p| group.items.contains(p))
+                            });
+
+                        let button_label = if all_tagged {
+                            format!("{} {} ({})", regular::CHECK, group_name, item_count)
+                        } else {
+                            format!("{} ({})", group_name, item_count)
+                        };
+                        let fill_amount = if all_tagged { 0.45 } else { 0.25 };
                         let button = egui::Button::new(button_label)
-                            .fill(group_color.gamma_multiply(0.25))
+                            .fill(group_color.gamma_multiply(fill_amount))
                             .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.6)));
 
                         if ui
                             .add(button)
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
+                            && tags_state.toggle_group_for_paths(*group_id, &picker.paths)
                         {
-                            if tags_state.add_paths_to_group(*group_id, &picker.paths) {
-                                changed = true;
-                            }
-                            close_requested = true;
+                            changed = true;
                         }
                     }
                 });
@@ -1125,7 +1143,7 @@ pub fn draw_tag_picker_popup(
                     ) {
                         changed = true;
                     }
-                    close_requested = true;
+                    picker.new_group_name.clear();
                 }
 
                 if ui.button(i18n.tr("close")).clicked() {
@@ -1206,6 +1224,7 @@ fn handle_context_menu_actions_tags(
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
     is_tagged: bool,
+    current_group_id: Option<u64>,
 ) {
     // Apply context-menu-specific typography
     let mut style = (**ui.style()).clone();
@@ -1266,6 +1285,17 @@ fn handle_context_menu_actions_tags(
         ui.close();
     }
 
+    // A tagged item's own folder is (unlike a normal listing's current
+    // directory) essentially never the tag view's own "current directory" -
+    // tag groups gather items from anywhere, so "open where this actually
+    // lives" is a meaningfully useful entry here.
+    if let Some(parent) = file.path.parent() {
+        if ui.button(i18n.tr("inputs_open_location")).clicked() {
+            *action = Some(ItemViewerAction::OpenInNewTab(parent.to_path_buf()));
+            ui.close();
+        }
+    }
+
     // Properties (multi-select aware)
     if ui.button(i18n.tr("properties")).clicked() {
         *action = Some(ItemViewerAction::Context(
@@ -1282,7 +1312,13 @@ fn handle_context_menu_actions_tags(
 
     if ui.button(tag_label).clicked() {
         *action = Some(ItemViewerAction::Context(if is_tagged {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
+            match current_group_id {
+                Some(group_id) => ItemViewerContextAction::RemoveTagFromGroup(
+                    group_id,
+                    context_paths.clone(),
+                ),
+                None => ItemViewerContextAction::RemoveTag(context_paths.clone()),
+            }
         } else {
             ItemViewerContextAction::AddTag(context_paths.clone())
         }));

@@ -319,6 +319,7 @@ pub fn handle_context_menu_actions(
     settings_window: &SettingsWindow,
     hwnd: Option<HWND>,
     icon_cache: &IconCache,
+    is_search_view: bool,
 ) {
     // Apply context-menu-specific typography
     apply_eden_visual_overrides(ui, _palette);
@@ -425,6 +426,24 @@ pub fn handle_context_menu_actions(
     {
         if let Some(path) = context_paths.first() {
             *action = Some(ItemViewerAction::OpenInSplitView(path.clone()));
+            ui.close();
+        }
+    }
+
+    // Search results span many different folders (unlike a normal listing,
+    // where the containing folder is just the tab's own current directory)
+    // - so "open the location this came from" is only meaningful here.
+    if is_search_view
+        && menu_item_button_enabled(
+            ui,
+            enable_open_in_tab && context_paths.first().and_then(|p| p.parent()).is_some(),
+            regular::FOLDER_OPEN,
+            &i18n.tr("inputs_open_location"),
+        )
+        .clicked()
+    {
+        if let Some(parent) = context_paths.first().and_then(|p| p.parent()) {
+            *action = Some(ItemViewerAction::OpenInNewTab(parent.to_path_buf()));
             ui.close();
         }
     }
@@ -1048,6 +1067,119 @@ pub fn handle_draw_col_original_directory(
     );
 }
 
+/// Draws every tag a file belongs to as a small colored chip, in a single
+/// row clipped to the column's own width, with a trailing "+N" chip for
+/// whatever doesn't fit - the same overflow idiom the paste-conflict modal
+/// already uses. Chip styling (fill/stroke from the tag's own color) matches
+/// the toggle buttons in `draw_tag_picker_popup` for visual consistency.
+pub fn handle_draw_col_tags(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    layout: &ItemViewerLayout,
+    tags_state: &TagsState,
+    font_id: &egui::FontId,
+) {
+    let tags = tags_state.tags_for_path(&file.path);
+    let (rect, _response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), layout.row_height),
+        egui::Sense::hover(),
+    );
+
+    if tags.is_empty() {
+        return;
+    }
+
+    // Chips use a smaller font than the row's own text - a badge/pill is
+    // meant to read as a compact label, and a smaller font also means each
+    // chip's own pill needs less width to fit a given tag name, which
+    // reduces how often a single long tag name has to be truncated below.
+    let chip_font_id = egui::FontId::new((font_id.size - 2.0).max(9.0), font_id.family.clone());
+    let chip_gap = 4.0;
+    let chip_pad_x = 6.0;
+    let chip_height = (layout.row_height - 6.0).max(14.0);
+    let mut cursor_x = rect.left();
+    let available_right = rect.right();
+    // A single chip is never allowed to claim more than this much width,
+    // truncated with an ellipsis via `truncate_item_text` otherwise - this
+    // is what actually prevents a long tag name from overflowing its own
+    // pill or the column itself, rather than relying on the column always
+    // being wide enough.
+    const MAX_CHIP_TEXT_WIDTH: f32 = 90.0;
+
+    for (visible_count, (_, name, color)) in tags.iter().enumerate() {
+        let remaining = tags.len() - visible_count;
+
+        // Reserve room for a trailing "+N" chip unless this is the very
+        // last tag (which never needs an overflow indicator after it).
+        let needs_overflow_room = remaining > 1;
+        let overflow_reserve = if needs_overflow_room { 34.0 } else { 0.0 };
+
+        let remaining_width = (available_right - overflow_reserve - cursor_x).max(0.0);
+        let text_budget = MAX_CHIP_TEXT_WIDTH.min((remaining_width - chip_pad_x * 2.0).max(0.0));
+
+        let (display_name, _truncated) =
+            truncate_item_text(ui, name, text_budget, &chip_font_id, egui::Color32::WHITE);
+
+        let painter = ui.painter_at(rect);
+        let text_width = painter
+            .layout_no_wrap(display_name.clone(), chip_font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x;
+        let chip_width = text_width + chip_pad_x * 2.0;
+
+        if (cursor_x + chip_width > available_right || text_budget <= 0.0) && visible_count > 0 {
+            let overflow_label = format!("+{}", remaining);
+            let overflow_text_width = painter
+                .layout_no_wrap(overflow_label.clone(), chip_font_id.clone(), egui::Color32::WHITE)
+                .size()
+                .x;
+            let overflow_width = overflow_text_width + chip_pad_x * 2.0;
+            let chip_rect = egui::Rect::from_min_size(
+                egui::pos2(cursor_x, rect.center().y - chip_height / 2.0),
+                egui::vec2(overflow_width, chip_height),
+            );
+            painter.rect_filled(
+                chip_rect,
+                egui::CornerRadius::same(6),
+                egui::Color32::GRAY.gamma_multiply(0.25),
+            );
+            painter.text(
+                chip_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                overflow_label,
+                chip_font_id.clone(),
+                egui::Color32::WHITE,
+            );
+            return;
+        }
+
+        let chip_rect = egui::Rect::from_min_size(
+            egui::pos2(cursor_x, rect.center().y - chip_height / 2.0),
+            egui::vec2(chip_width, chip_height),
+        );
+        painter.rect_filled(
+            chip_rect,
+            egui::CornerRadius::same(6),
+            color.gamma_multiply(0.25),
+        );
+        painter.rect_stroke(
+            chip_rect,
+            egui::CornerRadius::same(6),
+            egui::Stroke::new(1.0, color.gamma_multiply(0.6)),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            chip_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            display_name,
+            chip_font_id.clone(),
+            egui::Color32::WHITE,
+        );
+
+        cursor_x = chip_rect.right() + chip_gap;
+    }
+}
+
 pub fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {
     let base_color = get_row_color(is_selected, palette);
     if is_cut {
@@ -1583,6 +1715,7 @@ pub fn draw_item_viewer_header(
             ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
             ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
             ItemViewerHeaderColumn::Deleted => i18n.tr("explorer_cols_deleted"),
+            ItemViewerHeaderColumn::Tags => i18n.tr("explorer_cols_tags"),
         };
         draw_header_cell(
             header,
@@ -1850,6 +1983,19 @@ fn draw_header_context_menu(
         if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_created"), created_visible) {
             *action = Some(ItemViewerAction::ToggleColumnVisibility(
                 ItemViewerHeaderColumn::Created,
+            ));
+            ui.close();
+        }
+
+        let tags_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_tags"), tags_visible) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Tags,
             ));
             ui.close();
         }
@@ -2296,6 +2442,7 @@ pub fn compute_item_viewer_column_layout(
             created_width: 0.0,
             deleted_width: 0.0,
             original_directory_width: widths.original_directory_width,
+            tags_width: 0.0,
             column_sizes_changed: false,
         };
     }
@@ -2370,6 +2517,7 @@ pub fn compute_item_viewer_column_layout(
                     ItemViewerHeaderColumn::Created => widths.created_width,
                     ItemViewerHeaderColumn::Deleted => widths.deleted_width,
                     ItemViewerHeaderColumn::Usage => widths.usage_width,
+                    ItemViewerHeaderColumn::Tags => widths.tags_width,
                 };
 
                 column_state.set_column_width(is_drive_view, is_recycle_bin_view, column, width);
@@ -2397,6 +2545,7 @@ pub fn compute_item_viewer_column_layout(
     let default_deleted_width = (current_width * 0.20).max(100.0);
     let default_usage_width = (current_width * 0.20).max(150.0);
     let default_original_directory_width = (current_width * 0.20).max(200.0);
+    let default_tags_width = (current_width * 0.20).max(140.0);
 
     let name_width = column_state
         .column_width(
@@ -2491,6 +2640,18 @@ pub fn compute_item_viewer_column_layout(
         0.0
     };
 
+    let tags_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Tags) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Tags,
+            )
+            .unwrap_or(default_tags_width)
+    } else {
+        0.0
+    };
+
     ItemViewerColumnLayout {
         ordered_columns,
         name_width,
@@ -2501,6 +2662,7 @@ pub fn compute_item_viewer_column_layout(
         created_width,
         deleted_width,
         original_directory_width,
+        tags_width,
         column_sizes_changed,
     }
 }
@@ -2569,6 +2731,13 @@ fn compute_item_viewer_column_widths(
             font_id,
             palette.text_header_section,
         ),
+        tags_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_tags"),
+            font_id,
+            palette.text_header_section,
+        )
+        .max(140.0),
     };
 
     let icon_padding = if show_item_viewer_icons {

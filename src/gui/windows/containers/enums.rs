@@ -18,6 +18,7 @@ pub enum ItemViewerHeaderColumn {
     Usage,
     Deleted,
     OriginalDirectory,
+    Tags,
 }
 
 pub enum ItemViewerAction {
@@ -74,6 +75,12 @@ pub enum ItemViewerContextAction {
     Restore(Vec<PathBuf>),
     AddTag(Vec<PathBuf>),
     RemoveTag(Vec<PathBuf>),
+    /// Removes `paths` from one specific tag group only (the `u64`) - used
+    /// by "Remove Tag" invoked while browsing inside that group's own
+    /// folder view, where the group being viewed provides an unambiguous
+    /// "current tag" scope. `RemoveTag` above still means "clear every tag"
+    /// for the main item viewer's own context menu, which has no such scope.
+    RemoveTagFromGroup(u64, Vec<PathBuf>),
     AddFavorite(Vec<PathBuf>),
     /// Compress the selection into a single new `.zip` in the same folder -
     /// see `core::compress::compress_target_path` for how the zip's name is

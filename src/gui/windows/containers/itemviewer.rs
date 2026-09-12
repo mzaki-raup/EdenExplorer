@@ -565,6 +565,10 @@ pub fn draw_item_viewer(
                         ItemViewerHeaderColumn::Usage => Column::initial(column_layout.usage_width)
                             .at_least(150.0)
                             .resizable(true),
+
+                        ItemViewerHeaderColumn::Tags => Column::initial(column_layout.tags_width)
+                            .at_least(100.0)
+                            .resizable(true),
                     };
 
                     table = table.column(column);
@@ -647,6 +651,7 @@ pub fn draw_item_viewer(
                                         file_size_text_cache,
                                         folder_size_text_cache,
                                         drive_size_text_cache,
+                                        tags_state,
                                         &mut action,
                                     );
                                 });
@@ -788,6 +793,7 @@ pub fn draw_item_viewer(
                                             settings_window,
                                             hwnd,
                                             icon_cache,
+                                            is_search_view,
                                         );
                                     });
                             }
@@ -1199,6 +1205,7 @@ fn draw_item_viewer_row_column(
     file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
     folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+    tags_state: &TagsState,
     action: &mut Option<ItemViewerAction>,
 ) {
     match column {
@@ -1275,6 +1282,10 @@ fn draw_item_viewer_row_column(
 
         ItemViewerHeaderColumn::Usage => {
             handle_draw_col_modified(ui, file, layout, is_selected, is_cut, palette, font_id);
+        }
+
+        ItemViewerHeaderColumn::Tags => {
+            handle_draw_col_tags(ui, file, layout, tags_state, font_id);
         }
     }
 }

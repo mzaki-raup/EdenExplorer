@@ -908,6 +908,66 @@ PowerShell process) rather than the app's own code - if you're using the
   on top and captures its own widgets' clicks - check `modal_input_
   blocked`'s computation includes your new modal's pending-state field,
   or a global keyboard shortcut can reach through it.
+- **Clicking a breadcrumb segment (not the empty space after it) navigates
+  "up" to that segment instead of entering address-bar edit mode**, and
+  the app restores every real tab from the previous session on launch -
+  so a `click.ps1` coordinate guessed from an earlier screenshot (before
+  confirming the *current* breadcrumb layout) can land on a real
+  breadcrumb segment and silently navigate into one of the user's actual
+  folders (this happened live: a click meant to open address-bar edit
+  mode instead navigated from `D:\ZAKI\APPLIANCES` up to the real
+  `D:\ZAKI` folder, which has dozens of real subfolders including
+  sensitive ones). No data was touched (confirmed folder contents
+  unchanged before/after), but the very next `send-keys.ps1` call sent
+  `^aD:\eden-test-tags{ENTER}` into that real file list rather than an
+  edit-mode text field, and the app then silently exited (confirmed via
+  `tasklist`, not just `focus.ps1`'s report) - root cause not pinned down
+  (possibly Enter on a stray selection, possibly unrelated), but the
+  fix that actually worked was to click on genuinely *empty* breadcrumb-bar
+  space well to the right of the last segment's text (not near/on any
+  segment label) to reliably enter edit mode, confirmed by the address
+  bar then showing the full path as editable text. If a click meant for
+  address-bar edit mode instead changes the current folder, re-screenshot
+  before typing further keys - don't chain a blind `send-keys.ps1` after
+  an unconfirmed click, especially one with real user folders one level
+  up.
+- **A tag group named "Mytag" already existed in this app's real,
+  persisted `tags.bin` before this session's Multi-tagging feature work
+  even started** - it appeared in the sidebar's "Tags" section and in
+  the picker's "Add to an existing tag group" list during live testing.
+  It is the user's real data, not a fixture; every scratch verification
+  for the Multi-tagging feature used newly created groups ("Test Tag A"/
+  "Test Tag B") instead, and both were deleted via Settings > Tags'
+  trash icon (with an "Are you sure - Tag name: ..." confirmation naming
+  the exact group) once verification finished, leaving "Mytag" and its
+  2 real items untouched throughout. When a picker/list surfaces
+  existing named groups/tags/favorites during a live test, don't assume
+  everything shown was created by this session - check whether a name
+  is one you actually just typed before clicking it.
+- **The user can be actively driving the same live, real EdenExplorer window
+  at the same time this skill's scripts are - and their real clicks/keys can
+  look exactly like the synthetic-input-not-registering gotcha already
+  documented above.** While verifying the Multi-tagging feature, a
+  `click.ps1` aimed at a tab suddenly stopped producing any visible effect
+  at all (confirmed with a cheap control-click retry, per the existing
+  gotcha's own advice), and in between two of my own screenshots the active
+  tab jumped to an unrelated real "Search" tab and a real file in
+  `D:\DOWNLOADS` appeared mid-rename with an unfamiliar random name - all
+  without me sending any click that should have caused it. It turned out
+  the user was interacting with the very same window themselves at that
+  moment (confirmed by asking). Nothing was actually broken and no data was
+  lost, but two real, harmless side effects fell out of it purely from
+  their own clicks landing while my scratch tag group happened to be open:
+  a real file got renamed (by them) and then tagged (by them, trying out
+  the new feature) into my scratch tag group. The fix was just to delete
+  the whole scratch tag group at the end as already planned (removing the
+  stray membership along with it) rather than trying to surgically reverse
+  a rename I wasn't even sure I'd caused. If live-testing produces a change
+  you can't attribute to any input you actually sent - not just "clicks
+  stopped working" but the active tab/selection/content changing on its
+  own - consider that the user might be in the same window before assuming
+  a new app bug, and just ask; don't rename/undo real files based on a
+  guess about what happened.
 
 ## Operational Instructions
 

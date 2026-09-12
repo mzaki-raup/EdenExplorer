@@ -77,9 +77,11 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - `shell:` URI / CLSID resolution in the address bar: `shell:ControlPanelFolder`, `shell:Desktop`, `::{GUID}`, etc. resolve through the real Windows shell namespace - filesystem-backed locations navigate in-app, genuinely virtual ones open externally via the shell
 - Undo/Redo (Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z) for Rename, Bulk Rename, Move, and Copy - in-memory only, capped at 50 entries. Replace-resolved conflicts are non-destructive (the overwritten item is recycled, not destroyed) and fully undoable/redoable, re-recycling fresh on each redo so a later undo still has something valid to restore
 - Checksums: a single-file context-menu entry computing CRC32/MD5/SHA-1/SHA-256 in one background-threaded pass, with per-hash copy buttons and a paste-to-verify Compare field that checks a pasted checksum against all four algorithms at once
+- Multi-tagging: an item can belong to more than one tag group at once (the picker is a multi-select toggle list, staying open across picks); a Tags column shows every tag on a row as a colored chip (own smaller font, truncated with an ellipsis if a name doesn't fit) with "+N" overflow; removing a tag from within one specific tag's own view removes it from that tag only, not every tag the item has
+- "Open File Location" context menu entry in the Tag view and Search results (both show items from many different real folders) - opens the item's containing folder in a new tab
 
 ## Roadmap (from README)
-Upcoming alpha features: multi-tagging of objects, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
+Upcoming alpha features: multi-tag AND/OR filtering in the tag view, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
 
 ## Distribution
 Distributed as a standalone Windows executable (no install) via GitHub Releases at `github.com/mtucciarone/EdenExplorer/releases`, with an automated release workflow (GitHub Actions + semantic-release).

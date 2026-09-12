@@ -1360,6 +1360,11 @@ impl MainWindow {
                     self.persist_tags();
                 }
             }
+            ItemViewerContextAction::RemoveTagFromGroup(group_id, paths) => {
+                if self.tags_state.remove_paths_from_group(group_id, &paths) {
+                    self.persist_tags();
+                }
+            }
             ItemViewerContextAction::Compress(paths) => {
                 if let Some(dest_zip) = crate::core::compress::compress_target_path(&paths) {
                     let notification_id = self.notifications_state.start_operation(
@@ -4368,6 +4373,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::Context(ItemViewerContextAction::Paste)
                 | ItemViewerAction::Context(ItemViewerContextAction::AddTag(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::RemoveTag(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::RemoveTagFromGroup(_, _))
                 | ItemViewerAction::Context(ItemViewerContextAction::AddFavorite(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::RenameRequest(_, _))
                 | ItemViewerAction::Context(ItemViewerContextAction::RenameCancel) => {

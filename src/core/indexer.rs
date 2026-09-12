@@ -316,6 +316,7 @@ fn default_item_viewer_file_column_order() -> Vec<ItemViewerHeaderColumn> {
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Modified,
         ItemViewerHeaderColumn::Created,
+        ItemViewerHeaderColumn::Tags,
     ]
 }
 
@@ -338,7 +339,7 @@ fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
 }
 
 pub fn default_item_viewer_file_column_size() -> Vec<f32> {
-    vec![180.0, 60.0, 75.0, 100.0, 100.0]
+    vec![180.0, 60.0, 75.0, 100.0, 100.0, 140.0]
 }
 
 pub fn default_item_viewer_drive_column_size() -> Vec<f32> {

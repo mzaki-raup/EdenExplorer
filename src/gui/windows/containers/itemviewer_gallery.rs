@@ -63,6 +63,7 @@ pub fn draw_gallery_view(
     active_tab_id: u64,
     current_dir: PathBuf,
 ) -> Option<ItemViewerAction> {
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
 
     let mut action = draw_gallery_toolbar(
@@ -295,6 +296,7 @@ pub fn draw_gallery_view(
                                     settings_window,
                                     hwnd,
                                     icon_cache,
+                                    is_search_view,
                                 );
                             });
                     }

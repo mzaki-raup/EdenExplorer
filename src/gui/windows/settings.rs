@@ -115,6 +115,7 @@ impl Default for AppSettings {
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
+                ItemViewerHeaderColumn::Tags,
             ],
             item_viewer_drive_column_order: vec![
                 ItemViewerHeaderColumn::Type,

@@ -462,6 +462,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size => 2,
                 ItemViewerHeaderColumn::Modified => 3,
                 ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 5,
                 _ => return None,
             }
         };
@@ -508,6 +509,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size => 2,
                 ItemViewerHeaderColumn::Modified => 3,
                 ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 5,
                 _ => return,
             }
         };
@@ -577,6 +579,13 @@ impl ItemViewerColumnState {
             is_recycle_bin_view,
             ItemViewerHeaderColumn::Usage,
             widths.usage_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+            widths.tags_width,
         );
     }
     pub fn from_orders(
@@ -738,6 +747,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
+                ItemViewerHeaderColumn::Tags,
             ]
         };
 
@@ -790,6 +800,7 @@ fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Modified,
         ItemViewerHeaderColumn::Created,
+        ItemViewerHeaderColumn::Tags,
     ]
 }
 
@@ -1425,7 +1436,12 @@ impl TagsState {
             .map(|group| group.color)
     }
 
-    pub fn add_paths_to_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
+    /// Bulk toggle used by the multi-select tag picker: if every path in
+    /// `paths` is already in the group, removes them all; otherwise adds
+    /// whichever ones are missing. Treating a multi-selection as one unit
+    /// (rather than toggling each path independently) matches how
+    /// `create_group_and_add` already treats a multi-path selection.
+    pub fn toggle_group_for_paths(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
         let Some(target_index) = self.groups.iter().position(|group| group.id == group_id) else {
             return false;
         };
@@ -1433,21 +1449,51 @@ impl TagsState {
         let mut paths: Vec<PathBuf> = paths.iter().cloned().collect();
         paths.sort();
         paths.dedup();
-
-        let mut changed = false;
-        for path in &paths {
-            changed |= self.remove_path(path);
+        if paths.is_empty() {
+            return false;
         }
 
         let target_group = &mut self.groups[target_index];
-        for path in paths {
-            if !target_group.items.contains(&path) {
-                target_group.items.push(path);
-                changed = true;
-            }
-        }
+        let all_tagged = paths.iter().all(|p| target_group.items.contains(p));
 
-        changed
+        if all_tagged {
+            let remove: HashSet<PathBuf> = paths.into_iter().collect();
+            let before = target_group.items.len();
+            target_group.items.retain(|item| !remove.contains(item));
+            target_group.items.len() != before
+        } else {
+            let mut changed = false;
+            for path in paths {
+                if !target_group.items.contains(&path) {
+                    target_group.items.push(path);
+                    changed = true;
+                }
+            }
+            changed
+        }
+    }
+
+    /// All tags currently on `path`, in `self.groups` order - used by the
+    /// Tags column and the picker's "already tagged" checked-state.
+    pub fn tags_for_path(&self, path: &Path) -> Vec<(u64, String, egui::Color32)> {
+        self.groups
+            .iter()
+            .filter(|group| group.items.iter().any(|item| item == path))
+            .map(|group| (group.id, group.name.clone(), group.color))
+            .collect()
+    }
+
+    /// Removes `paths` from one specific group only, used by "Remove Tag"
+    /// invoked while browsing inside that group's own folder view - unlike
+    /// `remove_paths`, which clears every tag a path has.
+    pub fn remove_paths_from_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
+        let Some(group) = self.groups.iter_mut().find(|group| group.id == group_id) else {
+            return false;
+        };
+        let paths: HashSet<PathBuf> = paths.iter().cloned().collect();
+        let before = group.items.len();
+        group.items.retain(|item| !paths.contains(item));
+        group.items.len() != before
     }
 
     pub fn create_group_and_add(
@@ -1475,10 +1521,6 @@ impl TagsState {
         paths.sort();
         paths.dedup();
 
-        for path in &paths {
-            self.remove_path(path);
-        }
-
         for path in paths {
             if !group.items.contains(&path) {
                 group.items.push(path);
@@ -1487,18 +1529,6 @@ impl TagsState {
 
         self.groups.push(group);
         true
-    }
-
-    pub fn remove_path(&mut self, path: &Path) -> bool {
-        let mut changed = false;
-
-        for group in &mut self.groups {
-            let before = group.items.len();
-            group.items.retain(|item| item != path);
-            changed |= group.items.len() != before;
-        }
-
-        changed
     }
 
     pub fn remove_paths(&mut self, paths: &[PathBuf]) -> bool {
@@ -1567,6 +1597,7 @@ pub struct ItemViewerColumnLayout {
     pub created_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+    pub tags_width: f32,
     pub column_sizes_changed: bool,
 }
 
@@ -1580,6 +1611,7 @@ pub struct ItemViewerColumnWidths {
     pub usage_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+    pub tags_width: f32,
 }
 
 #[cfg(test)]
@@ -1709,5 +1741,116 @@ mod recent_locations_tests {
 
         let restored = RecentLocationsState::from_snapshot(state.to_snapshot());
         assert_eq!(restored.items, state.items);
+    }
+}
+
+#[cfg(test)]
+mod tags_state_tests {
+    use super::TagsState;
+    use eframe::egui::Color32;
+    use std::path::PathBuf;
+
+    fn add_group(state: &mut TagsState, name: &str, color: Color32, paths: &[PathBuf]) -> u64 {
+        assert!(state.create_group_and_add(name.to_string(), color, paths));
+        state.groups.last().unwrap().id
+    }
+
+    #[test]
+    fn a_path_can_belong_to_more_than_one_group() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_a)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_b)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+    }
+
+    #[test]
+    fn toggle_group_for_paths_adds_when_not_all_tagged_and_removes_when_all_tagged() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_id = add_group(&mut state, "A", Color32::RED, &[]);
+
+        assert!(state.toggle_group_for_paths(group_id, &[path.clone()]));
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_id)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+
+        assert!(state.toggle_group_for_paths(group_id, &[path.clone()]));
+        assert!(
+            !state
+                .groups
+                .iter()
+                .find(|g| g.id == group_id)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+    }
+
+    #[test]
+    fn tags_for_path_returns_every_matching_group_in_order() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        let tags = state.tags_for_path(&path);
+
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].0, group_a);
+        assert_eq!(tags[1].0, group_b);
+    }
+
+    #[test]
+    fn remove_paths_from_group_only_affects_that_group() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        assert!(state.remove_paths_from_group(group_a, &[path.clone()]));
+
+        assert!(
+            !state
+                .groups
+                .iter()
+                .find(|g| g.id == group_a)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_b)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
     }
 }
