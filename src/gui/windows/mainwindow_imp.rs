@@ -1198,6 +1198,19 @@ impl MainWindow {
                     self.persist_tags();
                 }
             }
+            ItemViewerContextAction::Compress(paths) => {
+                if let Some(dest_zip) = crate::core::compress::compress_target_path(&paths) {
+                    let notification_id = self.notifications_state.start_operation(
+                        crate::gui::windows::containers::notifications::FileOpKind::Compress,
+                        paths.len(),
+                        path_display_label(&dest_zip),
+                    );
+                    let (tx, rx) = crossbeam_channel::unbounded();
+                    crate::core::compress::compress_paths_async(paths, dest_zip.clone(), tx);
+                    self.pending_compress_jobs
+                        .insert(notification_id, (rx, dest_zip));
+                }
+            }
             ItemViewerContextAction::RenameRequest(path, new_name) => {
                 let trimmed = new_name.trim();
 
@@ -1786,6 +1799,32 @@ impl MainWindow {
                     .pending_selection_paths = Some(pasted_paths);
             }
 
+            self.load_path();
+        }
+    }
+
+    /// Drains every background compress job's result once it's ready -
+    /// called once per frame from the main update loop, same as
+    /// `poll_pending_paste`. A job with no result yet (still writing the
+    /// archive) is left in the map for the next frame to check again.
+    pub fn poll_pending_compress(&mut self) {
+        let mut finished = Vec::new();
+        for (&id, (rx, _)) in &self.pending_compress_jobs {
+            if let Ok(result) = rx.try_recv() {
+                finished.push((id, result));
+            }
+        }
+
+        for (id, result) in finished {
+            self.pending_compress_jobs.remove(&id);
+            let status = match result {
+                Ok(()) => crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+                Err(e) => {
+                    eprintln!("Compress failed: {e}");
+                    crate::gui::windows::containers::notifications::FileOpStatus::Failed
+                }
+            };
+            self.notifications_state.finish_operation(id, status);
             self.load_path();
         }
     }

@@ -1183,6 +1183,50 @@ impl SavedSearchesState {
     }
 }
 
+/// Recent locations accumulate on every real-folder navigation (see
+/// `MainWindow::load_view_with_fallback`'s normal-folder branch in
+/// `mainwindow_imp.rs`) - capped so casual browsing can't grow the list
+/// unbounded. Unlike `SavedSearch`, an entry has no user-editable name or
+/// id: its identity and display label are both just its path.
+pub const MAX_RECENT_LOCATIONS: usize = 20;
+
+pub struct RecentLocationsState {
+    /// Most-recently-visited first. Re-visiting a path already in the list
+    /// moves it to the front instead of duplicating it.
+    pub items: Vec<PathBuf>,
+}
+
+impl Default for RecentLocationsState {
+    fn default() -> Self {
+        Self { items: Vec::new() }
+    }
+}
+
+impl RecentLocationsState {
+    pub fn from_snapshot(snapshot: crate::core::indexer::RecentLocationsSnapshot) -> Self {
+        Self {
+            items: snapshot.items,
+        }
+    }
+
+    pub fn to_snapshot(&self) -> crate::core::indexer::RecentLocationsSnapshot {
+        crate::core::indexer::RecentLocationsSnapshot {
+            version: 1,
+            items: self.items.clone(),
+        }
+    }
+
+    pub fn record_visit(&mut self, path: PathBuf) {
+        self.items.retain(|p| p != &path);
+        self.items.insert(0, path);
+        self.items.truncate(MAX_RECENT_LOCATIONS);
+    }
+
+    pub fn remove(&mut self, path: &Path) {
+        self.items.retain(|p| p != path);
+    }
+}
+
 /// Columns shown in the "tagged items" table for one tag group (see
 /// `draw_tag_view`). Kept separate from `ItemViewerHeaderColumn` since this
 /// table is a virtual list (not a real directory listing) with its own,

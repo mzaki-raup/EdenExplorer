@@ -75,6 +75,10 @@ pub enum ItemViewerContextAction {
     AddTag(Vec<PathBuf>),
     RemoveTag(Vec<PathBuf>),
     AddFavorite(Vec<PathBuf>),
+    /// Compress the selection into a single new `.zip` in the same folder -
+    /// see `core::compress::compress_target_path` for how the zip's name is
+    /// chosen.
+    Compress(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
     /// More than one item was selected when "Rename" was chosen - opens the

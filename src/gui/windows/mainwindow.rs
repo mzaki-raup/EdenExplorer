@@ -93,6 +93,11 @@ pub struct MainWindow {
     /// the update loop, alongside `pending_paste_conflict`.
     pub(crate) pending_bulk_rename:
         Option<crate::gui::windows::containers::bulk_rename::BulkRenameState>,
+    /// Compress (zip) jobs running on a background thread, keyed by the
+    /// notification id `handle_context_action`'s `Compress` arm created for
+    /// each - polled once per frame by `poll_pending_compress`.
+    pub(crate) pending_compress_jobs:
+        HashMap<u64, (crossbeam_channel::Receiver<Result<(), String>>, PathBuf)>,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
@@ -319,6 +324,7 @@ impl Default for MainWindow {
             pending_robocopy_pastes: HashMap::new(),
             pending_paste_conflict: None,
             pending_bulk_rename: None,
+            pending_compress_jobs: HashMap::new(),
             notifications_state: NotificationsState::default(),
             theme_dirty: true,
             window_override_set: false,
@@ -1484,6 +1490,7 @@ impl eframe::App for MainWindow {
             tags_changed = true;
         }
         self.poll_pending_paste();
+        self.poll_pending_compress();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);

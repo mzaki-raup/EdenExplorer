@@ -478,6 +478,15 @@ pub fn handle_context_menu_actions(
 
     ui.separator();
 
+    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
+    ui.separator();
+
     if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
             context_paths.clone(),

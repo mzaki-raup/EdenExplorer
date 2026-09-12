@@ -1,3 +1,4 @@
+pub mod compress;
 pub mod context_menu_settings;
 pub mod drives;
 pub mod everything;

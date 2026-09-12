@@ -19,6 +19,7 @@ pub enum FileOpKind {
     Move,
     Delete,
     Rename,
+    Compress,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,6 +257,7 @@ fn kind_icon(kind: FileOpKind) -> &'static str {
         FileOpKind::Move => regular::ARROWS_LEFT_RIGHT,
         FileOpKind::Delete => regular::TRASH,
         FileOpKind::Rename => regular::PENCIL_SIMPLE,
+        FileOpKind::Compress => regular::FILE_ZIP,
     }
 }
 
@@ -295,6 +297,7 @@ fn kind_label(i18n: &I18n, kind: FileOpKind) -> String {
         FileOpKind::Move => i18n.tr("notifications_kind_move"),
         FileOpKind::Delete => i18n.tr("notifications_kind_delete"),
         FileOpKind::Rename => i18n.tr("notifications_kind_rename"),
+        FileOpKind::Compress => i18n.tr("notifications_kind_compress"),
     }
 }
 

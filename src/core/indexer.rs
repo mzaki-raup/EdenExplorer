@@ -74,6 +74,18 @@ fn default_next_saved_search_id() -> u64 {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct RecentLocationsSnapshot {
+    #[serde(default = "default_recent_locations_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub items: Vec<PathBuf>,
+}
+
+fn default_recent_locations_version() -> u32 {
+    1
+}
+
+#[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     #[serde(default = "default_show_hidden_files_folders")]
@@ -390,6 +402,11 @@ fn saved_searches_cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("saved_searches.bin"))
 }
 
+fn recent_locations_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("recent_locations.bin"))
+}
+
 /// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
 /// Shared Network) are expanded, persisted across restarts.
 #[derive(Serialize, Deserialize)]
@@ -613,6 +630,22 @@ pub fn load_saved_searches() -> Option<SavedSearchesSnapshot> {
 
 pub fn save_saved_searches(snapshot: &SavedSearchesSnapshot) {
     let path = match saved_searches_cache_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_recent_locations() -> Option<RecentLocationsSnapshot> {
+    let path = recent_locations_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<RecentLocationsSnapshot>(&path)
+}
+
+pub fn save_recent_locations(snapshot: &RecentLocationsSnapshot) {
+    let path = match recent_locations_cache_path() {
         Some(path) => path,
         None => return,
     };
