@@ -18,7 +18,8 @@ use crate::gui::windows::containers::notifications::{draw_notifications_button, 
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
-    RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabView, TabsAction, TagsState,
+    RenameState, SavedSearchesState, SidebarAction, SplitSide, TabInfo, TabState, TabView,
+    TabsAction, TagsState,
 };
 use crate::gui::windows::containers::tabs::{TAB_HEIGHT, draw_tabs, tab_row_count};
 use crate::gui::windows::containers::tags::draw_tag_picker_popup;
@@ -107,6 +108,7 @@ pub struct MainWindow {
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) tags_state: TagsState,
+    pub(crate) saved_searches_state: SavedSearchesState,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
     pub(crate) clipboard_is_cut: bool,
@@ -296,6 +298,7 @@ impl Default for MainWindow {
                     favorites_expanded: sections.favorites,
                     tags_expanded: sections.tags,
                     shared_network_expanded: sections.shared_network,
+                    saved_searches_expanded: sections.saved_searches,
                     ..SidebarState::default()
                 }
             },
@@ -319,6 +322,9 @@ impl Default for MainWindow {
             file_type_cache: HashMap::new(),
             tags_state: load_tags()
                 .map(TagsState::from_snapshot)
+                .unwrap_or_default(),
+            saved_searches_state: crate::core::indexer::load_saved_searches()
+                .map(SavedSearchesState::from_snapshot)
                 .unwrap_or_default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
@@ -743,6 +749,7 @@ impl eframe::App for MainWindow {
                                                     drag_active,
                                                     drag_hover_target.clone(),
                                                     &self.tags_state,
+                                                    &mut self.saved_searches_state,
                                                 ));
                                             },
                                         );
@@ -1085,6 +1092,7 @@ impl eframe::App for MainWindow {
                                                                 &mut drop_targets,
                                                                 primary_focused,
                                                                 true,
+                                                                self.saved_searches_state.items.len(),
                                                             );
                                                             tabbar_action = a;
                                                             pending_action = b;
@@ -1182,6 +1190,7 @@ impl eframe::App for MainWindow {
                                                                 &mut drop_targets,
                                                                 secondary_focused,
                                                                 true,
+                                                                self.saved_searches_state.items.len(),
                                                             );
                                                             secondary_tabbar_action = a;
                                                             secondary_pending_action = b;
@@ -1249,6 +1258,7 @@ impl eframe::App for MainWindow {
                                                 &mut drop_targets,
                                                 true,
                                                 false,
+                                                self.saved_searches_state.items.len(),
                                             );
                                             tabbar_action = a;
                                             pending_action = b;

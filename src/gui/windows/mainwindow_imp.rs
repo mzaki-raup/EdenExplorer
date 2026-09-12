@@ -1119,6 +1119,10 @@ impl MainWindow {
         save_tags(&self.tags_state.to_snapshot());
     }
 
+    pub fn persist_saved_searches(&self) {
+        crate::core::indexer::save_saved_searches(&self.saved_searches_state.to_snapshot());
+    }
+
     fn move_tagged_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: &Path) -> bool {
         let mut changed = false;
 
@@ -2176,6 +2180,15 @@ impl MainWindow {
             if let Some((query, scope)) = tabbar_action.as_ref().and_then(|t| t.open_search.clone()) {
                 self.open_or_focus_search_tab(query, scope);
             }
+            if let Some((query, scope)) = tabbar_action.as_ref().and_then(|t| t.save_search.clone()) {
+                let scope_folder = match &scope {
+                    SearchScope::CurrentFolder(dir) => Some(dir.clone()),
+                    SearchScope::Everywhere => None,
+                };
+                if self.saved_searches_state.add(query, scope_folder) {
+                    self.persist_saved_searches();
+                }
+            }
             if tabbar_action
                 .as_ref()
                 .map(|t| t.activate_search_box)
@@ -2688,6 +2701,24 @@ impl MainWindow {
             }
             if let Some(group_id) = action.open_tag_view {
                 self.open_or_focus_tag_view_tab(group_id);
+            }
+            if let Some(id) = action.open_saved_search {
+                if let Some(item) = self
+                    .saved_searches_state
+                    .items
+                    .iter()
+                    .find(|item| item.id == id)
+                {
+                    let scope = match &item.scope_folder {
+                        Some(dir) => SearchScope::CurrentFolder(dir.clone()),
+                        None => SearchScope::Everywhere,
+                    };
+                    self.open_or_focus_search_tab(item.query.clone(), scope);
+                }
+            }
+            if let Some(id) = action.remove_saved_search {
+                self.saved_searches_state.remove(id);
+                self.persist_saved_searches();
             }
         }
     }

@@ -8,7 +8,9 @@ use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
-use crate::gui::windows::containers::structs::{SidebarAction, TagsState};
+use crate::gui::windows::containers::structs::{
+    SavedSearchRenameState, SavedSearchesState, SidebarAction, TagsState,
+};
 use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
@@ -62,10 +64,13 @@ pub fn draw_sidebar(
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
     tags_state: &TagsState,
+    saved_searches_state: &mut SavedSearchesState,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
     let mut sections_changed = false;
+    let mut saved_search_rename_state = saved_searches_state.rename_state.take();
+    let mut saved_search_rename_committed: Option<(u64, String)> = None;
     let mut drop_index: Option<usize> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
@@ -456,13 +461,145 @@ pub fn draw_sidebar(
                             );
                         } else {
                             for group in tags_state.groups.iter() {
-                                let resp =
-                                    draw_sidebar_tag_item(ui, &group.name, group.color, palette);
+                                let resp = draw_sidebar_virtual_item(
+                                    ui,
+                                    &group.name,
+                                    egui_phosphor::fill::TAG,
+                                    group.color,
+                                    palette,
+                                );
                                 if resp.clicked() {
                                     action.open_tag_view = Some(group.id);
                                 }
                             }
                         }
+                    }
+
+                    ui.add_space(6.0);
+                    sections_changed |= draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("saved_searches"),
+                        &mut sidebar_state.saved_searches_expanded,
+                    );
+                    if sidebar_state.saved_searches_expanded {
+                        ui.add_space(4.0);
+
+                        if saved_searches_state.items.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("saved_search_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for item in saved_searches_state.items.iter() {
+                                let editing = saved_search_rename_state
+                                    .as_ref()
+                                    .map(|state| state.id == item.id)
+                                    .unwrap_or(false);
+
+                                if editing {
+                                    let mut clear_rename = false;
+                                    let rename = saved_search_rename_state
+                                        .as_mut()
+                                        .expect("checked by `editing` above");
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            egui::RichText::new(regular::MAGNIFYING_GLASS)
+                                                .size(palette.sidebar_icon_size)
+                                                .color(palette.icon_color),
+                                        );
+                                        let edit_id =
+                                            ui.id().with("saved_search_rename").with(item.id);
+                                        let edit_response = ui.add(
+                                            egui::TextEdit::singleline(&mut rename.buffer)
+                                                .id(edit_id)
+                                                .desired_width(ui.available_width() - 8.0)
+                                                .font(FontId::new(
+                                                    palette.text_size,
+                                                    FontFamily::Proportional,
+                                                )),
+                                        );
+
+                                        if rename.should_focus {
+                                            ui.memory_mut(|mem| mem.request_focus(edit_id));
+                                            edit_response.request_focus();
+                                            if edit_response.has_focus() {
+                                                rename.should_focus = false;
+                                            }
+                                        }
+
+                                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                        let escape =
+                                            ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+                                        if enter || edit_response.lost_focus() {
+                                            let new_name = rename.buffer.trim().to_string();
+                                            if !new_name.is_empty() {
+                                                saved_search_rename_committed =
+                                                    Some((item.id, new_name));
+                                            }
+                                            clear_rename = true;
+                                        } else if escape {
+                                            clear_rename = true;
+                                        }
+                                    });
+                                    if clear_rename {
+                                        saved_search_rename_state = None;
+                                    }
+                                } else {
+                                    let resp = draw_sidebar_virtual_item(
+                                        ui,
+                                        &item.name,
+                                        regular::MAGNIFYING_GLASS,
+                                        palette.icon_color,
+                                        palette,
+                                    );
+                                    if resp.clicked() {
+                                        action.open_saved_search = Some(item.id);
+                                    }
+
+                                    Popup::context_menu(&resp)
+                                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                        .show(|ui| {
+                                            apply_eden_text_overrides(ui, palette);
+                                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                                action.open_saved_search = Some(item.id);
+                                                ui.close();
+                                            }
+                                            if ui.button(&i18n.tr("inputs_rename")).clicked() {
+                                                saved_search_rename_state =
+                                                    Some(SavedSearchRenameState {
+                                                        id: item.id,
+                                                        buffer: item.name.clone(),
+                                                        should_focus: true,
+                                                    });
+                                                ui.close();
+                                            }
+                                            if ui.button(&i18n.tr("saved_search_delete")).clicked()
+                                            {
+                                                action.remove_saved_search = Some(item.id);
+                                                ui.close();
+                                            }
+                                        });
+                                }
+                            }
+                        }
+                    }
+
+                    saved_searches_state.rename_state = saved_search_rename_state;
+                    if let Some((id, new_name)) = saved_search_rename_committed {
+                        if let Some(item) = saved_searches_state
+                            .items
+                            .iter_mut()
+                            .find(|item| item.id == id)
+                        {
+                            item.name = new_name;
+                        }
+                        crate::core::indexer::save_saved_searches(
+                            &saved_searches_state.to_snapshot(),
+                        );
                     }
 
                     ui.add_space(6.0);
@@ -526,6 +663,7 @@ pub fn draw_sidebar(
             favorites: sidebar_state.favorites_expanded,
             tags: sidebar_state.tags_expanded,
             shared_network: sidebar_state.shared_network_expanded,
+            saved_searches: sidebar_state.saved_searches_expanded,
         });
     }
 
@@ -760,11 +898,13 @@ pub fn draw_sidebar_item_with_icon(
     }
 }
 
-/// A sidebar row for one tag group: a colored dot instead of a shell/folder
-/// icon, followed by the tag's name.
-fn draw_sidebar_tag_item(
+/// A sidebar row for one virtual (non-folder) item - a tag group or a saved
+/// search - using a caller-supplied glyph instead of a shell/folder icon,
+/// followed by its name.
+fn draw_sidebar_virtual_item(
     ui: &mut egui::Ui,
     label: &str,
+    icon: &str,
     color: egui::Color32,
     palette: &ThemePalette,
 ) -> egui::Response {
@@ -792,7 +932,7 @@ fn draw_sidebar_tag_item(
     ui.painter().text(
         icon_center,
         egui::Align2::CENTER_CENTER,
-        egui_phosphor::fill::TAG,
+        icon,
         egui::FontId::new(icon_size, egui::FontFamily::Proportional),
         color,
     );

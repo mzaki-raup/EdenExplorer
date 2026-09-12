@@ -48,6 +48,32 @@ pub struct TagsSnapshot {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct SavedSearchSnapshot {
+    pub id: u64,
+    pub name: String,
+    pub query: String,
+    pub scope_folder: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SavedSearchesSnapshot {
+    #[serde(default = "default_saved_searches_version")]
+    pub version: u32,
+    #[serde(default = "default_next_saved_search_id")]
+    pub next_id: u64,
+    #[serde(default)]
+    pub items: Vec<SavedSearchSnapshot>,
+}
+
+fn default_saved_searches_version() -> u32 {
+    1
+}
+
+fn default_next_saved_search_id() -> u64 {
+    1
+}
+
+#[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     #[serde(default = "default_show_hidden_files_folders")]
@@ -359,6 +385,11 @@ fn tags_cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("tags.bin"))
 }
 
+fn saved_searches_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("saved_searches.bin"))
+}
+
 /// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
 /// Shared Network) are expanded, persisted across restarts.
 #[derive(Serialize, Deserialize)]
@@ -368,6 +399,15 @@ pub struct SidebarSectionsSnapshot {
     pub favorites: bool,
     pub tags: bool,
     pub shared_network: bool,
+    // Appended after `shared_network` rather than inserted alongside the
+    // other section flags above - postcard's binary format is purely
+    // positional (unlike JSON), so a new field must always go at the very
+    // end of the struct. `#[serde(default = ...)]` only rescues a *missing
+    // trailing* field when an old save's byte stream runs out early; it
+    // does nothing to fix a field inserted mid-struct, which would instead
+    // silently misalign every field that comes after it against old data.
+    #[serde(default = "default_true")]
+    pub saved_searches: bool,
 }
 
 impl Default for SidebarSectionsSnapshot {
@@ -378,6 +418,7 @@ impl Default for SidebarSectionsSnapshot {
             favorites: true,
             tags: true,
             shared_network: true,
+            saved_searches: true,
         }
     }
 }
@@ -556,6 +597,22 @@ pub fn load_tags() -> Option<TagsSnapshot> {
 
 pub fn save_tags(snapshot: &TagsSnapshot) {
     let path = match tags_cache_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_saved_searches() -> Option<SavedSearchesSnapshot> {
+    let path = saved_searches_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<SavedSearchesSnapshot>(&path)
+}
+
+pub fn save_saved_searches(snapshot: &SavedSearchesSnapshot) {
+    let path = match saved_searches_cache_path() {
         Some(path) => path,
         None => return,
     };

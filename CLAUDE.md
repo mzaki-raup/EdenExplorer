@@ -654,6 +654,47 @@ PowerShell process) rather than the app's own code - if you're using the
   handles the simple case isn't actually swappable, and the gap won't
   show up in testing unless the exact same query someone would type
   against the *other* engine is tried against this one too.
+- **`postcard`'s binary format is purely positional - a new struct field
+  must always be appended at the very end, never inserted alongside
+  related fields in the middle.** While adding a `saved_searches: bool`
+  flag to `SidebarSectionsSnapshot` (`core/indexer.rs`) - alongside the
+  existing `places`/`storage`/`favorites`/`tags`/`shared_network` bools -
+  the natural-looking edit was to insert it in that same group, before
+  `shared_network`. Caught during review (not live, but worth recording
+  since it's an easy mistake to make again): unlike JSON, postcard has no
+  field names in the byte stream, so a field inserted mid-struct doesn't
+  get skipped or defaulted for an old save file - it silently shifts every
+  field that comes after it, misreading `shared_network`'s old byte as the
+  new field and reading garbage/misaligned bytes for `shared_network`
+  itself. `#[serde(default = ...)]` only rescues a field when the old
+  byte stream runs out entirely (a genuinely *missing trailing* field) -
+  it does nothing for a field inserted earlier in the struct. Fixed by
+  appending `saved_searches` after `shared_network` instead. Whenever
+  adding a field to any `Serialize`/`Deserialize` struct that's persisted
+  via `postcard` (search this file's own `core::indexer` module for the
+  existing `#[serde(default = ...)]` pattern - most persisted structs use
+  it), add the new field at the literal end of the struct, never wherever
+  it "reads best" alongside similar fields.
+- **Mouse-click-based live UI testing (`click.ps1`) can go completely
+  unresponsive for an entire session while keyboard-based testing
+  (`send-keys.ps1`) keeps working perfectly** - a different failure mode
+  from the previously-documented focus-stealing/input-queue-lag issues.
+  While testing the Saved Searches feature, `focus.ps1` reported success
+  (foreground window was genuinely EdenExplorer's), but repeated
+  `click.ps1` calls against several different, unambiguous targets (a
+  toolbar toggle button, a file row, a tab's close button, the theme
+  toggle) produced zero visible effect across multiple retries and a
+  fresh app relaunch - while in the same window, `send-keys.ps1` (Ctrl+F,
+  typed text, Enter) worked exactly as expected and a real search
+  executed correctly. Root cause not identified (possibly the user's own
+  foreground application - a game - intercepting/absorbing posted mouse
+  messages at the OS level despite `GetForegroundWindow` reporting
+  EdenExplorer). When `click.ps1` produces no visible effect, don't
+  assume the clicked feature is broken - first run a cheap, unrelated
+  control click (e.g. a tab or a toolbar icon whose effect is obvious) to
+  check whether clicks are working *at all* right now, and cross-check
+  with a `send-keys.ps1`-only path if one exists for the feature being
+  tested, before concluding anything about the code itself.
 
 ## Operational Instructions
 

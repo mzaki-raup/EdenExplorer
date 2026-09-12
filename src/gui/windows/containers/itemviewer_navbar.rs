@@ -42,6 +42,7 @@ pub fn draw_itemviewer_navigation_bar(
     drag_hover_target: Option<PathBuf>,
     is_split_pane: bool,
     tags: &[TagGroup],
+    saved_search_count: usize,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
@@ -84,6 +85,7 @@ pub fn draw_itemviewer_navigation_bar(
                 &mut breadcrumb_drop_target,
                 &mut action,
                 tags,
+                saved_search_count,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -154,6 +156,7 @@ pub fn draw_itemviewer_navigation_bar(
                 &mut breadcrumb_drop_target,
                 &mut action,
                 tags,
+                saved_search_count,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -191,6 +194,7 @@ fn draw_bordered_breadcrumb(
     breadcrumb_drop_target: &mut Option<PathBuf>,
     action: &mut ItemViewerNavBarAction,
     tags: &[TagGroup],
+    saved_search_count: usize,
 ) {
     // Computed before the frame is created: inside a horizontal layout, a
     // frame otherwise shrinks to fit its content (like an inline element)
@@ -230,6 +234,7 @@ fn draw_bordered_breadcrumb(
                 action,
                 breadcrumb_width,
                 tags,
+                saved_search_count,
             );
         });
 }
@@ -245,6 +250,7 @@ fn draw_search_box_contents(
     tab_id: u64,
     palette: &ThemePalette,
     action: &mut ItemViewerNavBarAction,
+    saved_search_count: usize,
 ) {
     // `horizontal_wrapped` rather than a plain `horizontal`: the scope
     // buttons' width varies with the current language's translation and
@@ -312,6 +318,26 @@ fn draw_search_box_contents(
             tab.search_box_scope = crate::core::everything::SearchScope::Everywhere;
         }
 
+        ui.add_space(8.0);
+        let at_limit = saved_search_count >= crate::gui::windows::containers::structs::MAX_SAVED_SEARCHES;
+        let save_hover_text = if at_limit {
+            i18n.tr("save_search_limit_reached")
+        } else {
+            i18n.tr("save_search_tooltip")
+        };
+        if crate::gui::utils::clickable_icon(ui, regular::BOOKMARK_SIMPLE, palette)
+            .on_hover_text(save_hover_text)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+            && !at_limit
+            && !tab.search_box_buffer.trim().is_empty()
+        {
+            action.save_search = Some((
+                tab.search_box_buffer.trim().to_string(),
+                tab.search_box_scope.clone(),
+            ));
+        }
+
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
         let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
@@ -343,9 +369,10 @@ fn draw_breadcrumb_row_contents(
     action: &mut ItemViewerNavBarAction,
     breadcrumb_width: f32,
     tags: &[TagGroup],
+    saved_search_count: usize,
 ) {
     if tab.search_box_editing {
-        draw_search_box_contents(ui, i18n, tab, tab_id, palette, action);
+        draw_search_box_contents(ui, i18n, tab, tab_id, palette, action, saved_search_count);
         return;
     }
 

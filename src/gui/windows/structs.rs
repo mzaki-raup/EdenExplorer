@@ -120,6 +120,7 @@ pub struct SidebarState {
     pub favorites_expanded: bool,
     pub tags_expanded: bool,
     pub shared_network_expanded: bool,
+    pub saved_searches_expanded: bool,
 }
 
 impl Default for SidebarState {
@@ -133,6 +134,7 @@ impl Default for SidebarState {
             favorites_expanded: true,
             tags_expanded: true,
             shared_network_expanded: true,
+            saved_searches_expanded: true,
             item_clicked: None,
             sidebar_default_width: 250.0,
             cached_drives: Vec::new(),

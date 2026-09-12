@@ -65,6 +65,7 @@ pub fn draw_tab_content(
     drop_targets: &mut DropTargets,
     is_focused: bool,
     is_split_pane: bool,
+    saved_search_count: usize,
 ) -> (Option<ItemViewerNavBarAction>, Option<ItemViewerAction>) {
     let viewport_width = ui.available_width();
     let is_drive_view = view.nav.is_root();
@@ -110,6 +111,7 @@ pub fn draw_tab_content(
                     drag_hover_target.clone(),
                     is_split_pane,
                     &tags_state.groups,
+                    saved_search_count,
                 ));
             });
 

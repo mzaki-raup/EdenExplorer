@@ -901,6 +901,10 @@ pub struct ItemViewerNavBarAction {
     /// this tab is showing a real folder) and switches the breadcrumb row
     /// into the inline search box.
     pub activate_search_box: bool,
+    /// Set when the "save this search" button next to the search box is
+    /// clicked - the caller appends a `SavedSearch` (or shows the
+    /// limit-reached message if already at `MAX_SAVED_SEARCHES`).
+    pub save_search: Option<(String, crate::core::everything::SearchScope)>,
 }
 
 #[derive(Clone, Copy)]
@@ -963,6 +967,10 @@ pub struct SidebarAction {
     /// A sidebar tag was clicked: open (or focus, if already open) the
     /// dedicated tab showing that tag group's tagged items.
     pub open_tag_view: Option<u64>,
+    /// A saved search was clicked (or "Open in new tab" chosen): reopen it
+    /// as a normal search tab, same as re-typing that query.
+    pub open_saved_search: Option<u64>,
+    pub remove_saved_search: Option<u64>,
 }
 
 #[derive(Default)]
@@ -1070,6 +1078,107 @@ impl Default for TagsState {
             delete_confirmation: None,
             pending_action: None,
             column_state: TagColumnState::default(),
+        }
+    }
+}
+
+/// A user-saved search: a name plus the exact query/scope needed to reopen
+/// it via `search_view_path`/`open_or_focus_search_tab` - the same sentinel-
+/// path mechanism a live search already uses, so reopening one is just
+/// re-running that search, not a separate code path.
+#[derive(Clone)]
+pub struct SavedSearch {
+    pub id: u64,
+    pub name: String,
+    pub query: String,
+    pub scope_folder: Option<PathBuf>,
+}
+
+pub struct SavedSearchRenameState {
+    pub id: u64,
+    pub buffer: String,
+    pub should_focus: bool,
+}
+
+/// Saved searches accumulate one click at a time (unlike Favorites, which
+/// requires deliberately dragging a folder in) - capped so the sidebar list
+/// can't grow unbounded from casual use.
+pub const MAX_SAVED_SEARCHES: usize = 50;
+
+pub struct SavedSearchesState {
+    pub items: Vec<SavedSearch>,
+    pub next_id: u64,
+    pub rename_state: Option<SavedSearchRenameState>,
+}
+
+impl Default for SavedSearchesState {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            next_id: 1,
+            rename_state: None,
+        }
+    }
+}
+
+impl SavedSearchesState {
+    pub fn from_snapshot(snapshot: crate::core::indexer::SavedSearchesSnapshot) -> Self {
+        Self {
+            items: snapshot
+                .items
+                .into_iter()
+                .map(|item| SavedSearch {
+                    id: item.id,
+                    name: item.name,
+                    query: item.query,
+                    scope_folder: item.scope_folder,
+                })
+                .collect(),
+            next_id: snapshot.next_id.max(1),
+            rename_state: None,
+        }
+    }
+
+    pub fn to_snapshot(&self) -> crate::core::indexer::SavedSearchesSnapshot {
+        crate::core::indexer::SavedSearchesSnapshot {
+            version: 1,
+            next_id: self.next_id.max(1),
+            items: self
+                .items
+                .iter()
+                .map(|item| crate::core::indexer::SavedSearchSnapshot {
+                    id: item.id,
+                    name: item.name.clone(),
+                    query: item.query.clone(),
+                    scope_folder: item.scope_folder.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Adds a new saved search using the query text itself as the default
+    /// name (renamable afterward via the sidebar's context menu) - matching
+    /// Favorites' pattern of no name-prompt-on-add, just a sensible default.
+    /// Returns `false` (without adding anything) once at `MAX_SAVED_SEARCHES`.
+    pub fn add(&mut self, query: String, scope_folder: Option<PathBuf>) -> bool {
+        if self.items.len() >= MAX_SAVED_SEARCHES {
+            return false;
+        }
+        let id = self.next_id.max(1);
+        self.next_id = id.saturating_add(1);
+        self.items.push(SavedSearch {
+            id,
+            name: query.clone(),
+            query,
+            scope_folder,
+        });
+        true
+    }
+
+    pub fn remove(&mut self, id: u64) {
+        self.items.retain(|item| item.id != id);
+        if self.rename_state.as_ref().is_some_and(|r| r.id == id) {
+            self.rename_state = None;
         }
     }
 }
@@ -1423,4 +1532,66 @@ pub struct ItemViewerColumnWidths {
     pub usage_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+}
+
+#[cfg(test)]
+mod saved_searches_tests {
+    use super::{SavedSearchesState, MAX_SAVED_SEARCHES};
+
+    #[test]
+    fn add_uses_query_as_default_name_and_assigns_increasing_ids() {
+        let mut state = SavedSearchesState::default();
+        assert!(state.add("*.png".to_string(), None));
+        assert!(state.add("report ext:pdf".to_string(), Some("D:\\Docs".into())));
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].name, "*.png");
+        assert_eq!(state.items[0].query, "*.png");
+        assert_eq!(state.items[0].scope_folder, None);
+        assert_eq!(state.items[1].scope_folder, Some("D:\\Docs".into()));
+        assert_ne!(state.items[0].id, state.items[1].id);
+    }
+
+    #[test]
+    fn add_refuses_past_the_cap() {
+        let mut state = SavedSearchesState::default();
+        for i in 0..MAX_SAVED_SEARCHES {
+            assert!(state.add(format!("query{i}"), None));
+        }
+        assert_eq!(state.items.len(), MAX_SAVED_SEARCHES);
+        assert!(!state.add("one_too_many".to_string(), None));
+        assert_eq!(state.items.len(), MAX_SAVED_SEARCHES);
+    }
+
+    #[test]
+    fn remove_drops_the_item_and_clears_a_matching_rename_state() {
+        let mut state = SavedSearchesState::default();
+        state.add("a".to_string(), None);
+        state.add("b".to_string(), None);
+        let id_to_remove = state.items[0].id;
+        state.rename_state = Some(super::SavedSearchRenameState {
+            id: id_to_remove,
+            buffer: "a".to_string(),
+            should_focus: false,
+        });
+
+        state.remove(id_to_remove);
+
+        assert_eq!(state.items.len(), 1);
+        assert!(state.items.iter().all(|item| item.id != id_to_remove));
+        assert!(state.rename_state.is_none());
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_items_and_next_id() {
+        let mut state = SavedSearchesState::default();
+        state.add("*.md".to_string(), Some("D:\\Notes".into()));
+        let snapshot = state.to_snapshot();
+
+        let restored = SavedSearchesState::from_snapshot(snapshot);
+
+        assert_eq!(restored.items.len(), 1);
+        assert_eq!(restored.items[0].query, "*.md");
+        assert_eq!(restored.items[0].scope_folder, Some("D:\\Notes".into()));
+        assert_eq!(restored.next_id, state.next_id);
+    }
 }
