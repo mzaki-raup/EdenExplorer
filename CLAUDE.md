@@ -849,6 +849,35 @@ PowerShell process) rather than the app's own code - if you're using the
   despite `focus.ps1` reporting success moments earlier, try this
   same-process chaining before concluding the app itself is unresponsive
   or spending time on other workarounds.
+- **The Undo/Redo Replace-safety work (`delete_paths_native`'s internal
+  recycle-before-replace call) reused the same `FOF_WANTNUKEWARNING` flag
+  the user-facing Delete action uses, and that made an internal
+  housekeeping delete pop Windows' own native "Are you sure you want to
+  permanently delete this file?" confirmation dialog in the middle of a
+  Replace/Copy-undo/Move-redo/Copy-redo operation the user never asked
+  to delete anything for.** `FOF_WANTNUKEWARNING` means "warn if this
+  item is about to be destroyed rather than recycled" - it's exactly
+  right for a real user-initiated delete (matches Explorer's own
+  behavior, which is why it was used there originally), but wrong for
+  code that's silently recycling an item as an implementation detail
+  (making room for Replace, or Undo/Redo's own bookkeeping) - if Windows
+  decides for any reason the item can't be silently recycled (locked
+  file, recycle bin disabled/full, whatever), that flag surfaces a
+  blocking native dialog with no relation to what the user actually did.
+  Fixed by adding a `silent: bool` parameter to `delete_paths_native`
+  (`mainwindow_imp.rs`): `silent: true` uses `FOF_NOCONFIRMATION |
+  FOF_SILENT` instead (no prompt, ever - a failure is just an `Err` the
+  caller already checks via `.is_ok()`), used by all of Replace's
+  recycle-before-place, Copy-undo's delete-what-it-created, and Move/
+  Copy-redo's re-recycle step; the one genuine user-facing call site
+  (the `Delete`/`Delete Permanently` context menu entries) kept
+  `silent: false` (`FOF_WANTNUKEWARNING`) unchanged. When wrapping a
+  native Win32 "are you sure?"-capable API for use as *internal*
+  plumbing behind a feature the user didn't directly invoke, check
+  whether the exact same flags/call used elsewhere for the *direct*
+  user-facing version could ever surface UI on their own - silence
+  needs to be an explicit, separate flag combination, not inherited by
+  accident from a copy-pasted call site.
 
 ## Operational Instructions
 

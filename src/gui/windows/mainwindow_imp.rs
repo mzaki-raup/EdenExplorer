@@ -1492,7 +1492,7 @@ impl MainWindow {
                 } else {
                     String::new()
                 };
-                let delete_status = if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
+                let delete_status = if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo, false) {
                     eprintln!("Native delete failed: {:?}", e);
 
                     // fallback (rare, but safe)
@@ -1677,7 +1677,7 @@ impl MainWindow {
                     {
                         let existing_path = prompt.target_dir.join(&name);
                         if self
-                            .delete_paths_native(vec![existing_path.clone()], true)
+                            .delete_paths_native(vec![existing_path.clone()], true, true)
                             .is_ok()
                             && let Some(pidl) = self.find_recycled_pidl(&prompt.target_dir, &name)
                         {
@@ -2131,10 +2131,20 @@ impl MainWindow {
         }
     }
 
+    /// `silent` suppresses any native "are you sure?" confirmation and
+    /// progress UI (`FOF_NOCONFIRMATION | FOF_SILENT`) - use this for
+    /// internal housekeeping deletes the user never directly asked for
+    /// (recycling an item out of the way for Replace, or for Undo/Redo's
+    /// own bookkeeping), where a delete confirmation popping up mid-
+    /// operation would be a confusing surprise. A genuine user-initiated
+    /// delete (the Delete/Delete Permanently context menu entries, the
+    /// Delete key) must pass `silent: false` to keep the real native
+    /// confirmation Explorer itself shows (`FOF_WANTNUKEWARNING`).
     pub fn delete_paths_native(
         &self,
         paths: Vec<PathBuf>,
         allow_undo: bool,
+        silent: bool,
     ) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
@@ -2146,10 +2156,11 @@ impl MainWindow {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
             // Recycle-bin view needs permanent delete; normal view keeps undo.
-            let flags = if allow_undo {
-                FOF_ALLOWUNDO | FOF_WANTNUKEWARNING
-            } else {
-                FOF_WANTNUKEWARNING
+            let flags = match (allow_undo, silent) {
+                (true, true) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
+                (true, false) => FOF_ALLOWUNDO | FOF_WANTNUKEWARNING,
+                (false, true) => FOF_NOCONFIRMATION | FOF_SILENT,
+                (false, false) => FOF_WANTNUKEWARNING,
             };
             file_op.SetOperationFlags(flags)?;
 
@@ -2276,7 +2287,7 @@ impl MainWindow {
                 // further-recoverable through Explorer's own Recycle Bin,
                 // same as everything else this app deletes.
                 let created: Vec<PathBuf> = pairs.iter().map(|(_, created)| created.clone()).collect();
-                if self.delete_paths_native(created, true).is_ok() {
+                if self.delete_paths_native(created, true, true).is_ok() {
                     if !replaced.is_empty() {
                         let pidls: Vec<Vec<u8>> = replaced.values().cloned().collect();
                         let _ = self.restore_paths_native(pidls);
@@ -2348,7 +2359,7 @@ impl MainWindow {
                 for (_, cur) in pairs {
                     if replaced.contains_key(cur)
                         && let Some(name) = cur.file_name().map(|n| n.to_string_lossy().to_string())
-                        && self.delete_paths_native(vec![cur.clone()], true).is_ok()
+                        && self.delete_paths_native(vec![cur.clone()], true, true).is_ok()
                         && let Some(pidl) = self.find_recycled_pidl(&target_dir, &name)
                     {
                         updated_replaced.insert(cur.clone(), pidl);
@@ -2400,7 +2411,7 @@ impl MainWindow {
                     if replaced.contains_key(created)
                         && let Some(name) =
                             created.file_name().map(|n| n.to_string_lossy().to_string())
-                        && self.delete_paths_native(vec![created.clone()], true).is_ok()
+                        && self.delete_paths_native(vec![created.clone()], true, true).is_ok()
                         && let Some(pidl) = self.find_recycled_pidl(&target_dir, &name)
                     {
                         updated_replaced.insert(created.clone(), pidl);
