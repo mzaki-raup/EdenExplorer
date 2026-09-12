@@ -88,6 +88,11 @@ pub struct MainWindow {
     /// a modal from the update loop.
     pub(crate) pending_paste_conflict:
         Option<crate::gui::windows::mainwindow_imp::PasteConflictPrompt>,
+    /// A bulk-rename dialog open over a multi-item selection - see
+    /// `bulk_rename::BulkRenameState`'s doc comment. Drawn as a modal from
+    /// the update loop, alongside `pending_paste_conflict`.
+    pub(crate) pending_bulk_rename:
+        Option<crate::gui::windows::containers::bulk_rename::BulkRenameState>,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
@@ -313,6 +318,7 @@ impl Default for MainWindow {
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
             pending_paste_conflict: None,
+            pending_bulk_rename: None,
             notifications_state: NotificationsState::default(),
             theme_dirty: true,
             window_override_set: false,
@@ -1479,6 +1485,7 @@ impl eframe::App for MainWindow {
         }
         self.poll_pending_paste();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
+        self.draw_bulk_rename_modal(ui.ctx(), &palette);
         draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);

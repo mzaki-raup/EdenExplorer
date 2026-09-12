@@ -16,6 +16,7 @@ OriginalFilename = "EdenExplorer.exe"
 LegalCopyright = "Copyright © 2026"
 
 [dependencies]
+regex = "1.11.1"
 image = "0.25.10"
 eframe = "0.35.0"
 egui = { version = "0.35.0", features = ["serde"] }

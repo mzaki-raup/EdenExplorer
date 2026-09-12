@@ -71,6 +71,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Preview pane for text, Markdown (rendered), images, animated GIFs, video, PDF/Word text extraction, and zip archive listings — with selectable text and right-click copy
 - Delete to Recycle Bin plus an explicit "Delete Permanently" action using the native Windows confirmation
 - Explorer-style click-pause-click inline rename (extension excluded from the selection)
+- Bulk rename: multi-selection "Rename" opens a live-preview dialog (simple find/replace or regex with capture groups, plus `{name}`/`{ext}`/`{n}`/`{n:03}` placeholders), with cross-item and existing-file collision detection blocking the commit until resolved, applied as one batched native operation
 
 ## Roadmap (from README)
 Upcoming alpha features: multi-tagging of objects, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.

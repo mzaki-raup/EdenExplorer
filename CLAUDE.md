@@ -695,6 +695,25 @@ PowerShell process) rather than the app's own code - if you're using the
   check whether clicks are working *at all* right now, and cross-check
   with a `send-keys.ps1`-only path if one exists for the feature being
   tested, before concluding anything about the code itself.
+- **The mouse-click-unresponsive state above isn't a one-off - it recurred
+  in a later session on the very same machine, persisting across a fresh
+  release rebuild and app relaunch, while `Ctrl+A`/`Ctrl+F`/typed text/
+  `Enter` all kept working perfectly the whole time.** This was hit again
+  while trying to verify the Bulk Rename feature (which needs a
+  multi-select + right-click to open). `Shift+F10` (Explorer's usual
+  keyboard alternative to a right-click context menu) does **not** work as
+  a substitute in this app - sending it did not open the context menu, and
+  once even collapsed a 5-item selection down to 1 (something in this
+  app's keyboard handling reacts to Shift+F10 in some other way, not
+  "open context menu"). There is currently no verified keyboard-only path
+  to a right-click context menu here. When this state recurs: confirm
+  quickly with one cheap control click (a few retries, not a long
+  investigation), then stop trying to force it and fall back to unit
+  tests + careful code review for anything that specifically requires a
+  mouse click (multi-select context menus chief among them) - don't burn
+  significant time retrying `click.ps1` once it's confirmed broken this
+  session, and don't try `Shift+F10` as a workaround, it's already been
+  tried and doesn't work.
 
 ## Operational Instructions
 

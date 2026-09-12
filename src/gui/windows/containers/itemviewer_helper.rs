@@ -509,7 +509,13 @@ pub fn handle_context_menu_actions(
     }
 
     if menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename")).clicked() {
-        *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
+        *action = if context_paths.len() > 1 {
+            Some(ItemViewerAction::Context(ItemViewerContextAction::BulkRenameRequest(
+                context_paths.clone(),
+            )))
+        } else {
+            Some(ItemViewerAction::StartEdit(file.path.clone()))
+        };
         ui.close();
     }
 

@@ -289,7 +289,7 @@ impl Drop for MainWindow {
 impl MainWindow {
     /// Comprehensive validation for submitted filenames
     /// Used when user submits/commits the filename (Enter, create new file/folder)
-    fn is_submitted_filename_valid(name: &str) -> bool {
+    pub(crate) fn is_submitted_filename_valid(name: &str) -> bool {
         if name.is_empty() {
             return false;
         }
@@ -1222,31 +1222,8 @@ impl MainWindow {
 
                     // Avoid no-op rename
                     if path != target {
-                        unsafe {
-                            use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-                            use windows::Win32::UI::Shell::{
-                                FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem,
-                                SHCreateItemFromParsingName,
-                            };
-                            use windows::core::HSTRING;
-
-                            let file_op: IFileOperation =
-                                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                            file_op.SetOperationFlags(FOF_ALLOWUNDO).ok();
-
-                            let source_item: IShellItem = SHCreateItemFromParsingName(
-                                &HSTRING::from(path.to_string_lossy().to_string()),
-                                None,
-                            )
-                            .unwrap();
-
-                            // Rename keeps same parent, so only pass new name
-                            file_op
-                                .RenameItem(&source_item, &HSTRING::from(trimmed), None)
-                                .ok();
-
-                            file_op.PerformOperations().ok();
+                        if let Err(e) = Self::rename_one_native(&path, trimmed) {
+                            eprintln!("Native rename failed: {:?}", e);
                         }
 
                         // Queue the renamed file for auto-selection after refresh
@@ -1268,6 +1245,74 @@ impl MainWindow {
 
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
+            }
+            ItemViewerContextAction::BulkRenameRequest(paths) => {
+                self.pending_bulk_rename =
+                    Some(crate::gui::windows::containers::bulk_rename::BulkRenameState::new(paths));
+            }
+            ItemViewerContextAction::BulkRenameCommit(renames) => {
+                let attempted = renames;
+                let mut succeeded: Vec<(PathBuf, PathBuf)> = Vec::new();
+                let mut needs_fallback: Vec<(PathBuf, String)> = Vec::new();
+
+                match self.rename_paths_native(attempted.clone()) {
+                    Ok(targets) => {
+                        let target_map: std::collections::HashMap<PathBuf, PathBuf> =
+                            targets.into_iter().collect();
+                        for (path, new_name) in &attempted {
+                            match target_map.get(path) {
+                                Some(target) if target.exists() => {
+                                    succeeded.push((path.clone(), target.clone()));
+                                }
+                                _ => needs_fallback.push((path.clone(), new_name.clone())),
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Native bulk rename failed: {:?}", e);
+                        needs_fallback = attempted.clone();
+                    }
+                }
+
+                let mut still_failed = 0usize;
+                for (path, new_name) in needs_fallback {
+                    if Self::rename_one_native(&path, &new_name).is_ok() {
+                        if let Some(parent) = path.parent() {
+                            succeeded.push((path.clone(), parent.join(&new_name)));
+                        }
+                    } else {
+                        still_failed += 1;
+                    }
+                }
+
+                let status = if still_failed == 0 {
+                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                } else {
+                    crate::gui::windows::containers::notifications::FileOpStatus::Failed
+                };
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Rename,
+                    attempted.len(),
+                    String::new(),
+                    status,
+                );
+
+                let mut tags_changed = false;
+                for (old, new) in &succeeded {
+                    tags_changed |= self.tags_state.remap_path_prefix(old, new);
+                }
+                if tags_changed {
+                    self.persist_tags();
+                }
+
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths =
+                    Some(succeeded.iter().map(|(_, new)| new.clone()).collect());
+
+                self.load_path();
             }
             ItemViewerContextAction::Delete(paths, permanent) => {
                 let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
@@ -1688,6 +1733,27 @@ impl MainWindow {
         }
     }
 
+    pub fn draw_bulk_rename_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
+        use crate::gui::windows::containers::bulk_rename::{draw_bulk_rename_modal, BulkRenameModalAction};
+
+        let Some(state) = self.pending_bulk_rename.as_mut() else {
+            return;
+        };
+
+        match draw_bulk_rename_modal(ctx, &self.i18n, palette, state) {
+            BulkRenameModalAction::None => {}
+            BulkRenameModalAction::Cancelled => {
+                self.pending_bulk_rename = None;
+            }
+            BulkRenameModalAction::Commit(renames) => {
+                self.pending_bulk_rename = None;
+                self.handle_context_action(
+                    crate::gui::windows::containers::enums::ItemViewerContextAction::BulkRenameCommit(renames),
+                );
+            }
+        }
+    }
+
     /// Drains every robocopy-backed paste's progress/result and applies
     /// completion side effects (selection, tag remapping, refresh) for any
     /// that just succeeded - failed/cancelled ones just get their
@@ -1803,6 +1869,80 @@ impl MainWindow {
         }
 
         Ok(())
+    }
+
+    /// Renames one item in place (same parent, new name only) via a single
+    /// `IFileOperation`. Shared by the single-item rename handler
+    /// (`RenameRequest`) and bulk rename's per-item fallback for anything
+    /// that didn't land as part of the batched `rename_paths_native` call.
+    fn rename_one_native(path: &Path, new_name: &str) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
+
+            let source_item: IShellItem = SHCreateItemFromParsingName(
+                &HSTRING::from(path.to_string_lossy().to_string()),
+                None,
+            )?;
+
+            file_op.RenameItem(&source_item, &HSTRING::from(new_name), None)?;
+            file_op.PerformOperations()?;
+        }
+
+        Ok(())
+    }
+
+    /// Batched rename: one `IFileOperation`, one `RenameItem` call queued
+    /// per pair, and - unlike `delete_paths_native`'s per-item
+    /// `PerformOperations` shape, which isn't needed there since delete has
+    /// no equivalent "did it actually land" ambiguity - exactly one
+    /// `PerformOperations()` at the very end, so the whole batch commits
+    /// (and undoes, via `FOF_ALLOWUNDO`) as one unit. Returns the
+    /// `(original_path, intended_target_path)` pairs that were queued; the
+    /// caller checks which targets actually exist afterward; there's no
+    /// `IFileOperationProgressSink` wired up in this codebase to get
+    /// per-item results directly.
+    pub fn rename_paths_native(
+        &self,
+        renames: Vec<(PathBuf, String)>,
+    ) -> windows::core::Result<Vec<(PathBuf, PathBuf)>> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        let mut targets: Vec<(PathBuf, PathBuf)> = Vec::with_capacity(renames.len());
+
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
+
+            for (path, new_name) in &renames {
+                let item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
+
+                file_op.RenameItem(&item, &HSTRING::from(new_name.as_str()), None)?;
+
+                let target = path
+                    .parent()
+                    .map(|p| p.join(new_name))
+                    .unwrap_or_else(|| PathBuf::from(new_name));
+                targets.push((path.clone(), target));
+            }
+
+            file_op.PerformOperations()?;
+        }
+
+        Ok(targets)
     }
 
     pub fn restore_paths_native(&self, pidls: Vec<Vec<u8>>) -> windows::core::Result<()> {

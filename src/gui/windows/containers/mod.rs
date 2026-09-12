@@ -1,3 +1,4 @@
+pub mod bulk_rename;
 pub mod enums;
 pub mod explorer;
 pub mod itemviewer;

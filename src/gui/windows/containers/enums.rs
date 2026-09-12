@@ -77,6 +77,12 @@ pub enum ItemViewerContextAction {
     AddFavorite(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
+    /// More than one item was selected when "Rename" was chosen - opens the
+    /// bulk-rename dialog instead of the single-item click-to-rename gesture.
+    BulkRenameRequest(Vec<PathBuf>),
+    /// (original_path, new_name) pairs, already validated and collision-
+    /// checked by the bulk-rename dialog - commits them as one batch.
+    BulkRenameCommit(Vec<(PathBuf, String)>),
     /// The `bool` is whether to skip the Recycle Bin and delete permanently
     /// (Shift+Delete, or deleting an item that's already in the Recycle Bin
     /// - both match native Explorer).

@@ -18,6 +18,7 @@ pub enum FileOpKind {
     Copy,
     Move,
     Delete,
+    Rename,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -254,6 +255,7 @@ fn kind_icon(kind: FileOpKind) -> &'static str {
         FileOpKind::Copy => regular::COPY,
         FileOpKind::Move => regular::ARROWS_LEFT_RIGHT,
         FileOpKind::Delete => regular::TRASH,
+        FileOpKind::Rename => regular::PENCIL_SIMPLE,
     }
 }
 
@@ -292,6 +294,7 @@ fn kind_label(i18n: &I18n, kind: FileOpKind) -> String {
         FileOpKind::Copy => i18n.tr("notifications_kind_copy"),
         FileOpKind::Move => i18n.tr("notifications_kind_move"),
         FileOpKind::Delete => i18n.tr("notifications_kind_delete"),
+        FileOpKind::Rename => i18n.tr("notifications_kind_rename"),
     }
 }
 
