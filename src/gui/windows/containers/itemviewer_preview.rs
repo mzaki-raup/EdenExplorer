@@ -1,3 +1,4 @@
+use crate::core::audio::AudioPreviewService;
 use crate::core::fs::FileItem;
 use crate::core::preview::{PreviewPayload, PreviewService};
 use crate::core::video::VideoPreviewService;
@@ -29,6 +30,7 @@ pub fn draw_preview_view(
     explorer_state: &mut ExplorerState,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
     preview_selection: &mut Option<PathBuf>,
     icon_cache: &IconCache,
     palette: &ThemePalette,
@@ -221,6 +223,7 @@ pub fn draw_preview_view(
                     i18n,
                     preview_service,
                     video_service,
+                    audio_service,
                     preview_selection.as_deref(),
                     palette,
                 );
@@ -246,6 +249,7 @@ pub fn draw_preview_pane(
     i18n: &I18n,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
     selection: Option<&Path>,
     palette: &ThemePalette,
 ) {
@@ -318,9 +322,15 @@ pub fn draw_preview_pane(
             };
 
             match active_tab {
-                PreviewPaneTab::Preview => {
-                    draw_preview_content(ui, i18n, preview_service, video_service, path, palette)
-                }
+                PreviewPaneTab::Preview => draw_preview_content(
+                    ui,
+                    i18n,
+                    preview_service,
+                    video_service,
+                    audio_service,
+                    path,
+                    palette,
+                ),
                 PreviewPaneTab::Details => draw_preview_details(ui, i18n, preview_service, path),
             }
         });
@@ -386,6 +396,52 @@ fn is_video_extension(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|ext| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(ext)))
+}
+
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "wav", "flac", "aac", "m4a", "wma", "ogg", "opus", "aiff", "alac",
+];
+
+fn is_audio_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| AUDIO_EXTENSIONS.iter().any(|a| a.eq_ignore_ascii_case(ext)))
+}
+
+/// Hand-painted min/max peak waveform, matching this codebase's existing
+/// hand-drawn-widget style (e.g. the sidebar's drive usage bar) rather than
+/// pulling in a charting dependency for one simple bar-per-bucket display.
+fn draw_waveform(ui: &mut egui::Ui, size: egui::Vec2, waveform: &crate::core::audio::Waveform, playhead_fraction: Option<f32>, palette: &ThemePalette) {
+    let (rect, _response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
+
+    if waveform.peaks.is_empty() {
+        return;
+    }
+
+    let mid_y = rect.center().y;
+    let half_height = rect.height() / 2.0 - 2.0;
+    let bucket_count = waveform.peaks.len();
+    let bar_width = (rect.width() / bucket_count as f32).max(1.0);
+
+    for (i, (min, max)) in waveform.peaks.iter().enumerate() {
+        let x = rect.left() + i as f32 * bar_width;
+        let y_top = mid_y - max * half_height;
+        let y_bottom = mid_y - min * half_height;
+        painter.line_segment(
+            [egui::pos2(x, y_top), egui::pos2(x, y_bottom.max(y_top + 1.0))],
+            egui::Stroke::new(bar_width.max(1.0), palette.primary),
+        );
+    }
+
+    if let Some(fraction) = playhead_fraction {
+        let x = rect.left() + rect.width() * fraction.clamp(0.0, 1.0);
+        painter.line_segment(
+            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+            egui::Stroke::new(2.0, ui.visuals().strong_text_color()),
+        );
+    }
 }
 
 /// Renders `text` as a selectable-but-read-only block, backed by a real
@@ -538,9 +594,95 @@ fn draw_preview_content(
     i18n: &I18n,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
     path: &Path,
     palette: &ThemePalette,
 ) {
+    if is_audio_extension(path) {
+        audio_service.set_current(path);
+        audio_service.tick(ui.ctx());
+
+        if let Some(error) = audio_service.error() {
+            ui.add_space(8.0);
+            ui.colored_label(egui::Color32::from_rgb(220, 90, 90), error.to_string());
+            return;
+        }
+
+        const CONTROLS_HEIGHT: f32 = 28.0;
+        let avail = ui.available_size();
+        let waveform_height = (avail.y - CONTROLS_HEIGHT - 6.0).max(0.0);
+
+        let progress = audio_service.progress();
+        let playhead_fraction =
+            progress.map(|(current, duration)| (current / duration).clamp(0.0, 1.0) as f32);
+
+        if let Some(waveform) = audio_service.waveform() {
+            let truncated = waveform.truncated;
+            draw_waveform(
+                ui,
+                egui::vec2(avail.x, waveform_height),
+                waveform,
+                playhead_fraction,
+                palette,
+            );
+            if truncated {
+                ui.weak(
+                    egui::RichText::new(i18n.tr("preview_audio_truncated"))
+                        .size(palette.tooltip_text_size),
+                );
+            }
+        } else {
+            ui.allocate_ui(egui::vec2(avail.x, waveform_height), |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.weak(i18n.tr("preview_loading"));
+                });
+            });
+        }
+
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            let is_paused = audio_service.is_paused();
+            let icon = if is_paused {
+                regular::PLAY
+            } else {
+                regular::PAUSE
+            };
+            if ui
+                .add(egui::Button::new(egui::RichText::new(icon).size(16.0)))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                audio_service.toggle_play_pause();
+            }
+
+            if let Some((current, duration)) = progress {
+                ui.label(
+                    egui::RichText::new(format_video_time(current))
+                        .monospace()
+                        .size(palette.tooltip_text_size),
+                );
+
+                let mut fraction = (current / duration).clamp(0.0, 1.0) as f32;
+                let slider_width = (ui.available_width() - 60.0).max(20.0);
+                let slider_resp = ui.add_sized(
+                    egui::vec2(slider_width, 18.0),
+                    egui::Slider::new(&mut fraction, 0.0..=1.0).show_value(false),
+                );
+                if slider_resp.changed() {
+                    audio_service.seek(fraction as f64 * duration);
+                }
+
+                ui.label(
+                    egui::RichText::new(format_video_time(duration))
+                        .monospace()
+                        .size(palette.tooltip_text_size),
+                );
+            }
+        });
+        return;
+    }
+
     if is_video_extension(path) {
         video_service.set_current(path);
 

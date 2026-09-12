@@ -134,6 +134,9 @@ pub struct TabView {
     /// the selected file is a video - kept separate from `preview_service`
     /// since it's a continuously-updated resource, not a one-shot payload.
     pub video_service: crate::core::video::VideoPreviewService,
+    /// Live audio playback + waveform, mirroring `video_service` for the
+    /// preview pane's audio-file case.
+    pub audio_service: crate::core::audio::AudioPreviewService,
     /// Whether the navbar's inline search box is currently being edited on
     /// this pane (replaces the breadcrumb the same way address-bar editing
     /// does).
@@ -181,6 +184,7 @@ impl TabView {
             preview_service: crate::core::preview::PreviewService::default(),
             preview_selection: None,
             video_service: crate::core::video::VideoPreviewService::default(),
+            audio_service: crate::core::audio::AudioPreviewService::default(),
             search_box_editing: false,
             search_box_buffer: String::new(),
             search_box_scope: crate::core::everything::SearchScope::Everywhere,

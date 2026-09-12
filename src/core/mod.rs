@@ -1,3 +1,4 @@
+pub mod audio;
 pub mod checksum;
 pub mod compress;
 pub mod context_menu_settings;

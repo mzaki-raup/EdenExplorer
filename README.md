@@ -303,6 +303,7 @@
 - [x] **Syntax highlighting** - code files (and fenced code blocks inside rendered Markdown) get colored keywords/strings/numbers/comments, powered by `syntect`
 - [x] **EPUB text extraction** - reads a book's actual chapters in order instead of showing its raw internal zip file tree
 - [x] **7z archive listing** - previews a `.7z`'s contents the same way zip archives already are, indentation and all
+- [x] **Audio playback + waveform** - previewing an MP3/WAV/FLAC/AAC/M4A/WMA/OGG/OPUS/AIFF/ALAC file shows a waveform (decoded once in the background) with play/pause, a seek slider, and current/total time - the same transport controls video preview already has. Playback never starts on its own and never loops - press play, and it stops (rather than repeating) once it reaches the end; the same is true for video preview
 - [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
 - [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
 - [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder

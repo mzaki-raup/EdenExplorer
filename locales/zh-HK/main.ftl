@@ -303,6 +303,7 @@ preview_details_created = 建立時間
 preview_details_modified = 修改時間
 preview_details_unavailable = 詳細資料無法使用。
 preview_archive_truncated = …（清單已截斷 - 壓縮檔中的項目太多，無法全部顯示）
+preview_audio_truncated = …（波形已截斷 - 檔案長度超過預覽可完整顯示的範圍）
 view_menu = 檢視
 view_details = 詳細資料
 view_gallery = 圖庫

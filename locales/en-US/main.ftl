@@ -123,6 +123,7 @@ preview_details_created = Created
 preview_details_modified = Modified
 preview_details_unavailable = Details unavailable.
 preview_archive_truncated = … (list truncated - archive has too many entries to show)
+preview_audio_truncated = … (waveform truncated - file is longer than the preview can fully render)
 view_menu = View
 view_details = Details
 view_gallery = Gallery

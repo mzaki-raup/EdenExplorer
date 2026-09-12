@@ -1,4 +1,5 @@
 use crate::core::fs::FileItem;
+use crate::core::audio::AudioPreviewService;
 use crate::core::preview::PreviewService;
 use crate::core::video::VideoPreviewService;
 use crate::gui::i18n::I18n;
@@ -80,6 +81,7 @@ pub fn draw_column_preview_view(
     show_hidden_files_folders: bool,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
     icon_cache: &IconCache,
     palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
@@ -132,6 +134,7 @@ pub fn draw_column_preview_view(
                     i18n,
                     preview_service,
                     video_service,
+                    audio_service,
                     columns_state.selected_file.as_deref(),
                     palette,
                 );

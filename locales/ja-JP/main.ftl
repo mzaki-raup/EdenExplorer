@@ -303,6 +303,7 @@ preview_details_created = 作成日
 preview_details_modified = 更新日
 preview_details_unavailable = 詳細を利用できません。
 preview_archive_truncated = …(表示するには項目が多すぎるため、一覧を省略しました)
+preview_audio_truncated = …(波形を省略しました - ファイルがプレビューで表示できる長さを超えています)
 view_menu = 表示
 view_details = 詳細
 view_gallery = ギャラリー

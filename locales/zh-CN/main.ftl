@@ -303,6 +303,7 @@ preview_details_created = 创建时间
 preview_details_modified = 修改时间
 preview_details_unavailable = 详细信息不可用。
 preview_archive_truncated = …（列表已截断 - 压缩包中的项目太多，无法全部显示）
+preview_audio_truncated = …（波形已截断 - 文件长度超过预览可完整显示的范围）
 view_menu = 视图
 view_details = 详细信息
 view_gallery = 图库

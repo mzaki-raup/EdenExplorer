@@ -302,6 +302,7 @@ preview_details_created = Dibuat
 preview_details_modified = Diubah
 preview_details_unavailable = Detail tidak tersedia.
 preview_archive_truncated = … (daftar dipotong - arsip memiliki terlalu banyak entri untuk ditampilkan)
+preview_audio_truncated = … (gelombang suara dipotong - berkas lebih panjang dari yang dapat ditampilkan pratinjau)
 view_menu = Tampilan
 view_details = Detail
 view_gallery = Galeri

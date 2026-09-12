@@ -72,7 +72,12 @@ fn path_to_file_url(path: &Path) -> String {
 pub struct VideoPlayer {
     engine: IMFMediaEngine,
     events: Receiver<i32>,
-    started_playing: bool,
+    /// Set once the engine has fired `LOADEDMETADATA`/`CANPLAY` - gates
+    /// `update_frame` (no point pulling frames before there's anything
+    /// decoded yet). Playback itself is never started automatically; the
+    /// user has to press play (see `toggle_play_pause`) - previewing a file
+    /// shouldn't start making noise/motion on its own.
+    metadata_ready: bool,
     pub error: Option<String>,
     /// `TransferVideoFrame` only accepts a Direct3D surface or a WIC bitmap
     /// as its destination - a plain `IMFMediaBuffer` (e.g. from
@@ -103,6 +108,14 @@ impl VideoPlayer {
             let factory: IMFMediaEngineClassFactory =
                 CoCreateInstance(&CLSID_MFMediaEngineClassFactory, None, CLSCTX_INPROC_SERVER)?;
             let engine = factory.CreateInstance(0, &attributes)?;
+            // `IMFMediaEngine` defaults `AutoPlay` to `TRUE` at the COM
+            // level - it starts playing on its own once the source is ready
+            // even though nothing here ever calls `Play()`, so previewing a
+            // file must not start motion/audio on its own. `Loop` defaults
+            // to `FALSE` already, but set it explicitly too so this doesn't
+            // depend on that default staying the same.
+            engine.SetAutoPlay(false)?;
+            engine.SetLoop(false)?;
 
             let url = BSTR::from(path_to_file_url(path));
             engine.SetSource(&url)?;
@@ -113,7 +126,7 @@ impl VideoPlayer {
             Ok(Self {
                 engine,
                 events: rx,
-                started_playing: false,
+                metadata_ready: false,
                 error: None,
                 wic_factory,
                 wic_bitmap: None,
@@ -121,24 +134,22 @@ impl VideoPlayer {
         }
     }
 
-    /// Drains lifecycle events and, once the video has metadata/is playable,
-    /// starts playback (looping on end). Call once per UI frame.
+    /// Drains lifecycle events. Call once per UI frame.
     fn pump_events(&mut self) {
         while let Ok(event) = self.events.try_recv() {
             if event == MF_MEDIA_ENGINE_EVENT_ERROR.0 {
                 self.error = Some("Media Foundation couldn't decode this video (missing codec, unsupported container, or corrupt file).".to_string());
-            } else if (event == MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA.0
-                || event == MF_MEDIA_ENGINE_EVENT_CANPLAY.0)
-                && !self.started_playing
+            } else if event == MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA.0
+                || event == MF_MEDIA_ENGINE_EVENT_CANPLAY.0
             {
-                self.started_playing = true;
-                unsafe {
-                    let _ = self.engine.Play();
-                }
+                self.metadata_ready = true;
             } else if event == MF_MEDIA_ENGINE_EVENT_ENDED.0 {
+                // Stop at the end rather than looping - pausing here (instead
+                // of leaving whatever state `Play()` left it in) makes sure
+                // the transport row's play/pause icon correctly flips back
+                // to "play" once playback actually reaches the end.
                 unsafe {
-                    let _ = self.engine.SetCurrentTime(0.0);
-                    let _ = self.engine.Play();
+                    let _ = self.engine.Pause();
                 }
             }
         }
@@ -149,7 +160,7 @@ impl VideoPlayer {
     pub fn update_frame(&mut self) -> Option<(Vec<u8>, [usize; 2])> {
         self.pump_events();
 
-        if self.error.is_some() || !self.started_playing {
+        if self.error.is_some() || !self.metadata_ready {
             return None;
         }
 
