@@ -405,7 +405,7 @@ fn is_video_extension(path: &Path) -> bool {
 /// was at the *end of last frame* (before this frame's press event can
 /// touch it) the moment the right-button press is seen, rather than
 /// waiting for `secondary_clicked()`.
-fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, palette: &ThemePalette) {
+fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, ext: &str, palette: &ThemePalette) {
     let text_edit_id = ui.make_persistent_id("preview_pane_text_edit");
     let panel_rect = ui.available_rect_before_wrap();
 
@@ -425,14 +425,82 @@ fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, palette: &Theme
         }
     }
 
+    let font_id = egui::FontId::monospace(palette.text_size);
+    let widget_font_id = font_id.clone();
+    let has_syntax = crate::core::syntax_highlight::has_syntax_for_extension(ext);
+    let ext_owned = ext.to_string();
+
+    // `.layouter` runs at least once per frame per egui's own docs, so the
+    // resulting `Arc<Galley>` is cached keyed by (text length, dark-mode) -
+    // cheap enough to check every frame, and re-highlighting only happens
+    // when the previewed file or the theme actually changes, not on every
+    // repaint. A length-only key is an approximation (it can't tell two
+    // same-length edits apart), but this buffer is read-only, so the text
+    // itself never changes without the cache key (the enclosing `path`)
+    // changing too, which already invalidates `PreviewService`'s own cache
+    // and re-triggers this whole function with new `text`.
+    type HighlightCache = std::sync::Arc<std::sync::Mutex<Option<(usize, bool, std::sync::Arc<egui::Galley>)>>>;
+    let cache: HighlightCache = ui.ctx().data_mut(|d| {
+        d.get_temp_mut_or_insert_with(text_edit_id, || {
+            std::sync::Arc::new(std::sync::Mutex::new(None))
+        })
+        .clone()
+    });
+
+    let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+        let dark_mode = ui.visuals().dark_mode;
+        let text = buf.as_str();
+
+        if has_syntax {
+            let mut guard = cache.lock().unwrap();
+            let needs_rebuild = match guard.as_ref() {
+                Some((len, cached_dark, _)) => *len != text.len() || *cached_dark != dark_mode,
+                None => true,
+            };
+            if needs_rebuild {
+                let mut job = crate::core::syntax_highlight::highlighted_layout_job(
+                    text,
+                    &ext_owned,
+                    font_id.clone(),
+                    dark_mode,
+                );
+                job.wrap.max_width = wrap_width;
+                let galley = ui.fonts_mut(|f| f.layout_job(job));
+                *guard = Some((text.len(), dark_mode, galley));
+            } else if let Some((_, _, galley)) = guard.as_ref() {
+                if (galley.job.wrap.max_width - wrap_width).abs() > 0.5 {
+                    let mut job = (*galley.job).clone();
+                    job.wrap.max_width = wrap_width;
+                    let new_galley = ui.fonts_mut(|f| f.layout_job(job));
+                    *guard = Some((text.len(), dark_mode, new_galley));
+                }
+            }
+            guard.as_ref().unwrap().2.clone()
+        } else {
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                text,
+                0.0,
+                egui::TextFormat::simple(font_id.clone(), palette_text_color(ui)),
+            );
+            job.wrap.max_width = wrap_width;
+            ui.fonts_mut(|f| f.layout_job(job))
+        }
+    };
+
     let mut text_ref: &str = text;
     ui.add(
         egui::TextEdit::multiline(&mut text_ref)
             .id(text_edit_id)
-            .font(egui::FontId::monospace(palette.text_size))
+            .font(widget_font_id)
             .frame(egui::Frame::NONE)
-            .desired_width(f32::INFINITY),
+            .desired_width(f32::INFINITY)
+            .layouter(&mut layouter),
     );
+}
+
+fn palette_text_color(ui: &egui::Ui) -> egui::Color32 {
+    ui.visuals().text_color()
 }
 
 /// Right-click-to-copy for the *rendered* Markdown preview, which (unlike
@@ -592,11 +660,16 @@ fn draw_preview_content(
 
     match payload {
         Some(PreviewPayload::Text(text)) => {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
             egui::ScrollArea::both()
                 .id_salt("preview_pane_text")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    draw_selectable_text_with_copy(ui, &text, palette);
+                    draw_selectable_text_with_copy(ui, &text, &ext, palette);
                 });
         }
         Some(PreviewPayload::Markdown(markdown)) => {
@@ -683,6 +756,7 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
     let mut blockquote_depth = 0u32;
     let mut heading_level: Option<HeadingLevel> = None;
     let mut code_block: Option<String> = None;
+    let mut code_block_lang: Option<String> = None;
     let mut list_stack: Vec<(bool, u64)> = Vec::new();
     let mut job = egui::text::LayoutJob::default();
     let mut job_has_content = false;
@@ -713,9 +787,15 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                     blockquote_depth += 1;
                     flush_job(ui, &mut job, &mut job_has_content);
                 }
-                Tag::CodeBlock(_) => {
+                Tag::CodeBlock(kind) => {
                     flush_job(ui, &mut job, &mut job_has_content);
                     code_block = Some(String::new());
+                    code_block_lang = match kind {
+                        pulldown_cmark::CodeBlockKind::Fenced(lang) if !lang.is_empty() => {
+                            Some(lang.to_string())
+                        }
+                        _ => None,
+                    };
                 }
                 Tag::List(start) => {
                     flush_job(ui, &mut job, &mut job_has_content);
@@ -770,21 +850,32 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                 }
                 TagEnd::CodeBlock => {
                     if let Some(code) = code_block.take() {
+                        let code = code.trim_end_matches('\n').to_string();
+                        let lang = code_block_lang.take();
                         egui::Frame::NONE
                             .fill(code_bg)
                             .inner_margin(egui::Margin::same(8))
                             .corner_radius(4)
                             .show(ui, |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(
-                                            code.trim_end_matches('\n').to_string(),
+                                let has_syntax = lang.as_deref().is_some_and(|lang| {
+                                    crate::core::syntax_highlight::has_syntax_for_extension(lang)
+                                });
+                                if let Some(lang) = lang.filter(|_| has_syntax) {
+                                    let job = crate::core::syntax_highlight::highlighted_layout_job(
+                                        &code,
+                                        &lang,
+                                        egui::FontId::monospace(base_size),
+                                        ui.visuals().dark_mode,
+                                    );
+                                    ui.add(egui::Label::new(job).wrap());
+                                } else {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(code).monospace().size(base_size),
                                         )
-                                        .monospace()
-                                        .size(base_size),
-                                    )
-                                    .wrap(),
-                                );
+                                        .wrap(),
+                                    );
+                                }
                             });
                         ui.add_space(6.0);
                     }
