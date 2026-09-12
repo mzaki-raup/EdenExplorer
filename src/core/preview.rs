@@ -238,7 +238,7 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
     }
 }
 
-fn is_known_text_extension(ext: &str) -> bool {
+pub(crate) fn is_known_text_extension(ext: &str) -> bool {
     matches!(
         ext,
         "txt"
@@ -311,7 +311,7 @@ fn is_known_text_extension(ext: &str) -> bool {
 
 /// Cheap binary sniff for files whose extension we don't recognize: reads a small
 /// prefix and treats it as text if it's valid UTF-8/ASCII-ish with no NUL bytes.
-fn sniff_is_text(path: &Path) -> bool {
+pub(crate) fn sniff_is_text(path: &Path) -> bool {
     let Ok(mut file) = std::fs::File::open(path) else {
         return false;
     };

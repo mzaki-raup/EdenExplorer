@@ -682,6 +682,12 @@ enum SearchFilter {
     Ext(String),
     Size(SizeCmp, u64),
     Modified(ModifiedRange),
+    /// `content:<term>` - handled separately from the other filters (see
+    /// `search_builtin_async`) since matching it requires reading the
+    /// candidate file's bytes, not just its already-fetched metadata; kept
+    /// as a `SearchFilter` variant anyway so it parses/tokenizes through
+    /// the exact same `key:value` path as everything else.
+    Content(String),
 }
 
 enum SizeCmp {
@@ -719,6 +725,10 @@ fn parse_search_filters(query: &str) -> (String, Vec<SearchFilter>) {
             parse_size_filter(rest)
         } else if let Some(rest) = token.strip_prefix("modified:") {
             parse_modified_filter(rest)
+        } else if let Some(rest) = token.strip_prefix("content:") {
+            // Single-token term only (no quoted multi-word phrases yet) -
+            // matches how `ext:`/`size:`/`modified:` are all one token too.
+            (!rest.is_empty()).then(|| SearchFilter::Content(rest.to_lowercase()))
         } else {
             None
         };
@@ -799,12 +809,58 @@ fn matches_search_filters(
             SearchFilter::Modified(range) => {
                 modified_raw.is_some_and(|raw| filetime_in_modified_range(raw, *range))
             }
+            // Handled by the caller (`search_builtin_async`), which strips
+            // `Content` filters out before calling this function - matching
+            // it needs a file read, not just the metadata already in scope
+            // here. Always `true` so this match stays exhaustive.
+            SearchFilter::Content(_) => true,
         };
         if !ok {
             return false;
         }
     }
     true
+}
+
+/// Maximum file size a `content:` filter will actually read - reading a
+/// multi-gigabyte log file line-by-line for every candidate would make a
+/// broad content search pathologically slow, so anything bigger is treated
+/// as a non-match rather than scanned.
+const CONTENT_SEARCH_MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Checks whether `path` (a file, not a directory, of at most
+/// `CONTENT_SEARCH_MAX_FILE_BYTES`) contains `term_lower` (already
+/// lowercased) on any line, case-insensitively. Skips anything that isn't
+/// plausibly a text file - reusing the exact same "is this safe to read as
+/// text" checks the preview pane already uses - so a content search never
+/// tries to line-scan a binary.
+fn matches_content_filter(path: &Path, is_dir: bool, file_size: Option<u64>, term_lower: &str) -> bool {
+    use std::io::BufRead;
+
+    if is_dir {
+        return false;
+    }
+    let Some(size) = file_size else { return false };
+    if size > CONTENT_SEARCH_MAX_FILE_BYTES {
+        return false;
+    }
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !crate::core::preview::is_known_text_extension(&ext) && !crate::core::preview::sniff_is_text(path) {
+        return false;
+    }
+
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    std::io::BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .any(|line| line.to_lowercase().contains(term_lower))
 }
 
 /// Compares a raw FILETIME's local calendar date against `today`/
@@ -896,11 +952,29 @@ pub fn search_builtin_async(
     use std::os::windows::fs::MetadataExt;
 
     thread::spawn(move || {
-        let (free_text, filters) = parse_search_filters(&query);
+        let (free_text, all_filters) = parse_search_filters(&query);
         let query_lower = free_text.to_lowercase();
-        if query_lower.is_empty() && filters.is_empty() {
+        if query_lower.is_empty() && all_filters.is_empty() {
             return;
         }
+
+        // `content:` needs a real file read per candidate (not just the
+        // metadata `read_dir` already hands back), so it's split out of the
+        // cheap metadata filters and checked separately, only once
+        // everything else has already matched. It's also only honored with
+        // a specific folder scope - scanning file contents across every
+        // drive on an "Everywhere" search would be far slower than users
+        // expect from what looks like a normal filename search, so that
+        // combination just runs as if `content:` weren't there rather than
+        // silently taking minutes or refusing the query outright.
+        let content_term = all_filters.iter().find_map(|f| match f {
+            SearchFilter::Content(term) if scope_folder.is_some() => Some(term.clone()),
+            _ => None,
+        });
+        let filters: Vec<SearchFilter> = all_filters
+            .into_iter()
+            .filter(|f| !matches!(f, SearchFilter::Content(_)))
+            .collect();
 
         let roots: Vec<PathBuf> = match scope_folder {
             Some(dir) => vec![dir],
@@ -949,6 +1023,13 @@ pub fn search_builtin_async(
 
                 if !matches_search_filters(&filters, &name_lower, is_dir, file_size, modified_raw) {
                     continue;
+                }
+
+                if let Some(term) = &content_term {
+                    let entry_path = entry.path();
+                    if !matches_content_filter(&entry_path, is_dir, file_size, term) {
+                        continue;
+                    }
                 }
 
                 let modified_time = modified_raw
@@ -1185,5 +1266,64 @@ mod search_filter_tests {
         let (free_text, filters) = parse_search_filters("invoice ext:pdf size:>100kb");
         assert_eq!(free_text, "invoice");
         assert_eq!(filters.len(), 2);
+    }
+
+    #[test]
+    fn content_filter_parses_as_single_lowercased_token() {
+        let (free_text, filters) = parse_search_filters("content:TODO ext:rs");
+        assert_eq!(free_text, "");
+        assert_eq!(filters.len(), 2);
+        assert!(matches!(filters[0], super::SearchFilter::Content(ref t) if t == "todo"));
+    }
+
+    #[test]
+    fn content_filter_rejects_empty_term() {
+        let (free_text, filters) = parse_search_filters("content:");
+        assert_eq!(free_text, "content:");
+        assert!(filters.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod content_search_tests {
+    use super::matches_content_filter;
+    use std::io::Write;
+
+    fn write_temp_file(name: &str, contents: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("eden_content_search_test_{name}"));
+        let mut file = std::fs::File::create(&path).expect("create temp file");
+        file.write_all(contents).expect("write temp file");
+        path
+    }
+
+    #[test]
+    fn matches_a_text_file_containing_the_term_case_insensitively() {
+        let path = write_temp_file("match.txt", b"first line\nsecond LINE has Needle\nthird");
+        let size = std::fs::metadata(&path).unwrap().len();
+
+        assert!(matches_content_filter(&path, false, Some(size), "needle"));
+        assert!(!matches_content_filter(&path, false, Some(size), "absent"));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn skips_directories_and_oversized_or_binary_files() {
+        let dir = std::env::temp_dir();
+        assert!(!matches_content_filter(&dir, true, Some(0), "anything"));
+
+        let binary_path = write_temp_file("binary.bin", &[0u8, 1, 2, 3, 0, 5]);
+        let size = std::fs::metadata(&binary_path).unwrap().len();
+        assert!(!matches_content_filter(&binary_path, false, Some(size), "anything"));
+        let _ = std::fs::remove_file(&binary_path);
+
+        let text_path = write_temp_file("toobig.txt", b"needle");
+        assert!(!matches_content_filter(
+            &text_path,
+            false,
+            Some(super::CONTENT_SEARCH_MAX_FILE_BYTES + 1),
+            "needle"
+        ));
+        let _ = std::fs::remove_file(&text_path);
     }
 }
