@@ -59,7 +59,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
 - Drag-and-drop both within the app and to/from native Windows (Explorer, Desktop, other apps)
 - Paste/drag-and-drop name-collision handling: a themed Replace / Skip Existing / Rename dialog (both flows share the same conflict-check + robocopy pipeline), with safe auto-numbered renaming that never overwrites the original file mid-operation
-- Global search (search icon / Ctrl+F in the navigation bar) with a recursive "This folder" / "Everywhere" scope toggle, powered by voidtools Everything (with automatic fallback to a built-in filesystem search when Everything isn't installed/running, also user-selectable in Settings) - results open as a normal tab compatible with every view mode and show each match's source folder
+- Global search (search icon / Ctrl+F in the navigation bar) with a recursive "This folder" / "Everywhere" scope toggle, powered by voidtools Everything (with automatic fallback to a built-in filesystem search when Everything isn't installed/running, also user-selectable in Settings) - results open as a normal tab compatible with every view mode and show each match's source folder; both engines support `*`/`?` wildcard queries as well as plain keyword matching
 - Portable device support and raw/unmounted drive (ISO, Linux partition) detection
 - Native Recycle Bin support
 - Multi-language UI (English, Indonesian, Japanese, Chinese variants) via Fluent i18n
