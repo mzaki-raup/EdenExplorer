@@ -253,26 +253,43 @@ fn draw_search_box_contents(
     // second line keeps them inside the frame's own border instead of
     // spilling past it (which a plain `horizontal` would just clip/overflow).
     ui.horizontal_wrapped(|ui| {
-        ui.label(
-            egui::RichText::new(regular::MAGNIFYING_GLASS)
-                .size(palette.text_size + 2.0)
-                .color(palette.icon_color),
-        );
-        ui.add_space(6.0);
+        // The query field gets its own bordered box (distinct from the
+        // plain toolbar row it lives in) so it visually reads as "the
+        // thing you type into", set apart from the This-folder/Everywhere
+        // toggle buttons beside it rather than blending into the same bare
+        // row. This whole row is already nested inside the breadcrumb's own
+        // outer bordered frame (`draw_bordered_breadcrumb`) with a height
+        // budget sized for un-boxed content - giving this inner frame its
+        // own non-zero top/bottom margin on top of that stacks two frames'
+        // worth of vertical padding and overflows past the row's bottom
+        // border. Horizontal-only margin keeps this box's height identical
+        // to the plain icon+text it replaces.
+        egui::Frame::NONE
+            .stroke(egui::Stroke::new(1.0, palette.borders_default))
+            .corner_radius(egui::CornerRadius::same(palette.small_radius))
+            .inner_margin(egui::Margin::symmetric(8, 0))
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(regular::MAGNIFYING_GLASS)
+                        .size(palette.text_size + 2.0)
+                        .color(palette.icon_color),
+                );
+                ui.add_space(6.0);
 
-        let text_edit_id = ui.id().with(("search_box_edit", tab_id));
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut tab.search_box_buffer)
-                .id(text_edit_id)
-                .hint_text(i18n.tr("search_placeholder"))
-                .frame(egui::Frame::NONE)
-                .desired_width(220.0)
-                .font(FontId::new(
-                    palette.text_size + 2.0,
-                    egui::FontFamily::Proportional,
-                )),
-        );
-        resp.request_focus();
+                let text_edit_id = ui.id().with(("search_box_edit", tab_id));
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut tab.search_box_buffer)
+                        .id(text_edit_id)
+                        .hint_text(i18n.tr("search_placeholder"))
+                        .frame(egui::Frame::NONE)
+                        .desired_width(220.0)
+                        .font(FontId::new(
+                            palette.text_size + 2.0,
+                            egui::FontFamily::Proportional,
+                        )),
+                );
+                resp.request_focus();
+            });
 
         ui.add_space(8.0);
 
