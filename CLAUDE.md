@@ -802,6 +802,26 @@ PowerShell process) rather than the app's own code - if you're using the
   code (including anything reusing `rename_paths_native`, like Undo/Redo)
   is broken; retry once on a clean relaunch before concluding a
   regression was introduced.
+- **A stuck `pinentry.exe` process is the actual root cause behind the
+  recurring `gpg: signing failed: Timeout` seen across many sessions in
+  this repo** (previously just retried blindly until it happened to
+  succeed, sometimes after many attempts). When gpg-agent's passphrase
+  cache has expired and a commit needs a fresh prompt, it spawns
+  `pinentry.exe` - but if a *previous* prompt was ever left dangling
+  (the window closed unexpectedly, the process got orphaned, whatever
+  the cause), gpg-agent sees pinentry as already busy and every
+  subsequent signing attempt times out waiting for a prompt that will
+  never come, no matter how many times the commit is retried. The fix
+  is not to keep retrying - check for and kill a stuck pinentry first
+  (`tasklist | grep -i pinentry`, then `taskkill //F //IM pinentry.exe`
+  from Git Bash), then retry the commit once; gpg-agent spawns a clean
+  new prompt and signing succeeds immediately. `gpgconf --kill
+  gpg-agent` is a red herring here if run from Git Bash - it's as likely
+  to hit a *different* MSYS2 gpg-agent than the one Git for Windows'
+  configured `gpg.program` actually talks to, and won't fix a stuck
+  pinentry it doesn't own. If a commit fails to sign more than two or
+  three times in a row, check for a stuck pinentry process before
+  continuing to retry the exact same command.
 
 ## Operational Instructions
 
