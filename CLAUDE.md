@@ -714,6 +714,35 @@ PowerShell process) rather than the app's own code - if you're using the
   significant time retrying `click.ps1` once it's confirmed broken this
   session, and don't try `Shift+F10` as a workaround, it's already been
   tried and doesn't work.
+- **Found a real, working keyboard-only path around the mouse-click issue
+  above, for anything with its own keyboard shortcut that's a superset of
+  what a right-click/menu path does.** Bulk Rename can be opened via
+  either the right-click "Rename" entry or the **F2** key (both routed to
+  the same `BulkRenameRequest` action once multi-selection is detected) -
+  so with the mouse dead, `Ctrl+A` (select all) then `{F2}` via
+  `send-keys.ps1` opened the dialog perfectly, and once open,
+  **`{TAB}` + a literal space (`" "`) reliably moves focus and activates
+  checkboxes/buttons**, including committing a real batched rename and
+  landing on the resulting completion toast. When a mouse-broken session
+  needs to drive a feature, check first whether it has its own keyboard
+  entry point (a shortcut key, an accelerator) before assuming it's
+  untestable - don't stop at "no right-click" the way the Shift+F10 entry
+  above did without checking for an alternate trigger.
+- **A screenshot's visual "this widget is focused" cue (an outline, an
+  underline) is not reliable enough to trust by itself when mapping a
+  dialog's Tab order - verify each stop empirically by pressing a literal
+  space and observing the actual effect, not by eyeballing which widget
+  looks highlighted.** While Tab-navigating the Bulk Rename modal, a
+  custom-drawn checkbox's row rendered with what looked like an underline
+  on its *label text* across two different focus positions in a row,
+  which read as "focus is stuck here" - but pressing space at each of
+  those two positions produced two different real effects (the checkbox
+  toggled once, then two tabs later the whole dialog closed via Cancel),
+  proving the visual cue wasn't tracking focus reliably enough to count
+  Tab stops by eye. The reliable method: after each `{TAB}`, press a
+  space and check what actually changed (a checkbox toggled, a button's
+  effect happened, nothing happened) rather than trying to read focus
+  state from the screenshot.
 
 ## Operational Instructions
 
