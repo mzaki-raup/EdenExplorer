@@ -64,6 +64,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Global search (search icon / Ctrl+F in the navigation bar) with a recursive "This folder" / "Everywhere" scope toggle, powered by voidtools Everything (with automatic fallback to a built-in filesystem search when Everything isn't installed/running, also user-selectable in Settings) - results open as a normal tab compatible with every view mode and show each match's source folder; both engines support `*`/`?` wildcard queries, plain keyword matching, and `key:value` filter syntax (`ext:pdf`, `size:>10mb`, `modified:today`, etc.), discoverable via an info icon next to the search box
 - Saved Searches: a dedicated sidebar section (separate from Favorites/Tags) for one-click-saved queries + scope, reopened via the same search-tab mechanism a live search uses; capped at 50, renamable/deletable via right-click
 - Content search: `content:<word>` filter (folder-scoped only) alongside `ext:`/`size:`/`modified:` - a streamed, text-only line scan for the built-in engine, or Everything's own native `content:` keyword (requires Content Indexing enabled in Everything itself)
+- Shared Network device discovery via legacy SMB/NetBIOS browsing, an active subnet sweep, and (new) hand-rolled mDNS + WS-Discovery queries - each candidate device is still verified over SMB before it's shown, so every entry is guaranteed browsable
 - Portable device support and raw/unmounted drive (ISO, Linux partition) detection
 - Native Recycle Bin support
 - Multi-language UI (English, Indonesian, Japanese, Chinese variants) via Fluent i18n
@@ -81,7 +82,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - "Open File Location" context menu entry in the Tag view and Search results (both show items from many different real folders) - opens the item's containing folder in a new tab
 
 ## Roadmap (from README)
-Upcoming alpha features: multi-tag AND/OR filtering in the tag view, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
+Upcoming alpha features: multi-tag AND/OR filtering in the tag view, and deeper theme customization (custom layouts, mix/match UI). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
 
 ## Distribution
 Distributed as a standalone Windows executable (no install) via GitHub Releases at `github.com/mtucciarone/EdenExplorer/releases`, with an automated release workflow (GitHub Actions + semantic-release).

@@ -281,7 +281,7 @@
 - [x] Directory column sorting, sizing, and view changes persist across sessions
 
 - [x] Browse network shares - type a `\\SERVER` or `\\SERVER\Share` path in the address bar, or click **Network** in the sidebar, to list and open SMB shares
-- [x] **Shared Network** sidebar category that auto-detects computers advertising file shares on the local network (SMB/NetBIOS browsing), alongside a manual **Network** entry for typing a server name directly
+- [x] **Shared Network** sidebar category that auto-detects computers advertising file shares on the local network - legacy SMB/NetBIOS browsing plus an active subnet sweep, **mDNS** (`_smb._tcp` service discovery), and **WS-Discovery**, so devices that don't announce over NetBIOS still show up - alongside a manual **Network** entry for typing a server name directly
 - [x] **Export/Import Settings** - back up or transfer general settings, favorites, tags, and both theme palettes as a single JSON file, from the Settings window
 - [x] **Tags sidebar section** with colored tag icons - click a tag to open (or reuse) a dedicated tab listing every tagged file/folder with Name/Type/Location/Size/Modified columns
 - [x] **Reorderable tags** - drag to reorder tags in Settings, reflected live in the sidebar
@@ -314,7 +314,6 @@
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
-- [ ] Support additional network discovery protocols (mDNS/WS-Discovery) for devices that don't announce over legacy NetBIOS browsing
 
 ## Star History
 

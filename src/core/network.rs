@@ -15,6 +15,8 @@ use windows::Win32::NetworkManagement::WNet::{
 use windows::Win32::Storage::FileSystem::{NetShareEnum, SHARE_INFO_1, STYPE_DISKTREE, STYPE_MASK};
 use windows::core::{PCWSTR, PWSTR};
 
+use super::{network_mdns, network_wsd};
+
 #[derive(Clone)]
 pub struct ShareInfo {
     pub name: String,
@@ -157,6 +159,11 @@ pub fn get_network_computers_cached() -> Vec<NetworkComputer> {
                 last_update: Instant::now(),
             });
             NETWORK_SCAN_IN_PROGRESS.store(false, Ordering::Release);
+            // Without this, a fully idle window (no mouse/keyboard input)
+            // never redraws to show newly-discovered devices - this scan
+            // now also does two multicast round-trips (mDNS + WS-Discovery),
+            // so it's a more noticeable wait than it used to be.
+            crate::gui::windows::windowsoverrides::request_repaint();
         });
     }
 
@@ -188,6 +195,29 @@ fn discover_network_computers() -> Vec<NetworkComputer> {
         let key = computer.name.to_ascii_uppercase();
         if seen.insert(key) {
             results.push(computer);
+        }
+    }
+
+    // mDNS and WS-Discovery: two more ways for a device to announce itself
+    // that don't depend on NetBIOS browsing at all. Both only return
+    // candidate IPs - each one still goes through the same SMB-port
+    // verification and NetBIOS name resolution as the subnet sweep
+    // (`probe_smb_host`), so a candidate that doesn't actually serve SMB
+    // (a printer answering WS-Discovery, say) never ends up in the list.
+    for ip in network_mdns::discover() {
+        if let Some(computer) = probe_smb_host(ip) {
+            let key = computer.name.to_ascii_uppercase();
+            if seen.insert(key) {
+                results.push(computer);
+            }
+        }
+    }
+    for ip in network_wsd::discover() {
+        if let Some(computer) = probe_smb_host(ip) {
+            let key = computer.name.to_ascii_uppercase();
+            if seen.insert(key) {
+                results.push(computer);
+            }
         }
     }
 
@@ -240,10 +270,9 @@ fn scan_local_subnet() -> Vec<NetworkComputer> {
 }
 
 fn probe_smb_host(ip: std::net::Ipv4Addr) -> Option<NetworkComputer> {
-    use std::net::{SocketAddr, TcpStream};
-
-    let addr = SocketAddr::from((ip, SMB_PORT));
-    TcpStream::connect_timeout(&addr, SMB_CONNECT_TIMEOUT).ok()?;
+    if !has_smb_open(ip) {
+        return None;
+    }
 
     let name = query_netbios_name(ip).unwrap_or_else(|| ip.to_string());
 
@@ -253,10 +282,24 @@ fn probe_smb_host(ip: std::net::Ipv4Addr) -> Option<NetworkComputer> {
     })
 }
 
+/// Whether `ip` has the SMB port (445) open - the same check used to verify
+/// hosts found by the active subnet sweep, reused to verify mDNS/WS-Discovery
+/// candidates before they're shown in "Shared Network" (both of those
+/// protocols can report a device that doesn't actually serve SMB - a printer
+/// answering WS-Discovery, say - and every entry in that sidebar section is
+/// meant to be something double-clicking will actually open).
+fn has_smb_open(ip: std::net::Ipv4Addr) -> bool {
+    use std::net::{SocketAddr, TcpStream};
+
+    let addr = SocketAddr::from((ip, SMB_PORT));
+    TcpStream::connect_timeout(&addr, SMB_CONNECT_TIMEOUT).is_ok()
+}
+
 /// Queries a host's NetBIOS computer name via a Node Status (NBSTAT) request to UDP
 /// port 137 - the same mechanism behind the classic `nbtstat -A <ip>` command. Used
-/// as a friendly-name lookup for hosts found by `scan_local_subnet`.
-fn query_netbios_name(ip: std::net::Ipv4Addr) -> Option<String> {
+/// as a friendly-name lookup for hosts found by `scan_local_subnet`, and reused by
+/// `network_wsd` (WS-Discovery gives back a UUID + URL, never a friendly name).
+pub fn query_netbios_name(ip: std::net::Ipv4Addr) -> Option<String> {
     use std::net::{SocketAddr, UdpSocket};
 
     let mut packet = Vec::with_capacity(50);
