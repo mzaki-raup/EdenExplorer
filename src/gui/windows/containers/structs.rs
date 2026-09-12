@@ -739,6 +739,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Type,
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
+                ItemViewerHeaderColumn::Tags,
             ]
         } else {
             &[

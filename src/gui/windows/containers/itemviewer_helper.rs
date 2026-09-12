@@ -2442,7 +2442,7 @@ pub fn compute_item_viewer_column_layout(
             created_width: 0.0,
             deleted_width: 0.0,
             original_directory_width: widths.original_directory_width,
-            tags_width: 0.0,
+            tags_width: widths.tags_width,
             column_sizes_changed: false,
         };
     }
