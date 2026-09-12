@@ -254,6 +254,10 @@ pub enum UndoableOperation {
     /// the move happened in, so undo/redo can restore the right pane's
     /// selection/refresh the right view.
     Move { pairs: Vec<(PathBuf, PathBuf)>, side: SplitSide },
+    /// `pairs` is `(source_path, path_the_copy_was_created_at)`. Undo
+    /// deletes the created copies (to the Recycle Bin, so it stays
+    /// further-recoverable); redo re-copies the sources.
+    Copy { pairs: Vec<(PathBuf, PathBuf)>, side: SplitSide },
 }
 
 /// Cap on `MainWindow::undo_stack`/`redo_stack` (each) - matches
@@ -1957,11 +1961,19 @@ impl MainWindow {
 
             match &pending.origin {
                 PasteOrigin::UserAction => {
-                    if pending.is_cut && !final_pairs.is_empty() {
-                        self.push_undo(UndoableOperation::Move {
-                            pairs: final_pairs,
-                            side: pending.side,
-                        });
+                    if !final_pairs.is_empty() {
+                        let op = if pending.is_cut {
+                            UndoableOperation::Move {
+                                pairs: final_pairs,
+                                side: pending.side,
+                            }
+                        } else {
+                            UndoableOperation::Copy {
+                                pairs: final_pairs,
+                                side: pending.side,
+                            }
+                        };
+                        self.push_undo(op);
                     }
                 }
                 PasteOrigin::UndoOf(op, group) => {
@@ -2184,6 +2196,20 @@ impl MainWindow {
                     );
                 }
             }
+            UndoableOperation::Copy { pairs, .. } => {
+                // Undoing a copy just deletes what it created - synchronous,
+                // same shape as Rename/BulkRename's undo. `allow_undo: true`
+                // sends the deleted copies to the Recycle Bin, so this stays
+                // further-recoverable through Explorer's own Recycle Bin,
+                // same as everything else this app deletes.
+                let created: Vec<PathBuf> = pairs.iter().map(|(_, created)| created.clone()).collect();
+                if self.delete_paths_native(created, true).is_ok() {
+                    self.redo_stack.push_back(op);
+                    self.load_path();
+                } else {
+                    eprintln!("Undo failed: could not delete the copied item(s)");
+                }
+            }
         }
     }
 
@@ -2253,6 +2279,41 @@ impl MainWindow {
                     target_dir,
                     before_entries,
                     true,
+                    *side,
+                    renames,
+                    PasteOrigin::RedoOf(op.clone(), group),
+                );
+            }
+            UndoableOperation::Copy { pairs, side } => {
+                // Redo re-copies the sources - always one job, one
+                // destination folder (wherever the copies were originally
+                // created).
+                let Some(target_dir) = pairs
+                    .first()
+                    .and_then(|(_, created)| created.parent())
+                    .map(|p| p.to_path_buf())
+                else {
+                    return;
+                };
+
+                let sources: Vec<PathBuf> = pairs.iter().map(|(source, _)| source.clone()).collect();
+                let before_entries = Self::directory_child_paths(&target_dir);
+                let mut renames = HashMap::new();
+                for (source, created) in pairs {
+                    if let (Some(source_name), Some(created_name)) =
+                        (source.file_name(), created.file_name())
+                        && source_name != created_name
+                    {
+                        renames.insert(source.clone(), created_name.to_string_lossy().to_string());
+                    }
+                }
+
+                let group = std::rc::Rc::new(UndoRedoGroup::new(1));
+                self.start_robocopy_paste(
+                    sources,
+                    target_dir,
+                    before_entries,
+                    false,
                     *side,
                     renames,
                     PasteOrigin::RedoOf(op.clone(), group),
