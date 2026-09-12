@@ -46,6 +46,34 @@ fn default_tab_inactive_bg_color() -> Color32 {
     Color32::from_rgb(28, 32, 38)
 }
 
+// Fallbacks for colors that were previously hardcoded per-mode literals in
+// `apply_theme` rather than real fields - matches the dark theme's own
+// values (same "close enough until the user edits it, or the mode's own
+// default palette re-initializes it" reasoning as the fallbacks above).
+fn default_faint_bg_color() -> Color32 {
+    Color32::from_rgb(26, 30, 36)
+}
+
+fn default_input_field_bg() -> Color32 {
+    Color32::from_rgb(30, 34, 40)
+}
+
+fn default_widget_text_inactive() -> Color32 {
+    Color32::from_rgb(220, 226, 232)
+}
+
+fn default_widget_text_hovered() -> Color32 {
+    Color32::from_rgb(245, 240, 255)
+}
+
+fn default_widget_text_active() -> Color32 {
+    Color32::from_rgb(255, 250, 255)
+}
+
+fn default_selection_text_color() -> Color32 {
+    Color32::WHITE
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -147,6 +175,30 @@ pub struct ThemePalette {
     pub tab_active_radius: CornerRadius,
     pub tab_inactive_radius: CornerRadius,
     pub tab_button_radius: CornerRadius,
+
+    // 🎯 Widget surfaces/text that used to be hardcoded per-mode literals in
+    // `apply_theme` - promoted to real fields so a full re-theme can reach
+    // them too. Defaults below match each mode's previous hardcoded value,
+    // so existing users see zero visual change until they touch a picker.
+    #[serde(default = "default_faint_bg_color")]
+    pub faint_bg_color: Color32,
+    /// Shared by a `TextEdit`'s own background (`extreme_bg_color`) and
+    /// every other input widget's background (`widgets.inactive.bg_fill`) -
+    /// these were already kept equal to each other in `apply_theme`, so one
+    /// field covers both rather than risking them drifting apart.
+    #[serde(default = "default_input_field_bg")]
+    pub input_field_bg: Color32,
+    #[serde(default = "default_widget_text_inactive")]
+    pub widget_text_inactive: Color32,
+    #[serde(default = "default_widget_text_hovered")]
+    pub widget_text_hovered: Color32,
+    #[serde(default = "default_widget_text_active")]
+    pub widget_text_active: Color32,
+    /// Text color repainted over a text selection highlight - kept separate
+    /// from `text_normal` since it needs to contrast against
+    /// `style.visuals.selection.bg_fill`, not the page background.
+    #[serde(default = "default_selection_text_color")]
+    pub selection_text_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -244,6 +296,14 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: CornerRadius::same(4),
+
+        // 🎯 Widget surfaces/text (formerly hardcoded in `apply_theme`)
+        faint_bg_color: Color32::from_rgb(26, 30, 36),
+        input_field_bg: Color32::from_rgb(30, 34, 40),
+        widget_text_inactive: Color32::from_rgb(220, 226, 232),
+        widget_text_hovered: Color32::from_rgb(245, 240, 255),
+        widget_text_active: Color32::from_rgb(255, 250, 255),
+        selection_text_color: Color32::from_rgb(255, 255, 255),
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -339,6 +399,14 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: CornerRadius::same(4),
+
+        // 🎯 Widget surfaces/text (formerly hardcoded in `apply_theme`)
+        faint_bg_color: Color32::from_rgb(244, 246, 249),
+        input_field_bg: Color32::from_rgb(247, 248, 250),
+        widget_text_inactive: Color32::from_rgb(35, 41, 47),
+        widget_text_hovered: Color32::from_rgb(25, 29, 33),
+        widget_text_active: Color32::from_rgb(15, 18, 22),
+        selection_text_color: Color32::from_rgb(15, 18, 22),
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -417,73 +485,38 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     style.visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
     style.visuals.widgets.active.corner_radius = CornerRadius::same(6);
 
-    match mode {
-        ThemeMode::Dark => {
-            style.visuals.panel_fill = palette.application_bg_color;
-            style.visuals.faint_bg_color = Color32::from_rgb(26, 30, 36);
+    style.visuals.panel_fill = palette.application_bg_color;
+    style.visuals.faint_bg_color = palette.faint_bg_color;
 
-            style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(30, 34, 40);
-            // `extreme_bg_color` is what a `TextEdit`'s own interior uses
-            // (as opposed to `widgets.inactive.bg_fill`, which a `DragValue`
-            // or button uses) - left at egui's near-black default, text
-            // fields read as a completely different (much darker) color
-            // than every other input in the same form. Match them.
-            style.visuals.extreme_bg_color = style.visuals.widgets.inactive.bg_fill;
+    style.visuals.widgets.inactive.bg_fill = palette.input_field_bg;
+    // `extreme_bg_color` is what a `TextEdit`'s own interior uses (as
+    // opposed to `widgets.inactive.bg_fill`, which a `DragValue` or button
+    // uses) - kept equal to `input_field_bg` so a text field doesn't read as
+    // a completely different color than every other input in the same form.
+    style.visuals.extreme_bg_color = palette.input_field_bg;
 
-            // 🎯 PRIMARY SYSTEM
-            style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
-            style.visuals.widgets.hovered.weak_bg_fill = palette.primary_hover;
-            style.visuals.widgets.hovered.bg_stroke.color = palette.primary_hover;
+    // 🎯 PRIMARY SYSTEM
+    style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
+    style.visuals.widgets.hovered.weak_bg_fill = palette.primary_hover;
+    style.visuals.widgets.hovered.bg_stroke.color = palette.primary_hover;
 
-            style.visuals.widgets.active.bg_fill = palette.primary_active;
+    style.visuals.widgets.active.bg_fill = palette.primary_active;
 
-            style.visuals.selection.bg_fill = palette.primary_hover;
-            // Selected text is repainted in this color (not the field's
-            // normal text color) - `primary_active` is a dark purple nearly
-            // as dark as the highlight itself, making selected text almost
-            // unreadable. Use a bright, near-white color instead so it
-            // actually contrasts against the highlight.
-            style.visuals.selection.stroke.color = Color32::from_rgb(255, 255, 255);
+    style.visuals.selection.bg_fill = match mode {
+        ThemeMode::Dark => palette.primary_hover,
+        ThemeMode::Light => palette.borders_default,
+    };
+    // Selected text is repainted in this color (not the field's normal text
+    // color) - the highlight itself is a mid-tone accent shade, so this
+    // needs to be a separate, deliberately high-contrast color rather than
+    // reusing `primary_active`/the accent directly.
+    style.visuals.selection.stroke.color = palette.selection_text_color;
 
-            // 🔤 Text
-            style.visuals.widgets.inactive.fg_stroke.color = Color32::from_rgb(220, 226, 232);
-            style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(245, 240, 255);
-            style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(255, 250, 255);
-
-            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(160, 170, 180);
-        }
-
-        ThemeMode::Light => {
-            style.visuals.panel_fill = palette.application_bg_color;
-            style.visuals.faint_bg_color = Color32::from_rgb(244, 246, 249);
-
-            style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(247, 248, 250);
-            // See the matching comment in the dark theme branch - keep a
-            // `TextEdit`'s own background the same as every other input.
-            style.visuals.extreme_bg_color = style.visuals.widgets.inactive.bg_fill;
-
-            // 🎯 SAME SYSTEM (just lighter)
-            style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
-            style.visuals.widgets.hovered.weak_bg_fill = palette.primary_hover;
-            style.visuals.widgets.hovered.bg_stroke.color = palette.primary_hover;
-
-            style.visuals.widgets.active.bg_fill = palette.primary_active;
-
-            style.visuals.selection.bg_fill = palette.borders_default;
-            // Selected text is repainted in this color (not the field's
-            // normal text color) - see the matching comment in the dark
-            // theme branch. Use a near-black color for contrast against the
-            // pale highlight instead of the mid-tone accent color.
-            style.visuals.selection.stroke.color = Color32::from_rgb(15, 18, 22);
-
-            // 🔤 Text
-            style.visuals.widgets.inactive.fg_stroke.color = Color32::from_rgb(35, 41, 47);
-            style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(25, 29, 33);
-            style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(15, 18, 22);
-
-            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(70, 78, 86);
-        }
-    }
+    // 🔤 Text
+    style.visuals.widgets.inactive.fg_stroke.color = palette.widget_text_inactive;
+    style.visuals.widgets.hovered.fg_stroke.color = palette.widget_text_hovered;
+    style.visuals.widgets.active.fg_stroke.color = palette.widget_text_active;
+    style.visuals.widgets.noninteractive.fg_stroke.color = palette.text_normal;
 
     ctx.set_style_of(theme, style);
     ctx.set_theme(theme);

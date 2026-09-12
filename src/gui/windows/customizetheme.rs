@@ -140,29 +140,6 @@ pub fn draw_theme_customizer_content(
                                 );
                                 ui.end_row();
 
-                                eden_text_label(
-                                    ui,
-                                    palette,
-                                    &i18n.tr("theme_contextmenu_textsize"),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        changed |= ui
-                                            .add_sized(
-                                                egui::vec2(90.0, 0.0),
-                                                egui::DragValue::new(
-                                                    &mut editing_palette.text_size,
-                                                )
-                                                .range(8.0..=24.0)
-                                                .speed(0.2),
-                                            )
-                                            .changed();
-                                    },
-                                );
-                                ui.end_row();
-
                                 eden_text_label(ui, palette, &i18n.tr("theme_explorer_rowheight"));
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
@@ -448,6 +425,370 @@ pub fn draw_theme_customizer_content(
                                 );
                                 ui.end_row();
                             });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_text_rows"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_text_rows")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_text_normal",
+                                    &mut editing_palette.text_normal,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_text_header_section",
+                                    &mut editing_palette.text_header_section,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_row_selected_bg",
+                                    &mut editing_palette.row_selected_bg,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_row_bg",
+                                    &mut editing_palette.row_bg,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_item_viewer_row_text_selected",
+                                    &mut editing_palette.item_viewer_row_text_selected,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tooltip_text_color",
+                                    &mut editing_palette.tooltip_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_text_selected",
+                                    &mut editing_palette.tab_text_selected,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_widget_text_inactive",
+                                    &mut editing_palette.widget_text_inactive,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_widget_text_hovered",
+                                    &mut editing_palette.widget_text_hovered,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_widget_text_active",
+                                    &mut editing_palette.widget_text_active,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_selection_text_color",
+                                    &mut editing_palette.selection_text_color,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_panels_icons"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_panels_icons")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_faint_bg",
+                                    &mut editing_palette.faint_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_input_field_bg",
+                                    &mut editing_palette.input_field_bg,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_sidebar_bg",
+                                    &mut editing_palette.sidebar_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_inactive_bg",
+                                    &mut editing_palette.tab_inactive_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_modal_background",
+                                    &mut editing_palette.modal_background_effect_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_icon_color",
+                                    &mut editing_palette.icon_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_icon_windows",
+                                    &mut editing_palette.icon_windows,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_icon_colored_hover",
+                                    &mut editing_palette.icon_colored_hover,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_icon_color",
+                                    &mut editing_palette.toolbar_icon_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_resize_handle",
+                                    &mut editing_palette.resize_handle,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_tabs"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_tabs")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_close_hover",
+                                    &mut editing_palette.tab_close_hover,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_close_active",
+                                    &mut editing_palette.tab_close_active,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_close_normal",
+                                    &mut editing_palette.tab_close_normal,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_tab_add_hover",
+                                    &mut editing_palette.tab_add_hover,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_pinned_tab",
+                                    &mut editing_palette.pinned_tab_color,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_drive_usage"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_drive_usage")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_drive_usage_critical",
+                                    &mut editing_palette.drive_usage_critical,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_drive_usage_warning",
+                                    &mut editing_palette.drive_usage_warning,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_drive_usage_normal",
+                                    &mut editing_palette.drive_usage_normal,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_drive_usage_background",
+                                    &mut editing_palette.drive_usage_background,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_drive_usage_text",
+                                    &mut editing_palette.drive_usage_text,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_checkboxes_buttons"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_checkboxes_buttons")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_checkbox_bg_default",
+                                    &mut editing_palette.checkbox_bg_default,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_checkbox_checkmark",
+                                    &mut editing_palette.checkbox_checkmark_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_checkbox_bg_hover",
+                                    &mut editing_palette.checkbox_bg_hover,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_checkbox_bg_active",
+                                    &mut editing_palette.checkbox_bg_active,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_button_background",
+                                    &mut editing_palette.button_background,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_button_stroke",
+                                    &mut editing_palette.button_stroke,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_button_favorite_fill",
+                                    &mut editing_palette.button_favorite_fill,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_button_separator_handle",
+                                    &mut editing_palette.button_seperator_handle_fill,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_corner_radius"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_corner_radius")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                for (label_key, radius) in [
+                                    ("theme_radius_small", &mut editing_palette.small_radius),
+                                    ("theme_radius_medium", &mut editing_palette.medium_radius),
+                                    ("theme_radius_large", &mut editing_palette.large_radius),
+                                ] {
+                                    eden_text_label(ui, palette, &i18n.tr(label_key));
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            apply_eden_visual_overrides(ui, palette);
+                                            let mut value = *radius as f32;
+                                            let resp = ui.add_sized(
+                                                egui::vec2(90.0, 0.0),
+                                                egui::DragValue::new(&mut value)
+                                                    .range(0.0..=20.0)
+                                                    .speed(0.2),
+                                            );
+                                            if resp.changed() {
+                                                *radius = value.round() as u8;
+                                                changed = true;
+                                            }
+                                        },
+                                    );
+                                    ui.end_row();
+                                }
+                            });
                     });
                 });
 
@@ -485,6 +826,27 @@ pub fn draw_theme_customizer_content(
 
 fn color_picker_control(ui: &mut egui::Ui, color: &mut egui::Color32) -> bool {
     rgba_color_edit_button(ui, color).changed()
+}
+
+/// One label + right-aligned color-picker row inside an `egui::Grid`,
+/// followed by `ui.end_row()` - the exact shape every "Core Colors" row
+/// already hand-wrote, pulled out into a helper since the granular-override
+/// sections below repeat it several dozen times.
+fn color_row(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    i18n: &I18n,
+    label_key: &str,
+    color: &mut egui::Color32,
+) -> bool {
+    eden_text_label(ui, palette, &i18n.tr(label_key));
+    let mut changed = false;
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        apply_eden_visual_overrides(ui, palette);
+        changed = color_picker_control(ui, color);
+    });
+    ui.end_row();
+    changed
 }
 
 fn font_selector(
