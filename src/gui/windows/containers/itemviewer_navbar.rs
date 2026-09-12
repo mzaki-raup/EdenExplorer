@@ -292,6 +292,8 @@ fn draw_search_box_contents(
             });
 
         ui.add_space(8.0);
+        crate::gui::windows::settings::info_icon(ui, &i18n.tr("search_filter_syntax_hint"), palette);
+        ui.add_space(8.0);
 
         let is_everywhere = matches!(tab.search_box_scope, crate::core::everything::SearchScope::Everywhere);
         if ui

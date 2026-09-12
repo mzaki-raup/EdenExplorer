@@ -672,6 +672,159 @@ fn system_time_to_filetime_raw(t: std::time::SystemTime) -> Option<i64> {
 /// otherwise run for a very long time over a large disk.
 pub const BUILTIN_SEARCH_MAX_RESULTS: usize = 5_000;
 
+/// A single structured filter parsed out of a search query's `key:value`
+/// tokens (`ext:png`, `size:>100mb`, `modified:today`) - see
+/// `parse_search_filters`. Everything's own query parser already
+/// understands these same keywords natively, so this only matters for the
+/// built-in fallback engine (`search_builtin_async`), which otherwise only
+/// ever matched against the filename.
+enum SearchFilter {
+    Ext(String),
+    Size(SizeCmp, u64),
+    Modified(ModifiedRange),
+}
+
+enum SizeCmp {
+    Gt,
+    Lt,
+    Eq,
+}
+
+#[derive(Clone, Copy)]
+enum ModifiedRange {
+    Today,
+    Yesterday,
+    ThisWeek,
+}
+
+/// Splits a search query into its plain free-text portion and any
+/// recognized `key:value` filter tokens, so the built-in search engine can
+/// support the same `ext:`/`size:`/`modified:` syntax Everything's own
+/// query parser already accepts for free (see `build_query_string` in
+/// `core::everything`, which passes the query through unmodified for
+/// exactly this reason). An unrecognized or malformed `key:value` token is
+/// left in the free-text portion rather than rejected outright - this is a
+/// convenience feature for whole-word tokens, not a strict query language,
+/// so a token like `size:` (no value) should just be treated as literal
+/// text rather than showing a validation error.
+fn parse_search_filters(query: &str) -> (String, Vec<SearchFilter>) {
+    let mut filters = Vec::new();
+    let mut free_terms = Vec::new();
+
+    for token in query.split_whitespace() {
+        let recognized = if let Some(rest) = token.strip_prefix("ext:") {
+            let ext = rest.trim_start_matches('.').to_lowercase();
+            (!ext.is_empty()).then(|| SearchFilter::Ext(ext))
+        } else if let Some(rest) = token.strip_prefix("size:") {
+            parse_size_filter(rest)
+        } else if let Some(rest) = token.strip_prefix("modified:") {
+            parse_modified_filter(rest)
+        } else {
+            None
+        };
+
+        match recognized {
+            Some(filter) => filters.push(filter),
+            None => free_terms.push(token),
+        }
+    }
+
+    (free_terms.join(" "), filters)
+}
+
+fn parse_size_filter(rest: &str) -> Option<SearchFilter> {
+    let (cmp, amount) = if let Some(r) = rest.strip_prefix('>') {
+        (SizeCmp::Gt, r)
+    } else if let Some(r) = rest.strip_prefix('<') {
+        (SizeCmp::Lt, r)
+    } else {
+        (SizeCmp::Eq, rest)
+    };
+    parse_size_to_bytes(amount).map(|bytes| SearchFilter::Size(cmp, bytes))
+}
+
+fn parse_size_to_bytes(text: &str) -> Option<u64> {
+    let lower = text.trim().to_lowercase();
+    let (number, multiplier) = if let Some(n) = lower.strip_suffix("gb") {
+        (n, 1024u64 * 1024 * 1024)
+    } else if let Some(n) = lower.strip_suffix("mb") {
+        (n, 1024u64 * 1024)
+    } else if let Some(n) = lower.strip_suffix("kb") {
+        (n, 1024u64)
+    } else if let Some(n) = lower.strip_suffix('b') {
+        (n, 1u64)
+    } else {
+        (lower.as_str(), 1u64)
+    };
+
+    let value: f64 = number.trim().parse().ok()?;
+    if value < 0.0 {
+        return None;
+    }
+    Some((value * multiplier as f64) as u64)
+}
+
+fn parse_modified_filter(rest: &str) -> Option<SearchFilter> {
+    let range = match rest.to_lowercase().as_str() {
+        "today" => ModifiedRange::Today,
+        "yesterday" => ModifiedRange::Yesterday,
+        "thisweek" => ModifiedRange::ThisWeek,
+        _ => return None,
+    };
+    Some(SearchFilter::Modified(range))
+}
+
+/// Checks a candidate entry against every parsed filter (AND semantics -
+/// all must pass). `modified_raw` is the same raw Windows FILETIME tick
+/// count (100ns intervals since 1601) that `filetime_to_string` already
+/// works with, so callers can pass it straight through without a separate
+/// conversion.
+fn matches_search_filters(
+    filters: &[SearchFilter],
+    name_lower: &str,
+    is_dir: bool,
+    file_size: Option<u64>,
+    modified_raw: Option<i64>,
+) -> bool {
+    for filter in filters {
+        let ok = match filter {
+            SearchFilter::Ext(ext) => {
+                !is_dir && name_lower.rsplit_once('.').is_some_and(|(_, e)| e == ext)
+            }
+            SearchFilter::Size(cmp, bytes) => file_size.is_some_and(|size| match cmp {
+                SizeCmp::Gt => size > *bytes,
+                SizeCmp::Lt => size < *bytes,
+                SizeCmp::Eq => size == *bytes,
+            }),
+            SearchFilter::Modified(range) => {
+                modified_raw.is_some_and(|raw| filetime_in_modified_range(raw, *range))
+            }
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+/// Compares a raw FILETIME's local calendar date against `today`/
+/// `yesterday`/`thisweek`, matching how a user thinks about these ranges
+/// (calendar days in their own timezone), not a rolling 24h/48h window.
+fn filetime_in_modified_range(raw: i64, range: ModifiedRange) -> bool {
+    let unix_time = (raw / 10_000_000) - 11_644_473_600;
+    let Some(dt_utc) = Utc.timestamp_opt(unix_time, 0).single() else {
+        return false;
+    };
+    let entry_date = DateTime::<Local>::from(dt_utc).date_naive();
+    let today = Local::now().date_naive();
+
+    match range {
+        ModifiedRange::Today => entry_date == today,
+        ModifiedRange::Yesterday => entry_date == today - chrono::Duration::days(1),
+        ModifiedRange::ThisWeek => entry_date > today - chrono::Duration::days(7) && entry_date <= today,
+    }
+}
+
 /// Matches a (already-lowercased) file/folder name against a
 /// (already-lowercased) query the same way a plain-text query would read
 /// to a user: if the query contains no wildcard characters, it matches
@@ -743,8 +896,9 @@ pub fn search_builtin_async(
     use std::os::windows::fs::MetadataExt;
 
     thread::spawn(move || {
-        let query_lower = query.to_lowercase();
-        if query_lower.is_empty() {
+        let (free_text, filters) = parse_search_filters(&query);
+        let query_lower = free_text.to_lowercase();
+        if query_lower.is_empty() && filters.is_empty() {
             return;
         }
 
@@ -783,7 +937,8 @@ pub fn search_builtin_async(
                     stack.push(entry.path());
                 }
 
-                if !matches_search_query(&name.to_lowercase(), &query_lower) {
+                let name_lower = name.to_lowercase();
+                if !query_lower.is_empty() && !matches_search_query(&name_lower, &query_lower) {
                     continue;
                 }
 
@@ -791,6 +946,11 @@ pub fn search_builtin_async(
                 let file_size = if is_dir { None } else { Some(metadata.len()) };
                 let modified_raw = metadata.modified().ok().and_then(system_time_to_filetime_raw);
                 let created_raw = metadata.created().ok().and_then(system_time_to_filetime_raw);
+
+                if !matches_search_filters(&filters, &name_lower, is_dir, file_size, modified_raw) {
+                    continue;
+                }
+
                 let modified_time = modified_raw
                     .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format));
                 let created_time = created_raw
@@ -967,5 +1127,63 @@ mod search_query_tests {
         assert!(matches_search_query(&"ANYTHING.PNG".to_lowercase(), "*.png"));
         assert!(matches_search_query("archive.tar.gz", "*.gz"));
         assert!(matches_search_query("noext", "*"));
+    }
+}
+
+#[cfg(test)]
+mod search_filter_tests {
+    use super::{matches_search_filters, parse_search_filters};
+
+    #[test]
+    fn ext_filter_parses_and_matches() {
+        let (free_text, filters) = parse_search_filters("report ext:pdf");
+        assert_eq!(free_text, "report");
+        assert_eq!(filters.len(), 1);
+        assert!(matches_search_filters(&filters, "report.pdf", false, None, None));
+        assert!(!matches_search_filters(&filters, "report.docx", false, None, None));
+        assert!(!matches_search_filters(&filters, "somefolder.pdf", true, None, None));
+    }
+
+    #[test]
+    fn ext_filter_strips_leading_dot_and_is_case_insensitive() {
+        let (_, filters) = parse_search_filters("ext:.PNG");
+        assert!(matches_search_filters(&filters, "photo.png", false, None, None));
+    }
+
+    #[test]
+    fn size_filter_parses_units_and_compares() {
+        let (_, filters) = parse_search_filters("size:>10mb");
+        assert!(matches_search_filters(&filters, "big.bin", false, Some(11 * 1024 * 1024), None));
+        assert!(!matches_search_filters(&filters, "small.bin", false, Some(5 * 1024 * 1024), None));
+
+        let (_, filters) = parse_search_filters("size:<1kb");
+        assert!(matches_search_filters(&filters, "tiny.txt", false, Some(500), None));
+        assert!(!matches_search_filters(&filters, "notsotiny.txt", false, Some(2000), None));
+    }
+
+    #[test]
+    fn size_filter_missing_size_never_matches() {
+        let (_, filters) = parse_search_filters("size:>1mb");
+        assert!(!matches_search_filters(&filters, "unknown.bin", false, None, None));
+    }
+
+    #[test]
+    fn modified_filter_parses_recognized_keywords_only() {
+        let (free_text, filters) = parse_search_filters("modified:today");
+        assert_eq!(free_text, "");
+        assert_eq!(filters.len(), 1);
+
+        // An unrecognized modified:<value> falls back to free text instead
+        // of being silently dropped or erroring.
+        let (free_text, filters) = parse_search_filters("modified:lastmonth");
+        assert_eq!(free_text, "modified:lastmonth");
+        assert!(filters.is_empty());
+    }
+
+    #[test]
+    fn combined_filters_and_free_text() {
+        let (free_text, filters) = parse_search_filters("invoice ext:pdf size:>100kb");
+        assert_eq!(free_text, "invoice");
+        assert_eq!(filters.len(), 2);
     }
 }

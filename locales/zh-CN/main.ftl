@@ -41,6 +41,7 @@ tooltip_favorites_remove = 从收藏夹中移除当前目录
 tooltip_open_terminal = 在当前目录中打开终端
 tooltip_search = 搜索文件和文件夹
 search_placeholder = 搜索文件和文件夹...
+search_filter_syntax_hint = 可输入的过滤条件:ext:pdf、size:>10mb、size:<1kb、modified:today、modified:yesterday、modified:thisweek。可与普通文字组合使用,例如:"invoice ext:pdf size:>100kb"。
 search_scope_current_folder = 此文件夹
 search_scope_everywhere = 所有位置
 search_engine_everything = Everything

@@ -41,6 +41,7 @@ tooltip_favorites_remove = 現在のディレクトリをお気に入りから�
 tooltip_open_terminal = 現在のディレクトリでターミナルを開く
 tooltip_search = ファイルとフォルダーを検索
 search_placeholder = ファイルとフォルダーを検索...
+search_filter_syntax_hint = 入力できるフィルター: ext:pdf, size:>10mb, size:<1kb, modified:today, modified:yesterday, modified:thisweek。通常のテキストと組み合わせ可能です。例: "invoice ext:pdf size:>100kb"。
 search_scope_current_folder = このフォルダー
 search_scope_everywhere = すべての場所
 search_engine_everything = Everything

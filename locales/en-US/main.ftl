@@ -41,6 +41,7 @@ tooltip_favorites_remove = Remove current directory from favorites
 tooltip_open_terminal = Open terminal in current directory
 tooltip_search = Search files and folders
 search_placeholder = Search files and folders...
+search_filter_syntax_hint = Filters you can type: ext:pdf, size:>10mb, size:<1kb, modified:today, modified:yesterday, modified:thisweek. Combine with plain text, e.g. "invoice ext:pdf size:>100kb".
 search_scope_current_folder = This folder
 search_scope_everywhere = Everywhere
 search_tab_title_prefix = Search:

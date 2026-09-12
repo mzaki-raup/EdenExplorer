@@ -147,7 +147,7 @@ impl Default for AppSettings {
     }
 }
 
-fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egui::Response {
+pub(crate) fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egui::Response {
     let resp = ui.add(egui::Label::new(regular::QUESTION).sense(egui::Sense::hover()));
 
     if resp.hovered() {

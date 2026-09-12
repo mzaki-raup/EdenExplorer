@@ -41,6 +41,7 @@ tooltip_favorites_remove = Hapus direktori saat ini dari favorit
 tooltip_open_terminal = Buka terminal di direktori saat ini
 tooltip_search = Cari file dan folder
 search_placeholder = Cari file dan folder...
+search_filter_syntax_hint = Filter yang bisa diketik: ext:pdf, size:>10mb, size:<1kb, modified:today, modified:yesterday, modified:thisweek. Bisa digabung dengan teks biasa, contoh: "invoice ext:pdf size:>100kb".
 search_scope_current_folder = Folder ini
 search_scope_everywhere = Di mana saja
 search_engine_everything = Everything
