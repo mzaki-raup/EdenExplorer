@@ -3067,10 +3067,29 @@ impl MainWindow {
                     .active_tab()
                     .view(self.focused_split)
                     .breadcrumb_path_editing
-                && let Some(path) = self.selected_path_for_rename()
             {
-                let action = ItemViewerAction::StartEdit(path);
-                handle_pending_actions(Some(action), self);
+                let selected_count = self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .explorer_state
+                    .selected_paths
+                    .len();
+
+                if selected_count > 1 {
+                    let mut paths: Vec<PathBuf> = self
+                        .active_tab()
+                        .view(self.focused_split)
+                        .explorer_state
+                        .selected_paths
+                        .iter()
+                        .cloned()
+                        .collect();
+                    paths.sort();
+                    self.handle_context_action(ItemViewerContextAction::BulkRenameRequest(paths));
+                } else if let Some(path) = self.selected_path_for_rename() {
+                    let action = ItemViewerAction::StartEdit(path);
+                    handle_pending_actions(Some(action), self);
+                }
             }
             return;
         }

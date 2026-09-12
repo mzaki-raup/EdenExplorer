@@ -669,6 +669,24 @@ mod pattern_engine_tests {
     use super::*;
 
     #[test]
+    fn compute_new_name_regex_whole_name_replace_via_dot_star() {
+        // The ".*" idiom for "replace the entire original name" (documented
+        // in README's Bulk Rename guide) - regression-guards that Rust's
+        // `replace_all` doesn't double-apply a pattern that can also match
+        // an empty string at the end of the haystack.
+        let pattern = BulkRenamePattern {
+            find: ".*".to_string(),
+            replace: "photo_{n:03}".to_string(),
+            case_insensitive: false,
+            mode: RenameMatchMode::Regex,
+            numbering_start: 1,
+        };
+        let re = regex::Regex::new(&pattern.find).unwrap();
+        let result = compute_new_name(&item("whatever_original_name.jpg", false), &pattern, Some(&re), 7);
+        assert_eq!(result, "photo_007.jpg");
+    }
+
+    #[test]
     fn split_name_ext_handles_files_dirs_and_extensionless_names() {
         assert_eq!(split_name_ext("photo.png", false), ("photo", "png"));
         assert_eq!(split_name_ext("archive.tar.gz", false), ("archive.tar", "gz"));

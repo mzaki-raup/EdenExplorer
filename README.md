@@ -370,6 +370,90 @@ cargo test
 ### Release process
 Releases are automated via [semantic-release](https://semantic-release.gitbook.io/) (`.releaserc.json`) triggered from `main`: it bumps the version in `Cargo.toml` (`scripts/update-version.ps1`), builds and packages the release binary (`scripts/build-and-package.ps1`), and publishes it to GitHub Releases.
 
+## Bulk Rename Guide
+
+Select two or more files/folders, then either right-click → **Rename** or
+press **F2** to open the Bulk Rename dialog. Every selected item's
+current name and its live-computed new name are shown side by side as you
+type; nothing is renamed on disk until you click **Rename All**, and that
+button stays disabled while any row has a naming conflict.
+
+### Simple mode
+
+Two plain-text fields, applied to every selected item's name (its
+extension is never touched by Find/Replace):
+
+| Field | Meaning |
+|---|---|
+| Find | Text to search for in each name. Every occurrence is replaced (not just the first). Leave empty to make no substitution. |
+| Replace with | Text that replaces each match. Can contain placeholders (below). |
+| Case-insensitive | Match `Find` regardless of letter case. |
+| Start number | The `{n}` value for the first item (in the order shown); each later item gets the next number. |
+
+Placeholders (usable in **Replace with**, in either mode):
+
+| Placeholder | Expands to |
+|---|---|
+| `{n}` | The item's number (1, 2, 3, ... from Start number) |
+| `{n:03}` | Zero-padded number (`001`, `002`, ...) - any 1-2 digit width works, e.g. `{n:04}` |
+| `{name}` | The item's *original* name (before this rename), extension excluded |
+| `{ext}` | The item's original extension, without the dot |
+
+**Example - tidy up a batch of photos:**
+
+| Original name | Find | Replace with | New name |
+|---|---|---|---|
+| `IMG_0001.jpg` | `IMG_` | `Vacation_` | `Vacation_0001.jpg` |
+| `IMG_0002.jpg` | `IMG_` | `Vacation_` | `Vacation_0002.jpg` |
+
+**Example - add a numbered suffix while keeping the original name:**
+
+Find: `.jpg` (matches every file's extension text - a plain substring,
+not a wildcard), Replace with: `_{n:03}.jpg`, Start number: `1`:
+
+| Original name | New name |
+|---|---|
+| `sunset.jpg` | `sunset_001.jpg` |
+| `beach.jpg` | `beach_002.jpg` |
+
+### Regex mode
+
+Toggle to **Regex** to use a full regular expression in Find, with
+`$1`, `$2`, ... in Replace with to reference capture groups (standard
+[Rust `regex` crate](https://docs.rs/regex) capture syntax). The
+`{n}`/`{n:03}`/`{name}`/`{ext}` placeholders above still work in Regex
+mode's Replace with text too, expanded *after* the regex substitution. An
+invalid pattern is reported inline and never partially applied.
+
+**Example - pull a number out of each name and reformat it:**
+
+Find: `track(\d+)`, Replace with: `song_$1`:
+
+| Original name | New name |
+|---|---|
+| `track7.mp3` | `song_7.mp3` |
+| `track42.mp3` | `song_42.mp3` |
+
+**Example - replace the entire original name** (the one thing Simple
+mode can't do on its own, since it only replaces matched text): set Find
+to `.*` (matches the whole name, whatever it is) and Replace with to your
+new template:
+
+Find: `.*`, Replace with: `photo_{n:03}`:
+
+| Original name | New name |
+|---|---|
+| `whatever_this_was_called.jpg` | `photo_001.jpg` |
+| `DSC00231.jpg` | `photo_002.jpg` |
+| `random_export.jpg` | `photo_003.jpg` |
+
+### Conflicts
+
+A row is flagged (and **Rename All** stays disabled) if its new name
+would collide with another selected item's new name, or with an existing
+file/folder that isn't part of this rename - adjust the pattern until no
+rows are flagged.
+
 ## Keyboard Shortcuts
 - F1 - Toggle fullscreen
 - Ctrl+Shift+C - Copy selected path
@@ -380,7 +464,7 @@ Releases are automated via [semantic-release](https://semantic-release.gitbook.i
 - Ctrl+Shift+N - Create new folder in current directory
 - Ctrl+R (F5) - Refresh current directory
 - Alt+D - Select the address bar / current directory path
-- F2 - Rename current selected file (if any is selected inside the explorer)
+- F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
 - Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
 - Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
 - Alt + Left Arrow (Backspace) - Navigate backwards
