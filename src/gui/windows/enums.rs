@@ -4,6 +4,11 @@ pub enum ThemeCustomizerAction {
     ResetToDefaults(crate::gui::theme::ThemeMode),
     ExportTheme(crate::gui::theme::ThemeMode),
     ImportTheme(crate::gui::theme::ThemeMode),
+    /// The Layout section's sidebar-width control changed - unlike every
+    /// other action here, this isn't a per-mode palette edit (the sidebar
+    /// has one width regardless of dark/light mode), so it carries the new
+    /// width directly instead of a `ThemeMode`.
+    SidebarWidthChanged(f32),
 }
 
 #[derive(Clone, Debug)]

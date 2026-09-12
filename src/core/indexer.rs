@@ -429,6 +429,15 @@ pub struct SidebarSectionsSnapshot {
     // Same positional-append rule as `saved_searches` above.
     #[serde(default = "default_true")]
     pub recent_locations: bool,
+    /// The sidebar's user-resized width in points - previously ephemeral
+    /// (reset to 250.0 on every restart); same positional-append rule as
+    /// the fields above.
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f32,
+}
+
+fn default_sidebar_width() -> f32 {
+    250.0
 }
 
 impl Default for SidebarSectionsSnapshot {
@@ -441,6 +450,7 @@ impl Default for SidebarSectionsSnapshot {
             shared_network: true,
             saved_searches: true,
             recent_locations: true,
+            sidebar_width: default_sidebar_width(),
         }
     }
 }
@@ -1015,5 +1025,58 @@ mod tests {
         assert_eq!(decoded.tabs[0].split_path, Some(PathBuf::from("C:\\Users")));
         assert_eq!(decoded.tabs[1].path, PathBuf::from("C:\\"));
         assert_eq!(decoded.tabs[1].split_path, None);
+    }
+
+    #[test]
+    fn sidebar_sections_snapshot_roundtrips_sidebar_width() {
+        let snapshot = SidebarSectionsSnapshot {
+            sidebar_width: 312.5,
+            ..SidebarSectionsSnapshot::default()
+        };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SidebarSectionsSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.sidebar_width, 312.5);
+    }
+
+    #[test]
+    fn sidebar_sections_snapshot_falls_back_to_defaults_for_a_save_from_before_the_field_existed() {
+        // Simulates an old on-disk save written before `sidebar_width` was
+        // added. Postcard's positional format has no explicit "end of
+        // struct" marker, so a missing *trailing* field (unlike one that's
+        // present but wrong) can't always be told apart from "ran out of
+        // bytes mid-value" - `load_sidebar_sections` (the real load path)
+        // treats either case the same way: fall back to a fresh, valid
+        // `SidebarSectionsSnapshot::default()` rather than erroring or
+        // reading garbage, which is what this confirms.
+        #[derive(Serialize)]
+        struct OldSidebarSectionsSnapshot {
+            places: bool,
+            storage: bool,
+            favorites: bool,
+            tags: bool,
+            shared_network: bool,
+            saved_searches: bool,
+            recent_locations: bool,
+        }
+
+        let old = OldSidebarSectionsSnapshot {
+            places: true,
+            storage: false,
+            favorites: true,
+            tags: false,
+            shared_network: true,
+            saved_searches: false,
+            recent_locations: true,
+        };
+        let bytes = postcard::to_allocvec(&old).unwrap();
+        let decoded = postcard::take_from_bytes::<SidebarSectionsSnapshot>(&bytes)
+            .ok()
+            .filter(|(_, rest)| rest.is_empty())
+            .map(|(v, _)| v)
+            .unwrap_or_default();
+
+        assert_eq!(decoded.sidebar_width, default_sidebar_width());
     }
 }

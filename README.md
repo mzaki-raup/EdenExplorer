@@ -293,6 +293,7 @@
 - [x] Standardized settings form styling - consistent field padding, background/text contrast, and readable selected-text color across every Settings page
 - [x] **Accent-driven color scheme** - picking an accent color (preset swatch or custom) automatically retints the sidebar, explorer, and file list backgrounds, inactive/active tabs, toolbar icons, and borders together, instead of only affecting buttons
 - [x] **Granular color overrides** - the Appearance settings page now exposes every themeable color (Text & Rows, Panels & Icons, Tabs, Drive Usage, Checkboxes & Buttons, Corner Radius), not just the core accent/border colors - including a few that used to be fixed regardless of theme (input field backgrounds, widget text states, selected-text color)
+- [x] **Custom layout options** - a "Layout" section in Appearance: Row Density presets (Compact/Comfortable/Spacious) and a persisted sidebar width (previously reset to the same default every restart)
 - [x] Thicker, accent-colored borders throughout the UI, including a visible outer border around the whole window
 - [x] **Tab close menu** - right-click a tab for Close, Close Other Tabs, Close Tabs to the Right, and Close Tabs to the Left (pinned tabs are always kept)
 - [x] **Window position memory** - the app reopens at the exact screen position it was last closed at, not just the last size

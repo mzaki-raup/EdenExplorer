@@ -5031,6 +5031,21 @@ impl MainWindow {
                     }
                 }
             }
+            ThemeCustomizerAction::SidebarWidthChanged(width) => {
+                self.sidebar_state.sidebar_default_width = width;
+                crate::core::indexer::save_sidebar_sections(
+                    &crate::core::indexer::SidebarSectionsSnapshot {
+                        places: self.sidebar_state.places_expanded,
+                        storage: self.sidebar_state.storage_expanded,
+                        favorites: self.sidebar_state.favorites_expanded,
+                        tags: self.sidebar_state.tags_expanded,
+                        shared_network: self.sidebar_state.shared_network_expanded,
+                        saved_searches: self.sidebar_state.saved_searches_expanded,
+                        recent_locations: self.sidebar_state.recent_locations_expanded,
+                        sidebar_width: width,
+                    },
+                );
+            }
         }
     }
 }

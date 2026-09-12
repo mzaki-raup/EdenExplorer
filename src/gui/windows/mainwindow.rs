@@ -328,6 +328,7 @@ impl Default for MainWindow {
                     shared_network_expanded: sections.shared_network,
                     saved_searches_expanded: sections.saved_searches,
                     recent_locations_expanded: sections.recent_locations,
+                    sidebar_default_width: sections.sidebar_width,
                     ..SidebarState::default()
                 }
             },
@@ -855,6 +856,23 @@ impl eframe::App for MainWindow {
                                         + separator_response.drag_delta().x)
                                         .max(sidebar_width_min)
                                         .min(sidebar_width_max);
+                            }
+
+                            if separator_response.drag_stopped() {
+                                crate::core::indexer::save_sidebar_sections(
+                                    &crate::core::indexer::SidebarSectionsSnapshot {
+                                        places: self.sidebar_state.places_expanded,
+                                        storage: self.sidebar_state.storage_expanded,
+                                        favorites: self.sidebar_state.favorites_expanded,
+                                        tags: self.sidebar_state.tags_expanded,
+                                        shared_network: self.sidebar_state.shared_network_expanded,
+                                        saved_searches: self.sidebar_state.saved_searches_expanded,
+                                        recent_locations: self
+                                            .sidebar_state
+                                            .recent_locations_expanded,
+                                        sidebar_width: self.sidebar_state.sidebar_default_width,
+                                    },
+                                );
                             }
                         }
 

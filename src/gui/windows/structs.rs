@@ -17,6 +17,11 @@ pub struct ThemeCustomizer {
     pub selected_mode: ThemeMode,
     pub light_palette: ThemePalette,
     pub dark_palette: ThemePalette,
+    /// Draft copy of the sidebar's persisted width (see
+    /// `core::indexer::SidebarSectionsSnapshot::sidebar_width`) - not a
+    /// theme-mode-specific value like the palettes above, but edited from
+    /// the same Appearance page's new Layout section.
+    pub sidebar_width: f32,
 }
 
 impl Default for ThemeCustomizer {
@@ -25,6 +30,7 @@ impl Default for ThemeCustomizer {
             selected_mode: ThemeMode::Dark,
             light_palette: crate::gui::theme::get_palette(ThemeMode::Light),
             dark_palette: crate::gui::theme::get_palette(ThemeMode::Dark),
+            sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
         }
     }
 }

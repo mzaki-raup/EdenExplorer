@@ -88,6 +88,7 @@ pub fn draw_theme_customizer_content(
             };
 
             let mut changed = false;
+            let mut sidebar_width_changed = false;
 
             // SCROLLABLE CONTENT
             egui::ScrollArea::vertical()
@@ -258,6 +259,63 @@ pub fn draw_theme_customizer_content(
                                             editing_palette.mono_font_name = new_font;
                                             apply_font_to_context(ctx, &editing_palette);
                                             changed = true;
+                                        }
+                                    },
+                                );
+                                ui.end_row();
+                            });
+
+                        ui.add_space(6.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_layout"));
+                        ui.add_space(6.0);
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_layout_density"));
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            // (label key, row_height, sidebar_item_spacing_y) - pure
+                            // convenience presets over the two existing fields above;
+                            // no new schema needed since both fields already exist.
+                            const DENSITY_PRESETS: &[(&str, f32, f32)] = &[
+                                ("theme_density_compact", 14.0, 0.2),
+                                ("theme_density_comfortable", 16.0, 0.5),
+                                ("theme_density_spacious", 20.0, 0.8),
+                            ];
+                            for &(label_key, row_height, spacing_y) in DENSITY_PRESETS {
+                                let is_selected = (editing_palette.row_height - row_height).abs()
+                                    < 0.01
+                                    && (editing_palette.sidebar_item_spacing_y - spacing_y).abs()
+                                        < 0.01;
+                                if eden_toggle_button(ui, palette, is_selected, &i18n.tr(label_key))
+                                    .clicked()
+                                {
+                                    editing_palette.row_height = row_height;
+                                    editing_palette.sidebar_item_spacing_y = spacing_y;
+                                    changed = true;
+                                }
+                            }
+                        });
+
+                        ui.add_space(8.0);
+
+                        egui::Grid::new("theme_layout_grid")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                eden_text_label(ui, palette, &i18n.tr("theme_sidebar_width"));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        apply_eden_visual_overrides(ui, palette);
+                                        let resp = ui.add_sized(
+                                            egui::vec2(90.0, 0.0),
+                                            egui::DragValue::new(&mut customizer.sidebar_width)
+                                                .range(140.0..=600.0)
+                                                .speed(1.0),
+                                        );
+                                        if resp.changed() {
+                                            sidebar_width_changed = true;
                                         }
                                     },
                                 );
@@ -816,6 +874,12 @@ pub fn draw_theme_customizer_content(
             if changed && action.is_none() {
                 action = Some(ThemeCustomizerAction::ThemeUpdated(
                     customizer.selected_mode,
+                ));
+            }
+
+            if sidebar_width_changed {
+                action = Some(ThemeCustomizerAction::SidebarWidthChanged(
+                    customizer.sidebar_width,
                 ));
             }
         }

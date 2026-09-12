@@ -968,6 +968,33 @@ PowerShell process) rather than the app's own code - if you're using the
   own - consider that the user might be in the same window before assuming
   a new app bug, and just ask; don't rename/undo real files based on a
   guess about what happened.
+- **A `#[serde(default = ...)]` trailing field on a `postcard`-persisted
+  struct does not actually get "rescued" field-by-field the way the
+  existing gotcha above implies - the whole struct fails to decode, and the
+  load path's own fallback (`.unwrap_or_default()`) is what saves it, not
+  serde's per-field defaulting.** Verified directly while adding
+  `sidebar_width` to `SidebarSectionsSnapshot`: hand-building an "old" byte
+  stream missing that one trailing field and feeding it to
+  `postcard::take_from_bytes::<SidebarSectionsSnapshot>` returns
+  `Err(DeserializeUnexpectedEnd)`, not an `Ok` value with `sidebar_width`
+  quietly defaulted and every other field intact. Postcard's format has no
+  explicit "end of struct" marker, so its `SeqAccess` can't distinguish
+  "no more fields, this struct is done" from "ran out of bytes mid-value" -
+  it just tries to read the next field's bytes and errors when there aren't
+  enough, before serde's derive-generated per-field `#[serde(default)]`
+  fallback ever gets a chance to run. In practice this is still safe here
+  *only* because every load function in `core::indexer` already wraps the
+  decode in `.ok().filter(|(_, rest)| rest.is_empty()).unwrap_or_default()`
+  (or equivalent) - an old save fails to decode as a whole and the caller
+  gets a fresh, valid `T::default()` instead of a crash or garbage - but
+  that means appending a field to a persisted struct resets *every* field
+  in it to default for anyone loading an old save, not just the new one.
+  If a future field ever needs true per-field migration (preserving a
+  user's other settings while defaulting only the new field), appending
+  it to the existing struct isn't enough by itself - it would need its own
+  versioned migration path (see how `ThemeSettingsSnapshot`'s
+  `THEME_VERSION` check and `LegacyAppSettingsSnapshot`'s `From` impl each
+  handle *that* problem instead of relying on `#[serde(default)]` alone).
 
 ## Operational Instructions
 

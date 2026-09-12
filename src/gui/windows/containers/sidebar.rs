@@ -744,6 +744,7 @@ pub fn draw_sidebar(
             shared_network: sidebar_state.shared_network_expanded,
             saved_searches: sidebar_state.saved_searches_expanded,
             recent_locations: sidebar_state.recent_locations_expanded,
+            sidebar_width: sidebar_state.sidebar_default_width,
         });
     }
 
