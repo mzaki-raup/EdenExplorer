@@ -672,13 +672,66 @@ fn system_time_to_filetime_raw(t: std::time::SystemTime) -> Option<i64> {
 /// otherwise run for a very long time over a large disk.
 pub const BUILTIN_SEARCH_MAX_RESULTS: usize = 5_000;
 
+/// Matches a (already-lowercased) file/folder name against a
+/// (already-lowercased) query the same way a plain-text query would read
+/// to a user: if the query contains no wildcard characters, it matches
+/// anywhere in the name (`"loctest"` matches `"zzzloctest1.txt"`) - the
+/// same substring behavior the existing per-folder type-to-filter box
+/// uses. If it contains `*` (any run of characters) or `?` (any single
+/// character), it's matched as a whole-name glob instead (`"*.png"`
+/// matches names *ending* in `.png`, not names that literally contain the
+/// three characters `*`, `.`, `p`...). Everything's own query syntax
+/// already treats `*`/`?` as wildcards, so without this the built-in
+/// engine would return zero results for the exact same query Everything
+/// handles correctly - `*` doesn't appear in real filenames, so a bare
+/// substring search for it can never match anything.
+fn matches_search_query(name_lower: &str, query_lower: &str) -> bool {
+    if !query_lower.contains(['*', '?']) {
+        return name_lower.contains(query_lower);
+    }
+
+    let name: Vec<char> = name_lower.chars().collect();
+    let pattern: Vec<char> = query_lower.chars().collect();
+
+    // Classic two-pointer wildcard matcher: `star_idx`/`match_idx` remember
+    // the most recent `*` and how far into `name` we'd matched up to it, so
+    // a later mismatch can backtrack to "the `*` consumes one more
+    // character" instead of failing outright.
+    let (mut n, mut p) = (0usize, 0usize);
+    let (mut star_idx, mut match_idx) = (None, 0usize);
+
+    while n < name.len() {
+        if p < pattern.len() && (pattern[p] == '?' || pattern[p] == name[n]) {
+            n += 1;
+            p += 1;
+        } else if p < pattern.len() && pattern[p] == '*' {
+            star_idx = Some(p);
+            match_idx = n;
+            p += 1;
+        } else if let Some(s) = star_idx {
+            p = s + 1;
+            match_idx += 1;
+            n = match_idx;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == '*' {
+        p += 1;
+    }
+
+    p == pattern.len()
+}
+
 /// Fallback search used when the user has no Everything install (or
 /// prefers not to use it, per the "Search engine" setting): walks the real
 /// filesystem from `scope_folder` (or every drive, if `None` - "Everywhere")
-/// looking for names containing `query` (case-insensitive), streaming
-/// matches into `tx` as they're found. Matches `scan_dir_async`'s contract
-/// exactly (send-per-item, let `tx` drop when done) so it drops into the
-/// same progressive-fill polling as everything else.
+/// looking for names matching `query` (case-insensitive; see
+/// `matches_search_query` for the exact matching rules), streaming matches
+/// into `tx` as they're found. Matches `scan_dir_async`'s contract exactly
+/// (send-per-item, let `tx` drop when done) so it drops into the same
+/// progressive-fill polling as everything else.
 pub fn search_builtin_async(
     query: String,
     scope_folder: Option<PathBuf>,
@@ -730,7 +783,7 @@ pub fn search_builtin_async(
                     stack.push(entry.path());
                 }
 
-                if !name.to_lowercase().contains(&query_lower) {
+                if !matches_search_query(&name.to_lowercase(), &query_lower) {
                     continue;
                 }
 
@@ -896,4 +949,23 @@ fn recycle_original_directory_key() -> &'static PROPERTYKEY {
 
         key
     })
+}
+
+#[cfg(test)]
+mod search_query_tests {
+    use super::matches_search_query;
+
+    #[test]
+    fn wildcard_and_substring_matching() {
+        assert!(matches_search_query("photo.png", "*.png"));
+        assert!(!matches_search_query("photo.jpg", "*.png"));
+        assert!(matches_search_query("photo.png", "photo.*"));
+        assert!(matches_search_query("a.png", "?.png"));
+        assert!(!matches_search_query("ab.png", "?.png"));
+        assert!(matches_search_query("zzzloctest1.txt", "loctest"));
+        assert!(!matches_search_query("zzzloctest1.txt", "notthere"));
+        assert!(matches_search_query(&"ANYTHING.PNG".to_lowercase(), "*.png"));
+        assert!(matches_search_query("archive.tar.gz", "*.gz"));
+        assert!(matches_search_query("noext", "*"));
+    }
 }

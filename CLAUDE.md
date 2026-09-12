@@ -637,6 +637,23 @@ PowerShell process) rather than the app's own code - if you're using the
   called for that new view kind before assuming read-only reuse is safe -
   a column set that's a superset/subset of the reused branch's own set is
   exactly the mismatch that corrupts silently instead of erroring.
+- **The built-in search fallback matched names with a plain substring
+  `.contains()`, but Everything's own query syntax treats `*`/`?` as
+  wildcards - so a query like `*.png` (which works fine against
+  Everything) returned zero results from the built-in engine, since no
+  real filename literally contains the three characters `*`, `.`, `p`...**
+  Reported as "built-in search engine not working" for exactly this
+  query. Fixed by adding `matches_search_query` (`core/fs.rs`): if the
+  query contains no `*`/`?`, it's still a plain substring match (so
+  typing a partial name works like the existing type-to-filter box
+  always has); if it does, it's matched as a whole-name glob via a
+  standard two-pointer wildcard algorithm instead. When a fallback/
+  alternate engine is meant to be a drop-in replacement for another one,
+  check that it actually accepts the *same query syntax*, not just that
+  it returns "some" results for a plain keyword - a fallback that only
+  handles the simple case isn't actually swappable, and the gap won't
+  show up in testing unless the exact same query someone would type
+  against the *other* engine is tried against this one too.
 
 ## Operational Instructions
 
