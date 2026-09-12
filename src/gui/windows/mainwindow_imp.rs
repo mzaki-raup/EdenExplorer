@@ -248,6 +248,7 @@ fn path_display_label(path: &Path) -> String {
 /// reason - this stays purely in-memory.
 pub enum UndoableOperation {
     Rename { old_path: PathBuf, new_path: PathBuf },
+    BulkRename { pairs: Vec<(PathBuf, PathBuf)> },
 }
 
 /// Cap on `MainWindow::undo_stack`/`redo_stack` (each) - matches
@@ -1377,6 +1378,10 @@ impl MainWindow {
                     .pending_selection_paths =
                     Some(succeeded.iter().map(|(_, new)| new.clone()).collect());
 
+                if !succeeded.is_empty() {
+                    self.push_undo(UndoableOperation::BulkRename { pairs: succeeded });
+                }
+
                 self.load_path();
             }
             ItemViewerContextAction::Delete(paths, permanent) => {
@@ -2000,6 +2005,21 @@ impl MainWindow {
                     eprintln!("Undo failed: could not rename back to original name");
                 }
             }
+            UndoableOperation::BulkRename { pairs } => {
+                let reversed: Vec<(PathBuf, String)> = pairs
+                    .iter()
+                    .filter_map(|(old, new)| {
+                        old.file_name()
+                            .map(|n| (new.clone(), n.to_string_lossy().to_string()))
+                    })
+                    .collect();
+                if self.rename_paths_native(reversed).is_ok() {
+                    self.redo_stack.push_back(op);
+                    self.load_path();
+                } else {
+                    eprintln!("Undo failed: could not restore original names");
+                }
+            }
         }
     }
 
@@ -2023,6 +2043,21 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply rename");
+                }
+            }
+            UndoableOperation::BulkRename { pairs } => {
+                let forward: Vec<(PathBuf, String)> = pairs
+                    .iter()
+                    .filter_map(|(old, new)| {
+                        new.file_name()
+                            .map(|n| (old.clone(), n.to_string_lossy().to_string()))
+                    })
+                    .collect();
+                if self.rename_paths_native(forward).is_ok() {
+                    self.undo_stack.push_back(op);
+                    self.load_path();
+                } else {
+                    eprintln!("Redo failed: could not re-apply bulk rename");
                 }
             }
         }

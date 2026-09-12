@@ -779,6 +779,29 @@ PowerShell process) rather than the app's own code - if you're using the
   from "just needs a moment to look right," check it against every
   filesystem this app's normal file APIs can actually read, not just the
   one or two most common ones.
+- **Bulk Rename's batched `rename_paths_native` (one `IFileOperation`,
+  `FOF_ALLOWUNDO` set, one `RenameItem` call queued per item) was observed
+  once to report the whole batch as "Failed" while the three source items
+  had actually been moved to the Recycle Bin instead of renamed** - a
+  genuine, if apparently intermittent, native-call outcome rather than
+  anything this app's own Rust code chose to do (recycling isn't a
+  fallback path anywhere in the rename handlers). Only observed once
+  across many repeated identical attempts (the exact same Find/Replace
+  pattern against the exact same three files succeeded cleanly on a
+  fresh debug-build relaunch immediately after), so it could not be
+  reliably reproduced or root-caused - possibly a transient COM/shell
+  hiccup, possibly state left over from an earlier release-build session
+  in the same testing pass. No data was lost: `FOF_ALLOWUNDO` means a
+  "failed" rename that actually recycled the source is still fully
+  recoverable (confirmed via the Recycle Bin's own `OriginalDirectory`
+  metadata and restored with the `Item.InvokeVerb('undelete')` COM verb).
+  If Bulk Rename ever gets a genuine, reproducible bug report of "items
+  disappeared instead of being renamed," check the Recycle Bin for them
+  by original directory before assuming data loss - and don't treat a
+  single unreproducible "Failed" notification as proof the surrounding
+  code (including anything reusing `rename_paths_native`, like Undo/Redo)
+  is broken; retry once on a clean relaunch before concluding a
+  regression was introduced.
 
 ## Operational Instructions
 
