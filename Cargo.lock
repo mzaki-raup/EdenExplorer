@@ -17,6 +17,7 @@ dependencies = [
  "egui-phosphor",
  "egui_extras",
  "everything-ipc",
+ "flate2",
  "fluent",
  "fluent-bundle",
  "fontdb",

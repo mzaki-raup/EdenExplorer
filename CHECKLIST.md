@@ -106,6 +106,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Animated GIF playback |
 | Completed | Video playback with play / pause and seek slider |
 | Completed | Zip-format archive listing with nesting and per-entry sizes |
+| Completed | **SVG preview** — rasterized via `resvg`/`fontdb` and shown as an image, same as any raster format (this was already fully implemented in `core/preview.rs`'s `load_svg_preview` before this entry existed - the backlog/README simply hadn't been updated to reflect it). `.svgz` (gzip-compressed SVG) is also supported now: the loader previously routed `.svgz` through the same code path as plain `.svg` with no decompression step, so it silently failed to parse - fixed by gzip-decoding first via `flate2` (already present transitively via other dependencies, so this adds it as a direct dependency without adding a new crate to the build). |
 | Completed | Text selection with right-click to copy in the text preview |
 | In-Progress | **Markdown preview copy fidelity** — right-click copy works, but the paragraph under the pointer contributes its whole text rather than only the selected portion (egui collapses label selection on any button press). See `PRD.md` §7.2 and the doc comments in `itemviewer_preview.rs`. *Next: decide whether a custom rich-text widget is worth the cost, or accept permanently and document in user-facing docs.* |
 
@@ -220,7 +221,7 @@ Rationale and detail for each item is in `PRD.md` §9.
 | State | Item |
 |---|---|
 | Pending | Syntax highlighting for code files (plumbing exists via a `TextEdit` custom `layouter`) |
-| Pending | More formats — SVG, EPUB, 7z/rar listing, audio waveform and playback |
+| Pending | More formats — EPUB, 7z listing, audio waveform and playback (SVG already shipped, see above; RAR skipped - no pure-Rust option without a non-free license) |
 | Pending | Find-in-preview for long documents |
 
 ### Accessibility & input

@@ -299,6 +299,7 @@
 - [x] **Click-to-rename gesture** - click an already-selected item, pause, then click again to rename in place (Explorer-style), with only the base filename selected and the extension left out
 - [x] **Selectable preview text** - select text in the Text or Markdown preview pane and right-click to copy it to the clipboard
 - [x] **Rendered Markdown preview** - headings, bold/italic, lists, code blocks, block quotes, rules, task lists, and simple tables, instead of raw source
+- [x] **SVG preview** - vector files (including gzip-compressed `.svgz`) are rasterized and shown as an image, not just an icon
 - [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
 - [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
 - [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder

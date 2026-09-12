@@ -230,7 +230,8 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
         "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" => load_office_preview(path),
         "zip" | "jar" | "war" | "apk" | "xpi" | "epub" => load_archive_preview(path),
         "ttf" | "otf" | "ttc" | "otc" => load_font_preview(path),
-        "svg" | "svgz" => load_svg_preview(path),
+        "svg" => load_svg_preview(path, false),
+        "svgz" => load_svg_preview(path, true),
         _ if is_known_text_extension(&ext) || sniff_is_text(path) => load_text_preview(path),
         _ => PreviewPayload::Unsupported(
             "No preview available for this file type.\nDouble-click to open it in its default program.".to_string(),
@@ -870,10 +871,22 @@ const SVG_PREVIEW_TARGET_LONG_EDGE: f32 = 1024.0;
 /// regardless of the SVG's own declared dimensions, since those are often
 /// either tiny (icons) or arbitrary/relative - vector content scales
 /// cleanly either way.
-fn load_svg_preview(path: &Path) -> PreviewPayload {
-    let data = match std::fs::read(path) {
+fn load_svg_preview(path: &Path, gzip_compressed: bool) -> PreviewPayload {
+    let raw = match std::fs::read(path) {
         Ok(d) => d,
         Err(err) => return PreviewPayload::Error(format!("Couldn't read file: {err}")),
+    };
+
+    let data = if gzip_compressed {
+        use std::io::Read;
+        let mut decompressed = Vec::new();
+        if let Err(err) = flate2::read::GzDecoder::new(raw.as_slice()).read_to_end(&mut decompressed)
+        {
+            return PreviewPayload::Error(format!("Couldn't decompress .svgz: {err}"));
+        }
+        decompressed
+    } else {
+        raw
     };
 
     let opt = resvg::usvg::Options {
