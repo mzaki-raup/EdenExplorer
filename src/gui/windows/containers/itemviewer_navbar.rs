@@ -1,4 +1,5 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH, parse_tag_view_path};
+use crate::core::launch::{self, ShellUriResolution};
 use crate::core::network;
 use crate::core::portable;
 use crate::gui::i18n::I18n;
@@ -466,28 +467,56 @@ fn draw_breadcrumb_row_contents(
 
             if enter {
                 let input = tab.breadcrumb_path_buffer.trim().trim_matches('"');
-                let expanded_input = expand_environment_variables(input);
-                let new_path = PathBuf::from(&expanded_input);
 
-                // A bare network host (e.g. "\\server") can't be queried with
-                // `exists()` like a real directory, so accept it on faith - the
-                // share listing will simply come back empty if it's unreachable.
-                let is_valid_target =
-                    new_path.exists() || network::unc_host_only(&new_path).is_some();
-
-                if is_valid_target {
-                    action.nav_to = Some(new_path);
+                if launch::is_shell_uri(input) {
+                    // `shell:`/`::{GUID}` monikers (e.g. "shell:ControlPanelFolder")
+                    // aren't ordinary paths - resolve them through the shell
+                    // namespace the same way Explorer's own address bar does,
+                    // rather than running them through env-var expansion and
+                    // `PathBuf::exists()`.
+                    let normalized = launch::normalize_path(PathBuf::from(input));
+                    if launch::is_virtual_path(&normalized) {
+                        // Already special-cased (My PC/Recycle Bin) - this app
+                        // has its own in-app rendering for these sentinel paths.
+                        action.nav_to = Some(normalized);
+                    } else {
+                        match launch::resolve_shell_uri(input) {
+                            Some(ShellUriResolution::FileSystemPath(path)) => {
+                                action.nav_to = Some(path);
+                            }
+                            _ => {
+                                // A genuinely virtual shell folder (Control
+                                // Panel, Printers, ...) this app can't render
+                                // in-app - hand it to the shell itself.
+                                launch::launch_shell_uri_externally(input);
+                            }
+                        }
+                    }
                     exit_edit_mode = true;
                 } else {
-                    println!(
-                        "{}: {} ({}: {})",
-                        i18n.tr("tooltip_invalid_path"),
-                        tab.breadcrumb_path_buffer,
-                        i18n.tr("tooltip_invalid_path_expanded"),
-                        expanded_input
-                    );
-                    tab.breadcrumb_path_error = true;
-                    tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
+                    let expanded_input = expand_environment_variables(input);
+                    let new_path = PathBuf::from(&expanded_input);
+
+                    // A bare network host (e.g. "\\server") can't be queried with
+                    // `exists()` like a real directory, so accept it on faith - the
+                    // share listing will simply come back empty if it's unreachable.
+                    let is_valid_target =
+                        new_path.exists() || network::unc_host_only(&new_path).is_some();
+
+                    if is_valid_target {
+                        action.nav_to = Some(new_path);
+                        exit_edit_mode = true;
+                    } else {
+                        println!(
+                            "{}: {} ({}: {})",
+                            i18n.tr("tooltip_invalid_path"),
+                            tab.breadcrumb_path_buffer,
+                            i18n.tr("tooltip_invalid_path_expanded"),
+                            expanded_input
+                        );
+                        tab.breadcrumb_path_error = true;
+                        tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
+                    }
                 }
             } else if escape || resp.lost_focus() {
                 tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();

@@ -257,6 +257,7 @@
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
+- [x] **`shell:` URI / CLSID support in the address bar** - typing `shell:ControlPanelFolder`, `shell:Desktop`, or a raw `::{GUID}` path resolves through the real Windows shell namespace; filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers, ...) open in their own native window
 - [x] Drag and drop files into breadcrumb folders and directory tabs
 - [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
 - [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C

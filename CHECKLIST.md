@@ -23,6 +23,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Full navigation history saved and restored across sessions |
 | Completed | Breadcrumb address bar with inline editing |
 | Completed | Windows environment-variable `PATH` expansion in the address bar |
+| Completed | **`shell:` URI / CLSID address-bar resolution** — typing a `shell:` moniker (e.g. `shell:ControlPanelFolder`, `shell:Desktop`) or a raw `::{GUID}` path into the address bar resolves it through the real Win32 shell namespace (`SHCreateItemFromParsingName`, the same call already used elsewhere for ordinary paths). If it resolves to a real filesystem location (`shell:Desktop`, `shell:Downloads`, etc.), navigation continues in-app exactly like any other path; if it's a genuinely virtual shell folder this app has no rendering model for (Control Panel, Printers, ...), it's handed off to the shell itself via `ShellExecuteW` so it opens in its own native window instead. The two already-special-cased monikers (`shell:MyComputerFolder`, `shell:RecycleBinFolder`) keep resolving to this app's own in-app sentinel views, unchanged. |
 | Completed | Show / hide hidden objects toggle |
 | Completed | Type-to-filter in the current directory with fuzzy matching |
 | Completed | Cached filter indices for performance |
