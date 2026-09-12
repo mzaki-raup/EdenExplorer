@@ -743,6 +743,42 @@ PowerShell process) rather than the app's own code - if you're using the
   space and check what actually changed (a checkbox toggled, a button's
   effect happened, nothing happened) rather than trying to read focus
   state from the screenshot.
+- **A dedup check comparing two different path formats can silently never
+  match, defeating the dedup entirely - always sanity-check that both
+  sides of a `.contains()`/`HashSet` comparison are actually in the same
+  format before trusting it.** The sidebar's "Storage" section listed
+  every USB-attached disk *twice* - once correctly as its lettered volume
+  (e.g. `D:\`), and again as a bogus "Non-NTFS Drive (\\.\PhysicalDriveN)"
+  entry, even when that disk had a completely normal, working NTFS/exFAT
+  partition. Root cause (`core/drives.rs`'s `get_drive_infos_internal`):
+  the code meant to skip a raw physical drive already shown as a lettered
+  volume by building a `HashSet` of existing drive-letter path strings
+  (`"c:\\"`, `"d:\\"`, ...) and checking whether it `.contains()` the raw
+  drive's own path (`"\\.\physicaldrive1"`) - two entirely different path
+  formats that can never be equal, so the check silently never excluded
+  anything, for every removable/USB-bus physical drive on the system.
+  Fixed by comparing the thing both sides actually agree on - the
+  physical drive *index* - resolved from each lettered volume via
+  `IOCTL_STORAGE_GET_DEVICE_NUMBER` (`physical_drive_number_for_volume`)
+  and compared against the index parsed out of the raw drive's own
+  `\\.\PhysicalDriveN` path (`physical_drive_index_from_path`). When
+  writing a "have I already seen this X" check across two different
+  enumeration sources, verify a match actually fires for a real duplicate
+  case before trusting it silently prevents one - a dedup set that's
+  never actually removing anything is easy to not notice until a user
+  reports "many" of something that should only ever show up once.
+- **A narrow filesystem-name allowlist (`"NTFS"`/`"FAT32"` only) can wrongly
+  flag other perfectly-readable filesystems as unsupported.** The same
+  drive-detection code also excluded exFAT (the default on most large USB
+  drives/SD cards) and ReFS (Windows' own modern filesystem, used by Dev
+  Drive/Storage Spaces) from the "already fine, don't show as unmounted"
+  list - meaning a genuinely-unmounted-but-otherwise-normal exFAT/ReFS
+  volume got treated the same as a raw Linux/ext partition Windows truly
+  can't read. Widened the allowlist to `NTFS`/`FAT32`/`EXFAT`/`REFS`. When
+  a filesystem-type check exists to distinguish "genuinely unsupported"
+  from "just needs a moment to look right," check it against every
+  filesystem this app's normal file APIs can actually read, not just the
+  one or two most common ones.
 
 ## Operational Instructions
 
