@@ -425,6 +425,9 @@ pub struct SidebarSectionsSnapshot {
     // silently misalign every field that comes after it against old data.
     #[serde(default = "default_true")]
     pub saved_searches: bool,
+    // Same positional-append rule as `saved_searches` above.
+    #[serde(default = "default_true")]
+    pub recent_locations: bool,
 }
 
 impl Default for SidebarSectionsSnapshot {
@@ -436,6 +439,7 @@ impl Default for SidebarSectionsSnapshot {
             tags: true,
             shared_network: true,
             saved_searches: true,
+            recent_locations: true,
         }
     }
 }

@@ -786,6 +786,23 @@ impl MainWindow {
             return;
         }
 
+        // A genuine real-folder load (every virtual location above has
+        // already returned) - record it for the "Recent Locations" sidebar
+        // section, unless it's already pinned to Favorites (that would just
+        // be clutter - a folder you deliberately pinned doesn't also need
+        // to show up as "recent"). Re-recording the same folder on every
+        // refresh/re-visit is harmless: `record_visit` already dedupes by
+        // moving the existing entry to the front instead of duplicating it.
+        if !self
+            .sidebar_state
+            .favorites
+            .iter()
+            .any(|f| f.path == current_path)
+        {
+            self.recent_locations_state.record_visit(current_path.clone());
+            self.persist_recent_locations();
+        }
+
         // Async directory listing
         let (tx, rx) = unbounded();
         scan_dir_async(
@@ -1121,6 +1138,10 @@ impl MainWindow {
 
     pub fn persist_saved_searches(&self) {
         crate::core::indexer::save_saved_searches(&self.saved_searches_state.to_snapshot());
+    }
+
+    pub fn persist_recent_locations(&self) {
+        crate::core::indexer::save_recent_locations(&self.recent_locations_state.to_snapshot());
     }
 
     fn move_tagged_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: &Path) -> bool {
@@ -2898,6 +2919,10 @@ impl MainWindow {
             if let Some(id) = action.remove_saved_search {
                 self.saved_searches_state.remove(id);
                 self.persist_saved_searches();
+            }
+            if let Some(path) = action.remove_recent_location {
+                self.recent_locations_state.remove(&path);
+                self.persist_recent_locations();
             }
         }
     }

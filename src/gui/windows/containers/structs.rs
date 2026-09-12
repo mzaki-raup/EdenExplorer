@@ -971,6 +971,10 @@ pub struct SidebarAction {
     /// as a normal search tab, same as re-typing that query.
     pub open_saved_search: Option<u64>,
     pub remove_saved_search: Option<u64>,
+    /// "Remove from Recent" was chosen from a recent location's context
+    /// menu - navigating to one doesn't need its own action, it already
+    /// reuses `nav_to` (a recent location is just a real path).
+    pub remove_recent_location: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -1637,5 +1641,73 @@ mod saved_searches_tests {
         assert_eq!(restored.items[0].query, "*.md");
         assert_eq!(restored.items[0].scope_folder, Some("D:\\Notes".into()));
         assert_eq!(restored.next_id, state.next_id);
+    }
+}
+
+#[cfg(test)]
+mod recent_locations_tests {
+    use super::RecentLocationsState;
+    use std::path::PathBuf;
+
+    #[test]
+    fn record_visit_puts_newest_first() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+        state.record_visit(PathBuf::from("C:/c"));
+
+        assert_eq!(
+            state.items,
+            vec![
+                PathBuf::from("C:/c"),
+                PathBuf::from("C:/b"),
+                PathBuf::from("C:/a"),
+            ]
+        );
+    }
+
+    #[test]
+    fn revisiting_a_path_moves_it_to_front_instead_of_duplicating() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+        state.record_visit(PathBuf::from("C:/a"));
+
+        assert_eq!(state.items, vec![PathBuf::from("C:/a"), PathBuf::from("C:/b")]);
+    }
+
+    #[test]
+    fn list_is_capped_at_max_recent_locations() {
+        let mut state = RecentLocationsState::default();
+        for i in 0..super::MAX_RECENT_LOCATIONS + 5 {
+            state.record_visit(PathBuf::from(format!("C:/dir{i}")));
+        }
+        assert_eq!(state.items.len(), super::MAX_RECENT_LOCATIONS);
+        // Most recent (highest i) should still be at the front.
+        assert_eq!(
+            state.items[0],
+            PathBuf::from(format!("C:/dir{}", super::MAX_RECENT_LOCATIONS + 4))
+        );
+    }
+
+    #[test]
+    fn remove_drops_the_matching_path_only() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        state.remove(&PathBuf::from("C:/a"));
+
+        assert_eq!(state.items, vec![PathBuf::from("C:/b")]);
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_order() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        let restored = RecentLocationsState::from_snapshot(state.to_snapshot());
+        assert_eq!(restored.items, state.items);
     }
 }

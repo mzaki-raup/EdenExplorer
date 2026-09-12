@@ -119,6 +119,8 @@ pub struct MainWindow {
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) tags_state: TagsState,
     pub(crate) saved_searches_state: SavedSearchesState,
+    pub(crate) recent_locations_state:
+        crate::gui::windows::containers::structs::RecentLocationsState,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
     pub(crate) clipboard_is_cut: bool,
@@ -309,6 +311,7 @@ impl Default for MainWindow {
                     tags_expanded: sections.tags,
                     shared_network_expanded: sections.shared_network,
                     saved_searches_expanded: sections.saved_searches,
+                    recent_locations_expanded: sections.recent_locations,
                     ..SidebarState::default()
                 }
             },
@@ -337,6 +340,11 @@ impl Default for MainWindow {
                 .unwrap_or_default(),
             saved_searches_state: crate::core::indexer::load_saved_searches()
                 .map(SavedSearchesState::from_snapshot)
+                .unwrap_or_default(),
+            recent_locations_state: crate::core::indexer::load_recent_locations()
+                .map(
+                    crate::gui::windows::containers::structs::RecentLocationsState::from_snapshot,
+                )
                 .unwrap_or_default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
@@ -762,6 +770,7 @@ impl eframe::App for MainWindow {
                                                     drag_hover_target.clone(),
                                                     &self.tags_state,
                                                     &mut self.saved_searches_state,
+                                                    &self.recent_locations_state,
                                                 ));
                                             },
                                         );

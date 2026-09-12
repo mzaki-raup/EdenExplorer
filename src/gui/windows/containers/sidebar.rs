@@ -9,7 +9,7 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
 use crate::gui::windows::containers::structs::{
-    SavedSearchRenameState, SavedSearchesState, SidebarAction, TagsState,
+    RecentLocationsState, SavedSearchRenameState, SavedSearchesState, SidebarAction, TagsState,
 };
 use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
@@ -65,6 +65,7 @@ pub fn draw_sidebar(
     drag_hover_target: Option<PathBuf>,
     tags_state: &TagsState,
     saved_searches_state: &mut SavedSearchesState,
+    recent_locations_state: &RecentLocationsState,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
@@ -606,6 +607,65 @@ pub fn draw_sidebar(
                     sections_changed |= draw_section_header(
                         ui,
                         palette,
+                        &i18n.tr("recent_locations"),
+                        &mut sidebar_state.recent_locations_expanded,
+                    );
+                    if sidebar_state.recent_locations_expanded {
+                        ui.add_space(4.0);
+
+                        if recent_locations_state.items.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("recent_locations_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for path in recent_locations_state.items.iter() {
+                                let label = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+                                let resp = draw_sidebar_item(
+                                    ui,
+                                    icon_cache,
+                                    path,
+                                    &label,
+                                    true,
+                                    false,
+                                    palette,
+                                    false,
+                                    None,
+                                );
+                                if resp.clicked() {
+                                    action.nav_to = Some(path.clone());
+                                }
+                                if resp.middle_clicked() {
+                                    action.open_new_tab = Some(path.clone());
+                                }
+
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(path.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("remove_recent_location")).clicked()
+                                        {
+                                            action.remove_recent_location = Some(path.clone());
+                                            ui.close();
+                                        }
+                                    });
+                            }
+                        }
+                    }
+
+                    ui.add_space(6.0);
+                    sections_changed |= draw_section_header(
+                        ui,
+                        palette,
                         &i18n.tr("shared_network"),
                         &mut sidebar_state.shared_network_expanded,
                     );
@@ -664,6 +724,7 @@ pub fn draw_sidebar(
             tags: sidebar_state.tags_expanded,
             shared_network: sidebar_state.shared_network_expanded,
             saved_searches: sidebar_state.saved_searches_expanded,
+            recent_locations: sidebar_state.recent_locations_expanded,
         });
     }
 
