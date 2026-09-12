@@ -190,7 +190,7 @@ Rationale and detail for each item is in `PRD.md` §9.
 ### Search
 | State | Item |
 |---|---|
-| Pending | Recursive / whole-drive search — the largest functional gap vs. Explorer |
+| Completed | Recursive / whole-drive search — see Phase 1's global search entry (Everything or built-in engine, recursive "This folder" or "Everywhere" scope, `*`/`?` wildcards) |
 | Pending | Content search inside text files |
 | Pending | Filter syntax — `size:>100mb`, `ext:png`, `modified:today` |
 | Pending | Saved searches in the sidebar |
