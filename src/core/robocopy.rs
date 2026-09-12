@@ -38,8 +38,12 @@ const SIGNAL_CANCEL: u8 = 2;
 
 /// How many worker threads robocopy itself is told to use per job
 /// (`/MT:N`) - not related to how many jobs this module runs concurrently
-/// (jobs always run one at a time, see the module doc comment).
-const ROBOCOPY_MT_THREADS: u32 = 8;
+/// (jobs always run one at a time, see the module doc comment). Bumped
+/// from the previously-safe default of 8 to 16 - still within the range
+/// generally considered safe for spinning HDDs, while giving a real
+/// improvement for SSD/NVMe and network-share destinations. Revisit if
+/// this turns out to hurt throughput on mechanical drives in practice.
+const ROBOCOPY_MT_THREADS: u32 = 16;
 
 #[derive(Clone)]
 pub struct RobocopyJobSpec {
