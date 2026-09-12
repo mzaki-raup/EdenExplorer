@@ -246,9 +246,14 @@ fn path_display_label(path: &Path) -> String {
 /// stale undo could silently act on the wrong current file. Every
 /// mainstream file manager drops undo history on restart for this exact
 /// reason - this stays purely in-memory.
+#[derive(Clone)]
 pub enum UndoableOperation {
     Rename { old_path: PathBuf, new_path: PathBuf },
     BulkRename { pairs: Vec<(PathBuf, PathBuf)> },
+    /// `pairs` is `(original_path, path_after_the_move)`. `side` is the pane
+    /// the move happened in, so undo/redo can restore the right pane's
+    /// selection/refresh the right view.
+    Move { pairs: Vec<(PathBuf, PathBuf)>, side: SplitSide },
 }
 
 /// Cap on `MainWindow::undo_stack`/`redo_stack` (each) - matches
@@ -283,18 +288,57 @@ pub struct PendingPaste {
 /// What triggered a `PendingPaste` job - determines which stack
 /// `poll_pending_paste` pushes the resulting `UndoableOperation` onto once
 /// the job completes (see that function's doc comment for the full table).
-#[allow(dead_code)]
 pub enum PasteOrigin {
     /// A normal paste or drag-and-drop initiated directly by the user.
     UserAction,
     /// This job *is* `MainWindow::undo()` reversing a previously-pushed
-    /// Move/Copy - carries the original operation so it can be pushed onto
-    /// `redo_stack` unchanged on success (no need to re-derive it).
-    UndoOf(UndoableOperation),
+    /// Move/Copy - carries the original operation (to push onto
+    /// `redo_stack` unchanged, no re-deriving needed) and a shared group
+    /// tracker, since undoing a Move whose sources came from more than one
+    /// original directory fires one job per distinct directory - the
+    /// operation is only pushed to `redo_stack` once every sibling job in
+    /// the group has finished, and only if all of them succeeded.
+    UndoOf(UndoableOperation, std::rc::Rc<UndoRedoGroup>),
     /// This job *is* `MainWindow::redo()` re-applying a previously-undone
-    /// Move/Copy - carries the original operation so it can be pushed back
-    /// onto `undo_stack` unchanged on success.
-    RedoOf(UndoableOperation),
+    /// Move/Copy - same shape as `UndoOf`, pushing back onto `undo_stack`
+    /// instead. Redo is always a single job (one destination folder), so
+    /// the group here always has exactly one member - kept as a group
+    /// anyway so `poll_pending_paste` has one shared code path.
+    RedoOf(UndoableOperation, std::rc::Rc<UndoRedoGroup>),
+}
+
+/// Shared completion state for the one-or-more `start_robocopy_paste` jobs
+/// that together make up a single undo or redo of a Move (see `PasteOrigin`).
+/// `poll_pending_paste` decrements `remaining` as each sibling job reaches a
+/// terminal state and clears `all_succeeded` if any of them failed; the
+/// reversed/reapplied `UndoableOperation` is only pushed onto the opposite
+/// stack once `remaining` hits zero and `all_succeeded` is still true - a
+/// partial failure leaves nothing pushed, since the operation no longer
+/// accurately describes the current state either way.
+pub struct UndoRedoGroup {
+    remaining: std::cell::Cell<usize>,
+    all_succeeded: std::cell::Cell<bool>,
+}
+
+impl UndoRedoGroup {
+    fn new(job_count: usize) -> Self {
+        Self {
+            remaining: std::cell::Cell::new(job_count),
+            all_succeeded: std::cell::Cell::new(true),
+        }
+    }
+
+    /// Records one sibling job's terminal state; returns `true` exactly
+    /// once, when this was the last sibling to finish and every one of
+    /// them succeeded.
+    fn record_completion(&self, succeeded: bool) -> bool {
+        if !succeeded {
+            self.all_succeeded.set(false);
+        }
+        let remaining = self.remaining.get().saturating_sub(1);
+        self.remaining.set(remaining);
+        remaining == 0 && self.all_succeeded.get()
+    }
 }
 
 /// The user's choice in the paste-conflict modal - see
@@ -1868,6 +1912,17 @@ impl MainWindow {
             };
 
             if !succeeded {
+                // The per-job notification (created in `start_robocopy_paste`)
+                // already surfaced as Failed via `poll_robocopy_jobs` above,
+                // for undo/redo jobs same as any other paste - nothing extra
+                // to show here. Just keep the group's completion count
+                // accurate so a partial failure doesn't leave `remaining`
+                // stuck above zero forever.
+                if let PasteOrigin::UndoOf(_, group) | PasteOrigin::RedoOf(_, group) =
+                    &pending.origin
+                {
+                    group.record_completion(false);
+                }
                 continue;
             }
 
@@ -1886,6 +1941,39 @@ impl MainWindow {
                     .view_mut(pending.side)
                     .explorer_state
                     .pending_selection_paths = Some(pasted_paths);
+            }
+
+            let final_pairs: Vec<(PathBuf, PathBuf)> = pending
+                .paths
+                .iter()
+                .filter_map(|source| {
+                    let final_path = match pending.renames.get(source) {
+                        Some(name) => pending.target_dir.join(name),
+                        None => pending.target_dir.join(source.file_name()?),
+                    };
+                    Some((source.clone(), final_path))
+                })
+                .collect();
+
+            match &pending.origin {
+                PasteOrigin::UserAction => {
+                    if pending.is_cut && !final_pairs.is_empty() {
+                        self.push_undo(UndoableOperation::Move {
+                            pairs: final_pairs,
+                            side: pending.side,
+                        });
+                    }
+                }
+                PasteOrigin::UndoOf(op, group) => {
+                    if group.record_completion(true) {
+                        self.redo_stack.push_back(op.clone());
+                    }
+                }
+                PasteOrigin::RedoOf(op, group) => {
+                    if group.record_completion(true) {
+                        self.undo_stack.push_back(op.clone());
+                    }
+                }
             }
 
             self.load_path();
@@ -2052,6 +2140,50 @@ impl MainWindow {
                     eprintln!("Undo failed: could not restore original names");
                 }
             }
+            UndoableOperation::Move { pairs, side } => {
+                // Sources for the "move back" job(s) are the *current*
+                // (post-move) paths; each job's target is one distinct
+                // original parent directory - a multi-directory source
+                // selection needs one job per directory, since a single
+                // robocopy/IFileOperation job has exactly one destination.
+                let mut groups: HashMap<PathBuf, Vec<(PathBuf, PathBuf)>> = HashMap::new();
+                for (orig, cur) in pairs {
+                    if let Some(parent) = orig.parent() {
+                        groups
+                            .entry(parent.to_path_buf())
+                            .or_default()
+                            .push((orig.clone(), cur.clone()));
+                    }
+                }
+                if groups.is_empty() {
+                    return;
+                }
+
+                let group = std::rc::Rc::new(UndoRedoGroup::new(groups.len()));
+                for (orig_parent, group_pairs) in groups {
+                    let sources: Vec<PathBuf> =
+                        group_pairs.iter().map(|(_, cur)| cur.clone()).collect();
+                    let before_entries = Self::directory_child_paths(&orig_parent);
+                    let mut renames = HashMap::new();
+                    for (orig, cur) in &group_pairs {
+                        if let (Some(orig_name), Some(cur_name)) =
+                            (orig.file_name(), cur.file_name())
+                            && orig_name != cur_name
+                        {
+                            renames.insert(cur.clone(), orig_name.to_string_lossy().to_string());
+                        }
+                    }
+                    self.start_robocopy_paste(
+                        sources,
+                        orig_parent,
+                        before_entries,
+                        true,
+                        *side,
+                        renames,
+                        PasteOrigin::UndoOf(op.clone(), group.clone()),
+                    );
+                }
+            }
         }
     }
 
@@ -2091,6 +2223,40 @@ impl MainWindow {
                 } else {
                     eprintln!("Redo failed: could not re-apply bulk rename");
                 }
+            }
+            UndoableOperation::Move { pairs, side } => {
+                // Redo re-applies the original move, which always had one
+                // single destination folder - unlike undo, this is always
+                // exactly one job, sourcing from each pair's original path.
+                let Some(target_dir) = pairs
+                    .first()
+                    .and_then(|(_, cur)| cur.parent())
+                    .map(|p| p.to_path_buf())
+                else {
+                    return;
+                };
+
+                let sources: Vec<PathBuf> = pairs.iter().map(|(orig, _)| orig.clone()).collect();
+                let before_entries = Self::directory_child_paths(&target_dir);
+                let mut renames = HashMap::new();
+                for (orig, cur) in pairs {
+                    if let (Some(orig_name), Some(cur_name)) = (orig.file_name(), cur.file_name())
+                        && orig_name != cur_name
+                    {
+                        renames.insert(orig.clone(), cur_name.to_string_lossy().to_string());
+                    }
+                }
+
+                let group = std::rc::Rc::new(UndoRedoGroup::new(1));
+                self.start_robocopy_paste(
+                    sources,
+                    target_dir,
+                    before_entries,
+                    true,
+                    *side,
+                    renames,
+                    PasteOrigin::RedoOf(op.clone(), group),
+                );
             }
         }
     }
