@@ -559,6 +559,30 @@ PowerShell process) rather than the app's own code - if you're using the
   work the other one already does correctly (conflict detection, safe
   rename-on-collision staging, self-move filtering) rather than assuming
   parity because the end result (files moved) looks the same.
+- **`GetClientRect` returns physical pixels; egui's `i.viewport().inner_rect`
+  and `ViewportBuilder::with_inner_size`/`with_position` all work in
+  logical points - mixing the two silently breaks on any display that
+  isn't at 100% scaling, and is invisible at 100%.** The window-size-on-
+  exit-of-drag hook (`save_manual_window_size` in `windowsoverrides.rs`,
+  fired on `WM_EXITSIZEMOVE`) saved `GetClientRect`'s raw physical-pixel
+  width/height into the same `WindowSizeMode::Custom` field that the
+  per-frame save in `mainwindow.rs` (correctly, from `i.viewport().
+  inner_rect`) also writes to. On a scaled display (125%/150% is a common
+  Windows default, especially on laptops) this silently inflated the
+  remembered size by the scale factor; reloaded through `.with_inner_size`
+  as if it were logical points, the requested window ended up larger than
+  the physical monitor and got silently shrunk by `.with_clamp_size_to_
+  monitor_size(true)` - which then throws off where the saved position
+  ends up landing too. Invisible during dev/testing on a 100%-scaled
+  machine, since physical and logical pixels are identical there. Fixed
+  by dividing by `GetDpiForWindow(hwnd) as f32 / 96.0` before saving
+  (the app's manifest already declares Per-Monitor-V2 DPI awareness -
+  see `build.rs` - so this reads the real per-window DPI, not a stale
+  system-wide value). When a Win32 call and an egui/eframe API both touch
+  the same "pixels" value, check which pixel space each one actually
+  means before assuming they're interchangeable - `GetClientRect`/
+  `GetWindowRect`/`SetWindowPos` are physical; egui's own coordinate
+  system (and anything built on `ViewportBuilder`) is logical points.
 
 ## Operational Instructions
 

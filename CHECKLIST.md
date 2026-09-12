@@ -39,7 +39,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Split-pane view with per-pane persistence |
 | Completed | Collapsible sidebar |
 | Completed | Window size modes — fullscreen, half-screen, custom dimensions |
-| Completed | Window position memory in addition to size |
+| Completed | Window position memory in addition to size — fixed a physical/logical pixel unit mismatch (`GetClientRect` vs. egui's logical points) in the drag/resize-finished save path that inflated the remembered size on any display scaled above 100%, throwing off both size and position on the next launch |
 | Completed | Maximization bounds and minimum-size constraints |
 | Completed | CLI accepts `::MY_PC::`, `::RECYCLE_BIN::`, `shell:MyComputerFolder`, `shell:RecycleBinFolder` |
 
