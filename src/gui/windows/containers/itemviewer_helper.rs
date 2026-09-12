@@ -36,6 +36,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
+/// `egui::Context` memory key `MainWindow::ui` sets once per frame to
+/// whether a blocking modal (paste-conflict, bulk-rename, checksum) is
+/// currently open - checked by `itemviewer.rs`'s `modal_input_blocked` so
+/// this view's own keyboard shortcuts (Ctrl+A select-all, Delete, etc.)
+/// don't fire underneath a modal that's visually on top of it but doesn't
+/// otherwise suppress the view's own per-frame input handling. Using
+/// `egui::Context` memory (the same mechanism `global_shortcuts_disabled`'s
+/// `topbar_hamburger_menu` check already uses) avoids threading a new
+/// parameter through `draw_tab_content`/`draw_item_viewer` and their
+/// several call sites.
+pub const BLOCKING_MODAL_MEMORY_ID: &str = "blocking_modal_open";
+
 pub fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -550,6 +562,18 @@ pub fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
             context_paths.clone(),
             true,
+        )));
+        ui.close();
+    }
+
+    // Checksums - single real file only (no meaningful "checksum of a
+    // folder"/"checksum of 3 files at once" UX).
+    if context_paths.len() == 1
+        && !context_paths[0].is_dir()
+        && menu_item_button(ui, regular::HASH, &i18n.tr("checksum_menu_label")).clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
+            context_paths[0].clone(),
         )));
         ui.close();
     }

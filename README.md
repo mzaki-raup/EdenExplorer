@@ -258,6 +258,8 @@
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
 - [x] **`shell:` URI / CLSID support in the address bar** - typing `shell:ControlPanelFolder`, `shell:Desktop`, or a raw `::{GUID}` path resolves through the real Windows shell namespace; filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers, ...) open in their own native window
+- [x] **Undo/Redo (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)** for Rename, Bulk Rename, Move, and Copy - a shared, in-memory (never persisted) undo/redo stack. Move/Copy undo/redo works across cut-paste, drag-and-drop, and paste-conflict-resolved (Skip/Rename/Replace) operations alike. Choosing **Replace** on a same-name conflict is fully non-destructive: the existing item is recycled first (not overwritten) so it's always restorable, and undoing/redoing a Replace correctly restores/re-recycles it each time
+- [x] **Checksums** context-menu entry (single file) - computes CRC32/MD5/SHA-1/SHA-256 in one background pass, with a one-click copy button per hash and a "Compare" field that verifies a pasted checksum (from a download page, say) against all four algorithms at once, telling you which one matched
 - [x] Drag and drop files into breadcrumb folders and directory tabs
 - [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
 - [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C

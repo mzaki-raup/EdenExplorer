@@ -98,6 +98,11 @@ pub struct MainWindow {
     /// each - polled once per frame by `poll_pending_compress`.
     pub(crate) pending_compress_jobs:
         HashMap<u64, (crossbeam_channel::Receiver<Result<(), String>>, PathBuf)>,
+    /// The "Checksums" modal's state while it's open - see
+    /// `ChecksumDialogState`'s doc comment in `mainwindow_imp.rs`. Drawn as
+    /// a modal from the update loop, alongside `pending_paste_conflict`.
+    pub(crate) pending_checksum:
+        Option<crate::gui::windows::mainwindow_imp::ChecksumDialogState>,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
@@ -339,6 +344,7 @@ impl Default for MainWindow {
             pending_paste_conflict: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
+            pending_checksum: None,
             notifications_state: NotificationsState::default(),
             undo_stack: std::collections::VecDeque::new(),
             redo_stack: std::collections::VecDeque::new(),
@@ -458,6 +464,27 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // Lets the item viewer's own keyboard handling (Ctrl+A, Delete, ...)
+        // know a blocking modal is on top of it this frame, so those
+        // shortcuts don't fire on the file list underneath a modal that's
+        // visually on top of it but doesn't otherwise suppress the view's
+        // own per-frame input handling - see `BLOCKING_MODAL_MEMORY_ID`'s
+        // doc comment. Reflects state from the *start* of this frame
+        // (before any modal's own Close button runs), which is exactly
+        // "was a modal open when this frame's keyboard input arrived."
+        {
+            let blocking_modal_open = self.pending_paste_conflict.is_some()
+                || self.pending_bulk_rename.is_some()
+                || self.pending_checksum.is_some();
+            ui.ctx().memory_mut(|mem| {
+                mem.data.insert_temp(
+                    egui::Id::new(
+                        crate::gui::windows::containers::itemviewer_helper::BLOCKING_MODAL_MEMORY_ID,
+                    ),
+                    blocking_modal_open,
+                );
+            });
+        }
         {
             let forwarded_paths = take_forwarded_paths();
             for path in &forwarded_paths {
@@ -1513,8 +1540,10 @@ impl eframe::App for MainWindow {
         }
         self.poll_pending_paste();
         self.poll_pending_compress();
+        self.poll_pending_checksum();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
+        self.draw_checksum_modal(ui.ctx(), &palette);
         draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);

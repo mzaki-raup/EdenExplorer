@@ -91,7 +91,12 @@ pub fn draw_item_viewer(
         settings_window.current_settings.show_selection_checkboxes,
         palette,
     );
-    let modal_input_blocked = tags_state.picker.is_some();
+    let modal_input_blocked = tags_state.picker.is_some()
+        || ui.ctx().memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new(BLOCKING_MODAL_MEMORY_ID))
+                .unwrap_or(false)
+        });
 
     let mut action: Option<ItemViewerAction> = None;
 

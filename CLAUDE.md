@@ -878,6 +878,36 @@ PowerShell process) rather than the app's own code - if you're using the
   user-facing version could ever surface UI on their own - silence
   needs to be an explicit, separate flag combination, not inherited by
   accident from a copy-pasted call site.
+- **A modal drawn via `egui::Area`/`egui::Frame::popup` (the paste-conflict
+  modal, bulk-rename, and now the new Checksums modal) visually sits on
+  top of the item viewer, but does nothing to stop the item viewer's own
+  per-frame keyboard handling (`itemviewer_helper.rs`'s `handle_global_
+  actions` - Ctrl+A select-all, Delete, Ctrl+C/X/V, etc.) from still
+  firing underneath it.** Confirmed by direct, if accidental, live
+  reproduction: typing into the Checksums modal's "Compare" text field,
+  then pressing Ctrl+A followed by Delete to clear it, correctly cleared
+  the text field *and* deleted the real file underneath the modal (sent
+  to the Recycle Bin, so not permanently lost, but "typing in a dialog
+  deletes your file" is a serious surprise). Root cause:
+  `itemviewer.rs`'s `modal_input_blocked` - the flag that's supposed to
+  suppress exactly this - only ever checked `tags_state.picker.is_some()`;
+  nothing set it for `pending_paste_conflict`/`pending_bulk_rename`/(the
+  new) `pending_checksum`, so this exact same risk already existed for
+  the first two modals too, just never triggered by a Ctrl+A+Delete
+  sequence during their testing. Fixed generally (all three modals at
+  once) rather than just for Checksums: `MainWindow::ui` now sets an
+  `egui::Context` memory flag (`itemviewer_helper::BLOCKING_MODAL_MEMORY_ID`,
+  the same "memory flag" mechanism `global_shortcuts_disabled`'s
+  `topbar_hamburger_menu` check already uses) once per frame to whether
+  any of the three pending-modal fields is `Some`, and `modal_input_
+  blocked` now also reads that flag - no need to thread a new parameter
+  through `draw_tab_content`/`draw_item_viewer` and their several call
+  sites (Details, Gallery, Preview all read the one computed value).
+  When adding a new `egui::Area`-based modal here, don't assume it
+  automatically suppresses the view underneath just because it's drawn
+  on top and captures its own widgets' clicks - check `modal_input_
+  blocked`'s computation includes your new modal's pending-state field,
+  or a global keyboard shortcut can reach through it.
 
 ## Operational Instructions
 

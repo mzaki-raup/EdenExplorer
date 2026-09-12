@@ -75,6 +75,8 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Explorer-style click-pause-click inline rename (extension excluded from the selection)
 - Bulk rename: multi-selection "Rename" opens a live-preview dialog (simple find/replace or regex with capture groups, plus `{name}`/`{ext}`/`{n}`/`{n:03}` placeholders), with cross-item and existing-file collision detection blocking the commit until resolved, applied as one batched native operation
 - `shell:` URI / CLSID resolution in the address bar: `shell:ControlPanelFolder`, `shell:Desktop`, `::{GUID}`, etc. resolve through the real Windows shell namespace - filesystem-backed locations navigate in-app, genuinely virtual ones open externally via the shell
+- Undo/Redo (Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z) for Rename, Bulk Rename, Move, and Copy - in-memory only, capped at 50 entries. Replace-resolved conflicts are non-destructive (the overwritten item is recycled, not destroyed) and fully undoable/redoable, re-recycling fresh on each redo so a later undo still has something valid to restore
+- Checksums: a single-file context-menu entry computing CRC32/MD5/SHA-1/SHA-256 in one background-threaded pass, with per-hash copy buttons and a paste-to-verify Compare field that checks a pasted checksum against all four algorithms at once
 
 ## Roadmap (from README)
 Upcoming alpha features: multi-tagging of objects, deeper theme customization (custom layouts, mix/match UI), and additional network discovery protocols (mDNS/WS-Discovery). Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.

@@ -92,4 +92,7 @@ pub enum ItemViewerContextAction {
     /// - both match native Explorer).
     Delete(Vec<PathBuf>, bool),
     Properties(Vec<PathBuf>),
+    /// Computes CRC32/MD5/SHA-1/SHA-256 for a single file - single-file
+    /// only by design, unlike every other variant here that takes a `Vec`.
+    Checksum(PathBuf),
 }

@@ -402,6 +402,25 @@ pub struct PasteConflictPrompt {
     pub conflicting_names: Vec<String>,
 }
 
+/// State for the "Checksums" modal - held in `MainWindow::pending_checksum`
+/// while the dialog is open, from the moment the context-menu entry is
+/// clicked until the user closes it. `rx` is drained by `poll_pending_checksum`
+/// once per frame; `results`/`error` are populated exactly once, whichever
+/// the background job (`core::checksum::compute_checksums_async`) reports.
+pub struct ChecksumDialogState {
+    pub file_name: String,
+    pub size_label: String,
+    pub rx: Option<
+        crossbeam_channel::Receiver<std::result::Result<crate::core::checksum::ChecksumResults, String>>,
+    >,
+    pub results: Option<crate::core::checksum::ChecksumResults>,
+    pub error: Option<String>,
+    /// User-pasted hash to verify against `results` - compared
+    /// case-insensitively against all four algorithms so the user doesn't
+    /// need to know which one a downloaded file's published checksum is.
+    pub compare_input: String,
+}
+
 impl Drop for MainWindow {
     fn drop(&mut self) {
         self.cleanup_resources();
@@ -1524,6 +1543,47 @@ impl MainWindow {
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
             }
+            ItemViewerContextAction::Checksum(path) => {
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                let size_label = std::fs::metadata(&path)
+                    .map(|m| crate::core::utils::files::format_size(m.len()))
+                    .unwrap_or_default();
+
+                let (tx, rx) = crossbeam_channel::unbounded();
+                crate::core::checksum::compute_checksums_async(path, tx);
+
+                self.pending_checksum = Some(ChecksumDialogState {
+                    file_name,
+                    size_label,
+                    rx: Some(rx),
+                    results: None,
+                    error: None,
+                    compare_input: String::new(),
+                });
+            }
+        }
+    }
+
+    /// Drains the checksum background job's result once it's ready - called
+    /// once per frame from the main update loop, same shape as
+    /// `poll_pending_compress`. A job with no result yet (still hashing) is
+    /// left alone for the next frame to check again.
+    pub fn poll_pending_checksum(&mut self) {
+        let Some(state) = &mut self.pending_checksum else {
+            return;
+        };
+        let Some(rx) = &state.rx else {
+            return;
+        };
+        if let Ok(result) = rx.try_recv() {
+            match result {
+                Ok(results) => state.results = Some(results),
+                Err(e) => state.error = Some(e),
+            }
+            state.rx = None;
         }
     }
 
@@ -1957,6 +2017,204 @@ impl MainWindow {
                     crate::gui::windows::containers::enums::ItemViewerContextAction::BulkRenameCommit(renames),
                 );
             }
+        }
+    }
+
+    /// Draws the "Checksums" modal - a no-op when `pending_checksum` is
+    /// `None`. Follows `draw_paste_conflict_modal`'s `Area` + `Frame::popup`
+    /// structure exactly (see that function's doc comment for why - not
+    /// `egui::Window`, which has a remembered-size bug this app already hit
+    /// once).
+    pub fn draw_checksum_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
+        use crate::core::utils::widgets::ghost_dialog_button;
+        use egui_phosphor::regular;
+
+        if self.pending_checksum.is_none() {
+            return;
+        }
+
+        let mut close_clicked = false;
+
+        let scrim_clicked = egui::Area::new(egui::Id::new("checksum_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                ui.interact(rect, ui.id().with("checksum_scrim_click"), egui::Sense::click())
+                    .clicked()
+            })
+            .inner;
+        if scrim_clicked {
+            close_clicked = true;
+        }
+
+        let popup_width = 420.0;
+        egui::Area::new(egui::Id::new("checksum_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(egui::Margin::same(18))
+                    .shadow(egui::epaint::Shadow {
+                        offset: [0, 8],
+                        blur: 24,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(90),
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(popup_width);
+                        ui.vertical(|ui| {
+                            let Some(state) = self.pending_checksum.as_mut() else {
+                                return;
+                            };
+
+                            ui.horizontal(|ui| {
+                                let icon_diameter = 34.0;
+                                let (icon_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(icon_diameter, icon_diameter),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(
+                                    icon_rect.center(),
+                                    icon_diameter / 2.0,
+                                    palette.icon_color.linear_multiply(0.18),
+                                );
+                                ui.painter().text(
+                                    icon_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    regular::HASH,
+                                    egui::FontId::proportional(18.0),
+                                    palette.icon_color,
+                                );
+                                ui.add_space(10.0);
+                                ui.vertical(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(self.i18n.tr("checksum_title"))
+                                            .strong()
+                                            .size(palette.text_size + 2.0)
+                                            .color(ui.visuals().text_color()),
+                                    );
+                                    ui.add_space(2.0);
+                                    let subtitle = if state.size_label.is_empty() {
+                                        state.file_name.clone()
+                                    } else {
+                                        format!("{} · {}", state.file_name, state.size_label)
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(subtitle)
+                                            .size(palette.text_size)
+                                            .color(palette.text_normal.gamma_multiply(0.75)),
+                                    );
+                                });
+                            });
+
+                            ui.add_space(14.0);
+
+                            if let Some(error) = &state.error {
+                                ui.colored_label(palette.drive_usage_critical, error);
+                            } else if let Some(results) = &state.results {
+                                let rows: [(&str, &str); 4] = [
+                                    ("CRC32", &results.crc32),
+                                    ("MD5", &results.md5),
+                                    ("SHA-1", &results.sha1),
+                                    ("SHA-256", &results.sha256),
+                                ];
+
+                                egui::Grid::new("checksum_results_grid")
+                                    .num_columns(3)
+                                    .spacing([10.0, 6.0])
+                                    .show(ui, |ui| {
+                                        for (label, hash) in rows {
+                                            ui.label(
+                                                egui::RichText::new(label)
+                                                    .strong()
+                                                    .size(palette.text_size)
+                                                    .color(palette.text_normal),
+                                            );
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(hash)
+                                                        .monospace()
+                                                        .size(palette.text_size)
+                                                        .color(palette.text_normal),
+                                                )
+                                                .selectable(true),
+                                            );
+                                            if ui
+                                                .add(egui::Button::new(regular::COPY).frame(false))
+                                                .on_hover_text(self.i18n.tr("tooltip_checksum_copy"))
+                                                .clicked()
+                                            {
+                                                crate::gui::utils::copy_text_to_clipboard(hash);
+                                            }
+                                            ui.end_row();
+                                        }
+                                    });
+
+                                ui.add_space(12.0);
+                                ui.label(
+                                    egui::RichText::new(self.i18n.tr("checksum_compare_label"))
+                                        .size(palette.text_size)
+                                        .color(palette.text_normal),
+                                );
+                                ui.add_space(4.0);
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut state.compare_input)
+                                        .hint_text(self.i18n.tr("checksum_compare_placeholder"))
+                                        .desired_width(ui.available_width()),
+                                );
+
+                                let trimmed = state.compare_input.trim();
+                                if !trimmed.is_empty() {
+                                    let matched = rows
+                                        .iter()
+                                        .find(|(_, hash)| hash.eq_ignore_ascii_case(trimmed));
+                                    ui.add_space(4.0);
+                                    match matched {
+                                        Some((label, _)) => {
+                                            ui.colored_label(
+                                                palette.drive_usage_normal,
+                                                format!(
+                                                    "{} ({label})",
+                                                    self.i18n.tr("checksum_compare_match")
+                                                ),
+                                            );
+                                        }
+                                        None => {
+                                            ui.colored_label(
+                                                palette.drive_usage_critical,
+                                                self.i18n.tr("checksum_compare_no_match"),
+                                            );
+                                        }
+                                    }
+                                }
+                            } else {
+                                ui.horizontal(|ui| {
+                                    ui.add(egui::Spinner::new());
+                                    ui.add_space(8.0);
+                                    ui.label(
+                                        egui::RichText::new(self.i18n.tr("checksum_computing"))
+                                            .size(palette.text_size)
+                                            .color(palette.text_normal),
+                                    );
+                                });
+                            }
+
+                            ui.add_space(16.0);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ghost_dialog_button(ui, palette, &self.i18n.tr("close")).clicked() {
+                                    close_clicked = true;
+                                }
+                            });
+                        });
+                    });
+            });
+
+        if close_clicked {
+            self.pending_checksum = None;
         }
     }
 
