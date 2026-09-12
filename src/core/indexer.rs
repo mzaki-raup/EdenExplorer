@@ -97,6 +97,8 @@ struct AppSettingsSnapshot {
     restore_last_session_tabs: bool,
     #[serde(default)]
     default_display_mode: ItemViewerDisplayMode,
+    #[serde(default)]
+    default_search_scope: crate::core::everything::DefaultSearchScope,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -180,6 +182,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             middle_click_opens_new_tab: true,
             restore_last_session_tabs: false,
             default_display_mode: ItemViewerDisplayMode::Details,
+            default_search_scope: crate::core::everything::DefaultSearchScope::default(),
         }
     }
 }
@@ -642,6 +645,7 @@ pub fn load_app_settings() -> (
     bool,
     bool,
     ItemViewerDisplayMode,
+    crate::core::everything::DefaultSearchScope,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -687,6 +691,7 @@ pub fn load_app_settings() -> (
         snapshot.middle_click_opens_new_tab,
         snapshot.restore_last_session_tabs,
         snapshot.default_display_mode,
+        snapshot.default_search_scope,
     )
 }
 
@@ -719,6 +724,7 @@ fn default_app_settings(
     bool,
     bool,
     ItemViewerDisplayMode,
+    crate::core::everything::DefaultSearchScope,
 ) {
     (
         true,
@@ -747,6 +753,7 @@ fn default_app_settings(
         true,
         false,
         ItemViewerDisplayMode::Details,
+        crate::core::everything::DefaultSearchScope::default(),
     )
 }
 
@@ -777,6 +784,7 @@ pub fn save_app_settings(
     middle_click_opens_new_tab: bool,
     restore_last_session_tabs: bool,
     default_display_mode: ItemViewerDisplayMode,
+    default_search_scope: crate::core::everything::DefaultSearchScope,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -810,6 +818,7 @@ pub fn save_app_settings(
         middle_click_opens_new_tab,
         restore_last_session_tabs,
         default_display_mode,
+        default_search_scope,
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

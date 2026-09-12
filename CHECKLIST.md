@@ -27,6 +27,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Type-to-filter in the current directory with fuzzy matching |
 | Completed | Cached filter indices for performance |
 | Completed | Status bar below every view (item count, files, folders, total size, size-aware selection summary) — present in every view including tag views and independently in both panes of a split |
+| Completed | **Global search powered by voidtools Everything** — a search icon (and Ctrl+F) in the navigation bar of every pane opens an inline query box with a "This folder" / "Everywhere" scope toggle; submitting opens a normal tab (its own `::SEARCH::`-sentinel virtual location, same trick as This PC/Recycle Bin/tag views) populated with real `FileItem`s from Everything's IPC results - since it's populated the same way a real directory listing is, every existing display mode (Details/Gallery/Columns/ColumnPreview/Preview/DetailPreview) and split-pane already work with no new rendering code. Shows an inline "Everything isn't running" message (Details/DetailPreview/Gallery) if Everything.exe isn't reachable. Result count capped at 5,000 per query. Default scope is configurable in Settings → Behavior. |
 
 ## Phase 2 — Tabs, panes & window management
 

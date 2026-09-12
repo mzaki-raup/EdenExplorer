@@ -78,6 +78,7 @@ pub fn draw_item_viewer(
     let preview_selection = &mut view.preview_selection;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
+    let search_unavailable = view.search_unavailable;
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
@@ -162,6 +163,8 @@ pub fn draw_item_viewer(
         ui.centered_and_justified(|ui| {
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
+            } else if search_unavailable {
+                ui.label(i18n.tr("search_everything_not_running"));
             } else {
                 ui.label(i18n.tr("folder_is_empty"));
             }
@@ -318,6 +321,7 @@ pub fn draw_item_viewer(
             is_focused,
             active_tab_id,
             current_dir,
+            search_unavailable,
         )
         .or(action);
     }
@@ -336,6 +340,8 @@ pub fn draw_item_viewer(
             ui.centered_and_justified(|ui| {
                 if is_loading && files.is_empty() {
                     ui.add(egui::Spinner::new().size(28.0));
+                } else if search_unavailable {
+                    ui.label(i18n.tr("search_everything_not_running"));
                 } else {
                     ui.label(i18n.tr("folder_is_empty"));
                 }

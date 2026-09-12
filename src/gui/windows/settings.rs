@@ -139,6 +139,7 @@ impl Default for AppSettings {
             middle_click_opens_new_tab: true,
             restore_last_session_tabs: false,
             default_display_mode: ItemViewerDisplayMode::Details,
+            default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             custom_context_menu: Vec::new(),
             tab_groups: Vec::new(),
         }
@@ -961,6 +962,67 @@ fn draw_behavior_section(
         );
         info_icon(ui, &i18n.tr("tooltip_settings_default_layout"), palette);
     });
+
+    settings_section(ui, palette, |ui| {
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(ui, &i18n.tr("settings_default_search_scope"), None, palette);
+            },
+            |ui| {
+                let mut selected = settings.current_settings.default_search_scope;
+                let selected_text = search_scope_setting_label(i18n, selected);
+
+                draw_dropdown(
+                    ui,
+                    palette,
+                    "default_search_scope_selector",
+                    SETTINGS_COMBO_WIDTH,
+                    selected_text,
+                    |ui| {
+                        for scope in [
+                            crate::core::everything::DefaultSearchScope::CurrentFolder,
+                            crate::core::everything::DefaultSearchScope::Everywhere,
+                        ] {
+                            if ui
+                                .selectable_label(
+                                    selected == scope,
+                                    search_scope_setting_label(i18n, scope),
+                                )
+                                .clicked()
+                            {
+                                selected = scope;
+                            }
+                        }
+                    },
+                );
+
+                if selected != settings.current_settings.default_search_scope {
+                    settings.current_settings.default_search_scope = selected;
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+        info_icon(
+            ui,
+            &i18n.tr("tooltip_settings_default_search_scope"),
+            palette,
+        );
+    });
+}
+
+fn search_scope_setting_label(
+    i18n: &I18n,
+    scope: crate::core::everything::DefaultSearchScope,
+) -> String {
+    match scope {
+        crate::core::everything::DefaultSearchScope::CurrentFolder => {
+            i18n.tr("search_scope_current_folder")
+        }
+        crate::core::everything::DefaultSearchScope::Everywhere => {
+            i18n.tr("search_scope_everywhere")
+        }
+    }
 }
 
 fn draw_startup_section(

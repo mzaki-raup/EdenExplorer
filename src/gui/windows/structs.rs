@@ -71,6 +71,8 @@ pub struct AppSettings {
     pub restore_last_session_tabs: bool,
     #[serde(default)]
     pub default_display_mode: ItemViewerDisplayMode,
+    #[serde(default)]
+    pub default_search_scope: crate::core::everything::DefaultSearchScope,
     /// Loaded/saved separately from the rest of these fields - see
     /// `core::context_menu_settings`.
     #[serde(default)]

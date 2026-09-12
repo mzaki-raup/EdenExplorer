@@ -1,4 +1,4 @@
-use crate::core::fs::{MY_PC_PATH, parse_tag_view_path};
+use crate::core::fs::{MY_PC_PATH, parse_search_view_path, parse_tag_view_path};
 use crate::gui::i18n::I18n;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TagsState};
 use crate::gui::windows::structs::Navigation;
@@ -56,6 +56,10 @@ fn tab_title_for(nav: &Navigation, i18n: &I18n, tags_state: &TagsState) -> Strin
             .find(|g| g.id == group_id)
             .map(|g| g.name.clone())
             .unwrap_or_else(|| i18n.tr("tags"));
+    }
+
+    if let Some((query, _scope_folder)) = parse_search_view_path(&nav.current) {
+        return format!("{} {}", i18n.tr("search_tab_title_prefix"), query);
     }
 
     nav.current

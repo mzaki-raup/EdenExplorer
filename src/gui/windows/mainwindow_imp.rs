@@ -1,8 +1,9 @@
 use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
+use crate::core::everything::{SearchScope, check_everything_available, search_everything_async};
 use crate::core::fs::{FileItem, get_shell_item_metadata};
 use crate::core::fs::{
-    MY_RECYCLE_BIN_PATH, SETTINGS_PATH, parallel_directory_scan, parse_tag_view_path,
-    scan_dir_async, tag_view_path,
+    MY_RECYCLE_BIN_PATH, SETTINGS_PATH, parallel_directory_scan, parse_search_view_path,
+    parse_tag_view_path, scan_dir_async, search_view_path, tag_view_path,
 };
 use crate::core::indexer::{
     DirectorySettingsSnapshot, SETTINGS_EXPORT_FORMAT_VERSION, SettingsExportBundle,
@@ -420,6 +421,23 @@ impl MainWindow {
         self.load_path();
     }
 
+    /// Opens a new tab showing Everything search results for `query`/`scope`.
+    /// Unlike the tag-view/settings singletons, this always opens a fresh
+    /// tab rather than reusing an existing search tab - a user may want to
+    /// compare two different queries side by side, or keep an old search
+    /// open while refining a new one, so there's no "one true active
+    /// search" the way there's one tag group being browsed at a time.
+    pub fn open_or_focus_search_tab(&mut self, query: String, scope: SearchScope) {
+        let scope_folder = match &scope {
+            SearchScope::CurrentFolder(dir) => Some(dir.as_path()),
+            SearchScope::Everywhere => None,
+        };
+        let search_path = search_view_path(&query, scope_folder);
+        self.open_new_tab(search_path);
+        self.pending_tab_scroll_id = self.tabs.last().map(|t| t.id);
+        self.load_path();
+    }
+
     pub fn open_startup_paths(&mut self, paths: &[PathBuf]) {
         let Some(first_path) = paths.first() else {
             return;
@@ -601,6 +619,7 @@ impl MainWindow {
                 .current_settings
                 .restore_last_session_tabs,
             self.settings_window.current_settings.default_display_mode,
+            self.settings_window.current_settings.default_search_scope,
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
@@ -665,6 +684,7 @@ impl MainWindow {
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
+            view.search_unavailable = false;
         }
         self.folder_sizes.clear();
         self.file_size_text_cache.clear();
@@ -693,6 +713,35 @@ impl MainWindow {
         if parse_tag_view_path(&current_path).is_some() {
             // Likewise, a tag-view tab's list is built straight from the tag
             // group's items each frame, not from a filesystem scan.
+            return;
+        }
+
+        if let Some((query, scope_folder)) = parse_search_view_path(&current_path) {
+            if !check_everything_available() {
+                // Leave `files` empty and flag it so the item-viewer
+                // renderers show an inline "Everything isn't running"
+                // message instead of the ordinary "folder is empty" text.
+                self.active_tab_mut().view_mut(side).search_unavailable = true;
+                return;
+            }
+
+            let scope = match scope_folder {
+                Some(dir) => SearchScope::CurrentFolder(dir),
+                None => SearchScope::Everywhere,
+            };
+
+            let (tx, rx) = unbounded();
+            search_everything_async(
+                query,
+                scope,
+                tx,
+                self.settings_window.current_settings.date_style,
+                self.settings_window.current_settings.time_format_24h,
+                self.settings_window.current_settings.custom_date_format.clone(),
+            );
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = Some(rx);
+            view.is_loading = true;
             return;
         }
 
@@ -2111,7 +2160,45 @@ impl MainWindow {
                 let path = self.current_nav().current.clone();
                 self.remove_favorite(&path);
             }
+            if let Some((query, scope)) = tabbar_action.as_ref().and_then(|t| t.open_search.clone()) {
+                self.open_or_focus_search_tab(query, scope);
+            }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.activate_search_box)
+                .unwrap_or(false)
+            {
+                self.enter_search_box_edit_mode();
+            }
         }
+    }
+
+    /// Switches the focused pane's breadcrumb row into the inline search
+    /// box, defaulting its scope to the current folder (recursive) when
+    /// this tab is showing a real folder, or Everywhere otherwise (This PC,
+    /// Recycle Bin, Settings, a tag view, or another search's results).
+    pub fn enter_search_box_edit_mode(&mut self) {
+        let side = self.focused_split;
+        let nav = &self.active_tab().view(side).nav;
+        let is_real_folder = !nav.is_root()
+            && !nav.is_recycle_bin()
+            && !nav.is_settings()
+            && !nav.is_tag_view()
+            && !nav.is_search_view();
+        let prefers_current_folder = matches!(
+            self.settings_window.current_settings.default_search_scope,
+            crate::core::everything::DefaultSearchScope::CurrentFolder
+        );
+        let default_scope = if is_real_folder && prefers_current_folder {
+            SearchScope::CurrentFolder(nav.current.clone())
+        } else {
+            SearchScope::Everywhere
+        };
+
+        let view = self.active_tab_mut().view_mut(side);
+        view.search_box_editing = true;
+        view.search_box_buffer.clear();
+        view.search_box_scope = default_scope;
     }
 
     pub fn handle_tabs_action(
@@ -2309,6 +2396,7 @@ impl MainWindow {
                         _middle_click_opens_new_tab,
                         _restore_last_session_tabs,
                         _default_display_mode,
+                        _default_search_scope,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -2737,6 +2825,7 @@ impl MainWindow {
                 alt && input.key_pressed(egui::Key::D),
                 input.key_pressed(egui::Key::F2),
                 alt && input.key_pressed(egui::Key::Enter),
+                ctrl && input.key_pressed(egui::Key::F),
             )
         });
 
@@ -2810,6 +2899,10 @@ impl MainWindow {
             {
                 self.open_properties_multi(&paths);
             }
+        }
+
+        if shortcuts.11 {
+            self.enter_search_box_edit_mode();
         }
     }
 

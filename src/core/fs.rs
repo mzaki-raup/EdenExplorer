@@ -47,6 +47,48 @@ pub fn parse_tag_view_path(path: &Path) -> Option<u64> {
         .ok()
 }
 
+const SEARCH_VIEW_PREFIX: &str = "::SEARCH::";
+
+#[derive(Serialize, Deserialize)]
+struct SearchViewPayload {
+    query: String,
+    /// `None` means "search everywhere"; `Some(dir)` scopes the search to
+    /// that folder (and its subfolders).
+    scope_folder: Option<PathBuf>,
+}
+
+/// The sentinel "path" a tab navigates to in order to show Everything search
+/// results for `query`/`scope_folder` - same virtual-view trick as
+/// `tag_view_path`, but the payload (arbitrary query text, plus an optional
+/// scope folder) can't be embedded as plain text the way a tag group's `u64`
+/// id can, so it's postcard-serialized and hex-encoded into the path string
+/// instead. This is never touched by real filesystem APIs (like every other
+/// sentinel here), so there's no need for the encoding to be a filesystem-
+/// legal path - just reversible and delimiter-free.
+pub fn search_view_path(query: &str, scope_folder: Option<&Path>) -> PathBuf {
+    let payload = SearchViewPayload {
+        query: query.to_string(),
+        scope_folder: scope_folder.map(Path::to_path_buf),
+    };
+    let bytes = postcard::to_allocvec(&payload).unwrap_or_default();
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    PathBuf::from(format!("{SEARCH_VIEW_PREFIX}{hex}"))
+}
+
+/// If `path` is a search-view sentinel, returns its `(query, scope_folder)`.
+pub fn parse_search_view_path(path: &Path) -> Option<(String, Option<PathBuf>)> {
+    let hex = path.to_string_lossy().strip_prefix(SEARCH_VIEW_PREFIX)?.to_string();
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for i in (0..hex.len()).step_by(2) {
+        bytes.push(u8::from_str_radix(&hex[i..i + 2], 16).ok()?);
+    }
+    let (payload, _): (SearchViewPayload, _) = postcard::take_from_bytes(&bytes).ok()?;
+    Some((payload.query, payload.scope_folder))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DateStyle {
     Iso,

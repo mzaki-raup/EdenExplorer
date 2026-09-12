@@ -1,5 +1,6 @@
 pub mod context_menu_settings;
 pub mod drives;
+pub mod everything;
 pub mod fs;
 pub mod indexer;
 pub mod launch;

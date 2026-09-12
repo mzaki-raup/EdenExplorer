@@ -583,6 +583,26 @@ PowerShell process) rather than the app's own code - if you're using the
   means before assuming they're interchangeable - `GetClientRect`/
   `GetWindowRect`/`SetWindowPos` are physical; egui's own coordinate
   system (and anything built on `ViewportBuilder`) is logical points.
+- **A fixed pixel budget subtracted from `ui.available_width()` for
+  trailing controls (buttons, toggles) in a `ui.horizontal(...)` row
+  overflows past the frame's own border once that row gets narrow enough**
+  - a split pane, a smaller window, or (independently) a language whose
+    translated button label is longer than the one the budget was tuned
+    against. The search box's inline "This folder"/"Everywhere" scope
+    toggle (`itemviewer_navbar.rs`, `draw_search_box_contents`) used
+    `.desired_width(ui.available_width() - 160.0)` for the text edit,
+    leaving a fixed 160px for the two trailing buttons - reasonable at the
+    window width it was eyeballed against, but the buttons still spilled
+    past the app's right border in a narrower window, because a plain
+    `horizontal` layout doesn't wrap, it just keeps laying out past the
+    available width. Fixed by switching to `ui.horizontal_wrapped(...)`
+    (so trailing content wraps to a new line instead of overflowing) and
+    giving the text edit its own fixed, modest `desired_width` (220.0)
+    instead of "whatever's left after a guessed budget for the rest of the
+    row." When a row mixes a growable text input with fixed-ish trailing
+    controls whose total width isn't known in advance (translated text,
+    variable row width), prefer `horizontal_wrapped` over subtracting a
+    guessed constant from `available_width()`.
 
 ## Operational Instructions
 

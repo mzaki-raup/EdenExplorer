@@ -132,6 +132,7 @@ fn save_manual_window_size(hwnd: HWND) {
             middle_click_opens_new_tab,
             restore_last_session_tabs,
             default_display_mode,
+            default_search_scope,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -162,6 +163,7 @@ fn save_manual_window_size(hwnd: HWND) {
             middle_click_opens_new_tab,
             restore_last_session_tabs,
             default_display_mode,
+            default_search_scope,
         );
     }
 }

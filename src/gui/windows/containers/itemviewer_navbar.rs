@@ -234,6 +234,80 @@ fn draw_bordered_breadcrumb(
         });
 }
 
+/// Replaces the breadcrumb row's contents with an inline query box + scope
+/// toggle while `tab.search_box_editing` is set - entered via the navbar's
+/// search icon or Ctrl+F. Enter submits (`action.open_search`), Escape
+/// cancels back to the normal breadcrumb.
+fn draw_search_box_contents(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    tab: &mut TabView,
+    tab_id: u64,
+    palette: &ThemePalette,
+    action: &mut ItemViewerNavBarAction,
+) {
+    // `horizontal_wrapped` rather than a plain `horizontal`: the scope
+    // buttons' width varies with the current language's translation and
+    // this row's available width shrinks in a split pane, so a fixed
+    // pixel budget for them can't be guaranteed to fit - wrapping to a
+    // second line keeps them inside the frame's own border instead of
+    // spilling past it (which a plain `horizontal` would just clip/overflow).
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new(regular::MAGNIFYING_GLASS)
+                .size(palette.text_size + 2.0)
+                .color(palette.icon_color),
+        );
+        ui.add_space(6.0);
+
+        let text_edit_id = ui.id().with(("search_box_edit", tab_id));
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut tab.search_box_buffer)
+                .id(text_edit_id)
+                .hint_text(i18n.tr("search_placeholder"))
+                .frame(egui::Frame::NONE)
+                .desired_width(220.0)
+                .font(FontId::new(
+                    palette.text_size + 2.0,
+                    egui::FontFamily::Proportional,
+                )),
+        );
+        resp.request_focus();
+
+        ui.add_space(8.0);
+
+        let is_everywhere = matches!(tab.search_box_scope, crate::core::everything::SearchScope::Everywhere);
+        if ui
+            .selectable_label(!is_everywhere, i18n.tr("search_scope_current_folder"))
+            .clicked()
+            && is_everywhere
+        {
+            tab.search_box_scope =
+                crate::core::everything::SearchScope::CurrentFolder(tab.nav.current.clone());
+        }
+        if ui
+            .selectable_label(is_everywhere, i18n.tr("search_scope_everywhere"))
+            .clicked()
+            && !is_everywhere
+        {
+            tab.search_box_scope = crate::core::everything::SearchScope::Everywhere;
+        }
+
+        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        if enter && !tab.search_box_buffer.trim().is_empty() {
+            action.open_search = Some((
+                tab.search_box_buffer.trim().to_string(),
+                tab.search_box_scope.clone(),
+            ));
+            tab.search_box_editing = false;
+        } else if escape {
+            tab.search_box_editing = false;
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_breadcrumb_row_contents(
     ui: &mut egui::Ui,
@@ -251,6 +325,11 @@ fn draw_breadcrumb_row_contents(
     breadcrumb_width: f32,
     tags: &[TagGroup],
 ) {
+    if tab.search_box_editing {
+        draw_search_box_contents(ui, i18n, tab, tab_id, palette, action);
+        return;
+    }
+
     {
         if tab.breadcrumb_path_editing {
             let text_edit_id = ui.id().with(("breadcrumbs_path_edit", tab_id));
@@ -723,6 +802,18 @@ fn draw_navigation_bar_buttons(
         }
     }
 
+    if nav_icon_button(
+        ui,
+        regular::MAGNIFYING_GLASS,
+        palette,
+        true,
+        &i18n.tr("tooltip_search"),
+    )
+    .clicked()
+    {
+        action.activate_search_box = true;
+    }
+
     let display_mode_enabled = !is_recycle_bin && !is_root;
     for (mode, icon, tooltip_key) in [
         (
@@ -1187,4 +1278,5 @@ fn merge_toolbar_action(action: &mut ItemViewerNavBarAction, toolbar: ItemViewer
     if action.set_display_mode.is_none() {
         action.set_display_mode = toolbar.set_display_mode;
     }
+    action.activate_search_box |= toolbar.activate_search_box;
 }

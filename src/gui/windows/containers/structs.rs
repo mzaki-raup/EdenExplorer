@@ -134,6 +134,17 @@ pub struct TabView {
     /// the selected file is a video - kept separate from `preview_service`
     /// since it's a continuously-updated resource, not a one-shot payload.
     pub video_service: crate::core::video::VideoPreviewService,
+    /// Set by `load_path_with_fallback` when this view is a search-results
+    /// tab and Everything.exe couldn't be reached - lets the generic
+    /// item-viewer renderers show an inline "Everything isn't running"
+    /// message instead of the ordinary "folder is empty" one.
+    pub search_unavailable: bool,
+    /// Whether the navbar's inline search box is currently being edited on
+    /// this pane (replaces the breadcrumb the same way address-bar editing
+    /// does).
+    pub search_box_editing: bool,
+    pub search_box_buffer: String,
+    pub search_box_scope: crate::core::everything::SearchScope,
 }
 
 impl TabView {
@@ -175,6 +186,10 @@ impl TabView {
             preview_service: crate::core::preview::PreviewService::default(),
             preview_selection: None,
             video_service: crate::core::video::VideoPreviewService::default(),
+            search_unavailable: false,
+            search_box_editing: false,
+            search_box_buffer: String::new(),
+            search_box_scope: crate::core::everything::SearchScope::Everywhere,
         }
     }
 
@@ -860,6 +875,14 @@ pub struct ItemViewerNavBarAction {
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
+    /// Set when the user submits a query from the navbar's inline search
+    /// box (Enter key) - opens a new search-results tab for it.
+    pub open_search: Option<(String, crate::core::everything::SearchScope)>,
+    /// Set when the navbar's search icon (or its keyboard shortcut) is
+    /// pressed - the caller picks a default scope (from settings + whether
+    /// this tab is showing a real folder) and switches the breadcrumb row
+    /// into the inline search box.
+    pub activate_search_box: bool,
 }
 
 #[derive(Clone, Copy)]

@@ -62,6 +62,7 @@ pub fn draw_gallery_view(
     is_focused: bool,
     active_tab_id: u64,
     current_dir: PathBuf,
+    search_unavailable: bool,
 ) -> Option<ItemViewerAction> {
     thumbnail_service.pump_completed(ui.ctx());
 
@@ -76,7 +77,11 @@ pub fn draw_gallery_view(
 
     if filtered_indices.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label(i18n.tr("folder_is_empty"));
+            if search_unavailable {
+                ui.label(i18n.tr("search_everything_not_running"));
+            } else {
+                ui.label(i18n.tr("folder_is_empty"));
+            }
         });
         return action;
     }

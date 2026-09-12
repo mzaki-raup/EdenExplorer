@@ -1,4 +1,6 @@
-use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH, SETTINGS_PATH, parse_tag_view_path};
+use crate::core::fs::{
+    MY_PC_PATH, MY_RECYCLE_BIN_PATH, SETTINGS_PATH, parse_search_view_path, parse_tag_view_path,
+};
 use crate::core::network;
 use crate::gui::windows::structs::Navigation;
 use std::path::PathBuf;
@@ -49,13 +51,19 @@ impl Navigation {
         parse_tag_view_path(&self.current).is_some()
     }
 
+    /// Whether we're showing Everything search results, rather than a real
+    /// filesystem directory.
+    pub fn is_search_view(&self) -> bool {
+        parse_search_view_path(&self.current).is_some()
+    }
+
     /// Get the parent directory of the current path
     pub fn get_parent(&self) -> Option<PathBuf> {
         if self.current.to_string_lossy() == MY_PC_PATH {
             return None;
         }
 
-        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() {
+        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() || self.is_search_view() {
             return None;
         }
 
@@ -92,7 +100,7 @@ impl Navigation {
             return;
         }
 
-        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() {
+        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() || self.is_search_view() {
             return;
         }
 
