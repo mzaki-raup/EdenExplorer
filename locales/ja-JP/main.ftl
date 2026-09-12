@@ -295,6 +295,7 @@ saved_search_empty_state = まだ保存された検索がありません。検�
 saved_search_delete = 保存された検索を削除
 save_search_tooltip = この検索を保存
 save_search_limit_reached = 保存できる検索の上限(50件)に達しました - 追加するには1件削除してください
+tab_save_search = 検索を保存
 bulk_rename_title = 一括リネーム
 bulk_rename_mode_simple = シンプル
 bulk_rename_mode_regex = 正規表現

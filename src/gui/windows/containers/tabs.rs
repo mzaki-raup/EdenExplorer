@@ -78,6 +78,7 @@ pub fn draw_tabs(
     tab_groups: &[TabGroup],
     tags: &[TagGroup],
     favorites: &[FavoriteItem],
+    saved_search_count: usize,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
@@ -232,6 +233,41 @@ pub fn draw_tabs(
                                         .clicked()
                                     {
                                         action.toggle_favorite = Some(tab.full_path.clone());
+                                        ui.close();
+                                    }
+                                }
+
+                                // Only a search-results tab (a search-view
+                                // sentinel path) can be saved as a search -
+                                // reuses the exact same `(query, scope)`
+                                // shape the navbar's own "save this search"
+                                // bookmark button already produces, so both
+                                // paths funnel into the same handler.
+                                if let Some((query, scope_folder)) =
+                                    crate::core::fs::parse_search_view_path(&tab.full_path)
+                                {
+                                    let at_limit = saved_search_count
+                                        >= crate::gui::windows::containers::structs::MAX_SAVED_SEARCHES;
+                                    let label = if at_limit {
+                                        i18n.tr("save_search_limit_reached")
+                                    } else {
+                                        i18n.tr("tab_save_search")
+                                    };
+                                    if ui
+                                        .add_enabled(
+                                            !at_limit,
+                                            egui::Button::new(format!(
+                                                "{}  {}",
+                                                regular::BOOKMARK_SIMPLE,
+                                                label
+                                            )),
+                                        )
+                                        .clicked()
+                                    {
+                                        let scope = scope_folder
+                                            .map(crate::core::everything::SearchScope::CurrentFolder)
+                                            .unwrap_or(crate::core::everything::SearchScope::Everywhere);
+                                        action.save_search = Some((query, scope));
                                         ui.close();
                                     }
                                 }

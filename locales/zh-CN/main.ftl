@@ -295,6 +295,7 @@ saved_search_empty_state = 尚无已保存的搜索。可在搜索框中保存�
 saved_search_delete = 删除已保存的搜索
 save_search_tooltip = 保存此搜索
 save_search_limit_reached = 已达到已保存搜索的上限(50)- 删除一个后即可再添加
+tab_save_search = 保存搜索
 bulk_rename_title = 批量重命名
 bulk_rename_mode_simple = 简单
 bulk_rename_mode_regex = 正则表达式

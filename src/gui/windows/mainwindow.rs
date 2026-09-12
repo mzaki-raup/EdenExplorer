@@ -962,6 +962,7 @@ impl eframe::App for MainWindow {
                                                     &self.settings_window.current_settings.tab_groups,
                                                     &self.tags_state.groups,
                                                     &self.sidebar_state.favorites,
+                                                    self.saved_searches_state.items.len(),
                                                 ));
                                             },
                                         );

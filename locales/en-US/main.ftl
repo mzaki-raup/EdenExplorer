@@ -331,6 +331,7 @@ saved_search_empty_state = No saved searches yet. Save a search from its search 
 saved_search_delete = Delete Saved Search
 save_search_tooltip = Save this search
 save_search_limit_reached = Saved search limit reached (50) - delete one to add another
+tab_save_search = Save Search
 bulk_rename_title = Bulk Rename
 bulk_rename_mode_simple = Simple
 bulk_rename_mode_regex = Regex

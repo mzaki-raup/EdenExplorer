@@ -87,6 +87,10 @@ pub struct TabsAction {
     /// (from right-clicking a tab and choosing "Add to Favorites"/"Remove
     /// from Favorites").
     pub toggle_favorite: Option<PathBuf>,
+    /// "Save Search" chosen from a search-results tab's own right-click menu
+    /// - same `(query, scope)` shape as the navbar search box's own "save
+    /// this search" button, so both funnel into the same handler.
+    pub save_search: Option<(String, crate::core::everything::SearchScope)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

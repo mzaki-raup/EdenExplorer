@@ -297,6 +297,7 @@ saved_search_empty_state = Belum ada pencarian tersimpan. Simpan pencarian dari 
 saved_search_delete = Hapus Pencarian Tersimpan
 save_search_tooltip = Simpan pencarian ini
 save_search_limit_reached = Batas pencarian tersimpan tercapai (50) - hapus satu untuk menambah lagi
+tab_save_search = Simpan Pencarian
 bulk_rename_title = Ganti Nama Massal
 bulk_rename_mode_simple = Sederhana
 bulk_rename_mode_regex = Regex

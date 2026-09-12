@@ -3611,6 +3611,15 @@ impl MainWindow {
                     self.add_favorite_path(path);
                 }
             }
+            if let Some((query, scope)) = action.save_search {
+                let scope_folder = match &scope {
+                    SearchScope::CurrentFolder(dir) => Some(dir.clone()),
+                    SearchScope::Everywhere => None,
+                };
+                if self.saved_searches_state.add(query, scope_folder) {
+                    self.persist_saved_searches();
+                }
+            }
             if let Some(target_dir) = action.move_files_to_tab_dir.as_ref() {
                 if let Some(sources) = drag_sources {
                     self.move_selected_paths_to_dir(sources, target_dir.clone());
