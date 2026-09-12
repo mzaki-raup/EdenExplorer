@@ -70,6 +70,26 @@ scratch folder or a real one:
   `focus.ps1` uses the `AttachThreadInput` workaround; use it before
   anything keyboard-related, and re-run it if focus may have shifted (e.g.
   after alt-tab-like side effects from other automation).
+- **Calling `focus.ps1` and then `click.ps1`/`send-keys.ps1` as two
+  *separate* Bash tool calls can silently lose the focus `focus.ps1` just
+  won - each call spawns its own fresh PowerShell process, and that new
+  process itself briefly becomes the real foreground window the instant it
+  starts, stealing focus back before the click/keystroke is posted.**
+  Confirmed directly once: `focus.ps1` printed success, but polling
+  `GetForegroundWindow()` immediately after showed a `powershell.exe`
+  process (this very tooling) in the foreground, not EdenExplorer - every
+  click at that point posted to the right window handle but had no
+  effect. The fix: chain `focus.ps1` and the click/send-keys call in one
+  PowerShell invocation so no new process gets a chance to steal focus in
+  between:
+  ```bash
+  powershell -Command "
+  & '.claude/skills/eden-explorer-ui-test/scripts/focus.ps1'
+  & '.claude/skills/eden-explorer-ui-test/scripts/click.ps1' -X 100 -Y 200
+  "
+  ```
+  If clicks or keystrokes stop registering mid-session despite `focus.ps1`
+  reporting success, try this before spending time on other workarounds.
 - **`SendKeys` goes to whatever has *real* OS focus** - not whatever
   `click.ps1` last posted a message to (`PostMessage` doesn't change actual
   focus). `send-keys.ps1` calls `focus.ps1` internally for exactly this

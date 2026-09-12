@@ -822,6 +822,33 @@ PowerShell process) rather than the app's own code - if you're using the
   pinentry it doesn't own. If a commit fails to sign more than two or
   three times in a row, check for a stuck pinentry process before
   continuing to retry the exact same command.
+- **Found the actual root cause behind this session's repeated
+  "click/keystroke did nothing" ui-test failures: `focus.ps1` and
+  `click.ps1`/`send-keys.ps1` invoked as *separate* Bash tool calls each
+  spawn their own fresh PowerShell process - and each new process itself
+  briefly becomes the real Win32 foreground window the instant it starts,
+  silently stealing focus back from EdenExplorer *after* `focus.ps1`
+  already succeeded in an earlier, now-exited call.** Confirmed directly:
+  polling `GetForegroundWindow()` mid-test showed the foreground window
+  was a `powershell` process (this very ui-test tooling's own process),
+  not EdenExplorer, even immediately after a `focus.ps1` call had printed
+  "focused EdenExplorer". `click.ps1`'s raw `PostMessage` calls kept
+  posting to the right `hwnd` regardless, but the click never took
+  effect - and `send-keys.ps1`'s own focus re-check correctly caught and
+  aborted rather than sending keys to the wrong window. This looked
+  identical to the general "mouse clicks aren't registering" gotcha
+  already documented above (and really did happen for genuine
+  focus-loss reasons too, e.g. another foreground app) - but the fix
+  here is specific and reliable: invoke `focus.ps1` and the
+  click/send-keys call **in the same PowerShell process** (e.g.
+  `powershell -Command "& '.../focus.ps1'; & '.../click.ps1' -X .. -Y .."`)
+  rather than as two separate Bash tool calls, so no new process gets a
+  chance to spawn and steal focus in between. Once confirmed working
+  once this way, every click/keystroke for the rest of that test attempt
+  worked correctly. If a click or `send-keys` stops working mid-session
+  despite `focus.ps1` reporting success moments earlier, try this
+  same-process chaining before concluding the app itself is unresponsive
+  or spending time on other workarounds.
 
 ## Operational Instructions
 

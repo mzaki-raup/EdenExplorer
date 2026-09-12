@@ -252,12 +252,29 @@ pub enum UndoableOperation {
     BulkRename { pairs: Vec<(PathBuf, PathBuf)> },
     /// `pairs` is `(original_path, path_after_the_move)`. `side` is the pane
     /// the move happened in, so undo/redo can restore the right pane's
-    /// selection/refresh the right view.
-    Move { pairs: Vec<(PathBuf, PathBuf)>, side: SplitSide },
+    /// selection/refresh the right view. `replaced` maps a final path (the
+    /// second element of a `pairs` entry) to the pidl of whatever item was
+    /// recycled to make room for it, for any pair whose destination
+    /// collision was resolved via Replace - see `find_recycled_pidl`. Undo
+    /// restores that item from the Recycle Bin after moving the incoming
+    /// item away; redo re-recycles whatever's there fresh (producing a new
+    /// pidl, which replaces this map's entry) before placing the incoming
+    /// item again.
+    Move {
+        pairs: Vec<(PathBuf, PathBuf)>,
+        side: SplitSide,
+        replaced: HashMap<PathBuf, Vec<u8>>,
+    },
     /// `pairs` is `(source_path, path_the_copy_was_created_at)`. Undo
     /// deletes the created copies (to the Recycle Bin, so it stays
-    /// further-recoverable); redo re-copies the sources.
-    Copy { pairs: Vec<(PathBuf, PathBuf)>, side: SplitSide },
+    /// further-recoverable) and restores anything `replaced` (see `Move`'s
+    /// doc comment - same meaning here); redo re-copies the sources,
+    /// re-recycling+restoring-pidl for any replaced destination first.
+    Copy {
+        pairs: Vec<(PathBuf, PathBuf)>,
+        side: SplitSide,
+        replaced: HashMap<PathBuf, Vec<u8>>,
+    },
 }
 
 /// Cap on `MainWindow::undo_stack`/`redo_stack` (each) - matches
@@ -283,6 +300,15 @@ pub struct PendingPaste {
     /// Undo/Redo bookkeeping once the job completes; a source not in this
     /// map kept its own name.
     renames: HashMap<PathBuf, String>,
+    /// A final path (in `target_dir`) to the pidl of whatever item was
+    /// recycled to make room for it - populated only when this job's
+    /// conflicts were resolved via Replace (see `handle_paste_conflict_
+    /// resolution`). Threaded into a freshly-pushed `UndoableOperation::
+    /// Move`/`Copy`'s own `replaced` field once this job completes; unused
+    /// (always empty) for jobs `undo()`/`redo()` themselves start, since
+    /// those manage replacement pidls directly on the `UndoableOperation`
+    /// they're reversing/reapplying instead.
+    replaced: HashMap<PathBuf, Vec<u8>>,
     /// Whether this job is a normal user-initiated paste/drag-drop, or is
     /// itself the mechanism undoing/redoing a previous Move/Copy - see
     /// `PasteOrigin`.
@@ -1551,6 +1577,7 @@ impl MainWindow {
             is_cut,
             side,
             HashMap::new(),
+            HashMap::new(),
             PasteOrigin::UserAction,
         );
     }
@@ -1561,6 +1588,9 @@ impl MainWindow {
     /// a `PasteConflictPrompt` (see `handle_paste_conflict_resolution`).
     /// `renames` maps a source path to the name it should be given in
     /// `target_dir` instead of its own name - see `core::robocopy::build_jobs`.
+    /// `replaced` is `PendingPaste::replaced`'s doc comment - pass
+    /// `HashMap::new()` unless this call is resolving a paste conflict via
+    /// Replace.
     fn start_robocopy_paste(
         &mut self,
         paths: Vec<PathBuf>,
@@ -1569,6 +1599,7 @@ impl MainWindow {
         is_cut: bool,
         side: SplitSide,
         renames: HashMap<PathBuf, String>,
+        replaced: HashMap<PathBuf, Vec<u8>>,
         origin: PasteOrigin,
     ) {
         if paths.is_empty() {
@@ -1601,6 +1632,7 @@ impl MainWindow {
                 is_cut,
                 side,
                 renames,
+                replaced,
                 origin,
             },
         );
@@ -1630,8 +1662,31 @@ impl MainWindow {
         };
 
         let mut renames = HashMap::new();
+        let mut replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
         let paths = match action {
-            PasteConflictAction::Replace => prompt.paths,
+            PasteConflictAction::Replace => {
+                // Make Replace non-destructive: recycle the item that's
+                // about to be overwritten first (instead of letting
+                // robocopy overwrite it directly, which would be permanent
+                // data loss with no undo), stashing its Recycle Bin pidl so
+                // undo/redo can restore or re-recycle it later - see
+                // `find_recycled_pidl`'s doc comment.
+                for path in &prompt.paths {
+                    if is_conflicting(path)
+                        && let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string())
+                    {
+                        let existing_path = prompt.target_dir.join(&name);
+                        if self
+                            .delete_paths_native(vec![existing_path.clone()], true)
+                            .is_ok()
+                            && let Some(pidl) = self.find_recycled_pidl(&prompt.target_dir, &name)
+                        {
+                            replaced.insert(existing_path, pidl);
+                        }
+                    }
+                }
+                prompt.paths
+            }
             PasteConflictAction::Skip => prompt
                 .paths
                 .into_iter()
@@ -1658,6 +1713,7 @@ impl MainWindow {
             prompt.is_cut,
             prompt.side,
             renames,
+            replaced,
             PasteOrigin::UserAction,
         );
     }
@@ -1966,11 +2022,13 @@ impl MainWindow {
                             UndoableOperation::Move {
                                 pairs: final_pairs,
                                 side: pending.side,
+                                replaced: pending.replaced.clone(),
                             }
                         } else {
                             UndoableOperation::Copy {
                                 pairs: final_pairs,
                                 side: pending.side,
+                                replaced: pending.replaced.clone(),
                             }
                         };
                         self.push_undo(op);
@@ -1978,6 +2036,17 @@ impl MainWindow {
                 }
                 PasteOrigin::UndoOf(op, group) => {
                     if group.record_completion(true) {
+                        let replaced = match op {
+                            UndoableOperation::Move { replaced, .. }
+                            | UndoableOperation::Copy { replaced, .. } => Some(replaced),
+                            _ => None,
+                        };
+                        if let Some(replaced) = replaced
+                            && !replaced.is_empty()
+                        {
+                            let pidls: Vec<Vec<u8>> = replaced.values().cloned().collect();
+                            let _ = self.restore_paths_native(pidls);
+                        }
                         self.redo_stack.push_back(op.clone());
                     }
                 }
@@ -2152,12 +2221,15 @@ impl MainWindow {
                     eprintln!("Undo failed: could not restore original names");
                 }
             }
-            UndoableOperation::Move { pairs, side } => {
+            UndoableOperation::Move { pairs, side, .. } => {
                 // Sources for the "move back" job(s) are the *current*
                 // (post-move) paths; each job's target is one distinct
                 // original parent directory - a multi-directory source
                 // selection needs one job per directory, since a single
                 // robocopy/IFileOperation job has exactly one destination.
+                // Restoring anything replaced happens after these jobs
+                // complete (see `poll_pending_paste`'s `UndoOf` branch),
+                // using this same `op`'s `replaced` map - not here.
                 let mut groups: HashMap<PathBuf, Vec<(PathBuf, PathBuf)>> = HashMap::new();
                 for (orig, cur) in pairs {
                     if let Some(parent) = orig.parent() {
@@ -2192,11 +2264,12 @@ impl MainWindow {
                         true,
                         *side,
                         renames,
+                        HashMap::new(),
                         PasteOrigin::UndoOf(op.clone(), group.clone()),
                     );
                 }
             }
-            UndoableOperation::Copy { pairs, .. } => {
+            UndoableOperation::Copy { pairs, replaced, .. } => {
                 // Undoing a copy just deletes what it created - synchronous,
                 // same shape as Rename/BulkRename's undo. `allow_undo: true`
                 // sends the deleted copies to the Recycle Bin, so this stays
@@ -2204,6 +2277,10 @@ impl MainWindow {
                 // same as everything else this app deletes.
                 let created: Vec<PathBuf> = pairs.iter().map(|(_, created)| created.clone()).collect();
                 if self.delete_paths_native(created, true).is_ok() {
+                    if !replaced.is_empty() {
+                        let pidls: Vec<Vec<u8>> = replaced.values().cloned().collect();
+                        let _ = self.restore_paths_native(pidls);
+                    }
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
@@ -2250,7 +2327,7 @@ impl MainWindow {
                     eprintln!("Redo failed: could not re-apply bulk rename");
                 }
             }
-            UndoableOperation::Move { pairs, side } => {
+            UndoableOperation::Move { pairs, side, replaced } => {
                 // Redo re-applies the original move, which always had one
                 // single destination folder - unlike undo, this is always
                 // exactly one job, sourcing from each pair's original path.
@@ -2261,6 +2338,22 @@ impl MainWindow {
                 else {
                     return;
                 };
+
+                // A pair whose destination was originally a Replace
+                // resolution needs the exact same treatment redone fresh:
+                // recycle whatever's there now, capture its (new) pidl. The
+                // job below then places the incoming item into the
+                // now-empty spot, same as any other paste.
+                let mut updated_replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+                for (_, cur) in pairs {
+                    if replaced.contains_key(cur)
+                        && let Some(name) = cur.file_name().map(|n| n.to_string_lossy().to_string())
+                        && self.delete_paths_native(vec![cur.clone()], true).is_ok()
+                        && let Some(pidl) = self.find_recycled_pidl(&target_dir, &name)
+                    {
+                        updated_replaced.insert(cur.clone(), pidl);
+                    }
+                }
 
                 let sources: Vec<PathBuf> = pairs.iter().map(|(orig, _)| orig.clone()).collect();
                 let before_entries = Self::directory_child_paths(&target_dir);
@@ -2273,6 +2366,11 @@ impl MainWindow {
                     }
                 }
 
+                let new_op = UndoableOperation::Move {
+                    pairs: pairs.clone(),
+                    side: *side,
+                    replaced: updated_replaced,
+                };
                 let group = std::rc::Rc::new(UndoRedoGroup::new(1));
                 self.start_robocopy_paste(
                     sources,
@@ -2281,10 +2379,11 @@ impl MainWindow {
                     true,
                     *side,
                     renames,
-                    PasteOrigin::RedoOf(op.clone(), group),
+                    HashMap::new(),
+                    PasteOrigin::RedoOf(new_op, group),
                 );
             }
-            UndoableOperation::Copy { pairs, side } => {
+            UndoableOperation::Copy { pairs, side, replaced } => {
                 // Redo re-copies the sources - always one job, one
                 // destination folder (wherever the copies were originally
                 // created).
@@ -2295,6 +2394,18 @@ impl MainWindow {
                 else {
                     return;
                 };
+
+                let mut updated_replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+                for (_, created) in pairs {
+                    if replaced.contains_key(created)
+                        && let Some(name) =
+                            created.file_name().map(|n| n.to_string_lossy().to_string())
+                        && self.delete_paths_native(vec![created.clone()], true).is_ok()
+                        && let Some(pidl) = self.find_recycled_pidl(&target_dir, &name)
+                    {
+                        updated_replaced.insert(created.clone(), pidl);
+                    }
+                }
 
                 let sources: Vec<PathBuf> = pairs.iter().map(|(source, _)| source.clone()).collect();
                 let before_entries = Self::directory_child_paths(&target_dir);
@@ -2308,6 +2419,11 @@ impl MainWindow {
                     }
                 }
 
+                let new_op = UndoableOperation::Copy {
+                    pairs: pairs.clone(),
+                    side: *side,
+                    replaced: updated_replaced,
+                };
                 let group = std::rc::Rc::new(UndoRedoGroup::new(1));
                 self.start_robocopy_paste(
                     sources,
@@ -2316,7 +2432,8 @@ impl MainWindow {
                     false,
                     *side,
                     renames,
-                    PasteOrigin::RedoOf(op.clone(), group),
+                    HashMap::new(),
+                    PasteOrigin::RedoOf(new_op, group),
                 );
             }
         }
@@ -2433,6 +2550,96 @@ impl MainWindow {
         }
 
         Ok(())
+    }
+
+    /// Finds the pidl of the most-recently-deleted Recycle Bin item whose
+    /// original directory and name match - used right after Replace
+    /// resolution recycles the pre-existing destination item, so its pidl
+    /// can be stashed for `undo`/`redo` to restore later (see
+    /// `UndoableOperation::Move`/`Copy`'s `replaced` field).
+    ///
+    /// This is a match-by-name-and-original-directory heuristic, not a
+    /// guaranteed-unique identifier - `delete_paths_native` doesn't return
+    /// the resulting Recycle Bin item's identity directly, and building a
+    /// full `IFileOperationProgressSink` COM callback to get it would be
+    /// disproportionate to this feature's scope. In the extremely unlikely
+    /// case of two files with the identical name being recycled from the
+    /// identical folder within the same instant by something else
+    /// concurrently, this could pick the wrong one - picking the most
+    /// recently deleted match (by `deleted_time_raw`) is the best available
+    /// tie-break.
+    fn find_recycled_pidl(&self, original_dir: &Path, name: &str) -> Option<Vec<u8>> {
+        use windows::Win32::System::Com::CoTaskMemFree;
+        use windows::Win32::UI::Shell::{
+            BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize,
+            IShellItem, SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
+        };
+
+        let original_dir_str = original_dir.to_string_lossy().to_string();
+        let mut best: Option<(i64, Vec<u8>)> = None;
+
+        unsafe {
+            let recycle_pidl = SHGetKnownFolderIDList(&FOLDERID_RecycleBinFolder, 0, None).ok()?;
+            let recycle_item: IShellItem = match SHCreateItemFromIDList(recycle_pidl) {
+                Ok(item) => item,
+                Err(_) => {
+                    CoTaskMemFree(Some(recycle_pidl as _));
+                    return None;
+                }
+            };
+
+            let enum_items: IEnumShellItems =
+                match recycle_item.BindToHandler(None, &BHID_EnumItems) {
+                    Ok(items) => items,
+                    Err(_) => {
+                        CoTaskMemFree(Some(recycle_pidl as _));
+                        return None;
+                    }
+                };
+
+            loop {
+                let mut fetched_items: [Option<IShellItem>; 1] = [None];
+                if enum_items.Next(&mut fetched_items, None).is_err() {
+                    break;
+                }
+                let Some(item) = fetched_items[0].take() else {
+                    break;
+                };
+
+                let (_, _, _, _, _, _, deleted_time_raw, original_object_name, original_directory) =
+                    crate::core::fs::get_shell_item_metadata(
+                        &item,
+                        self.settings_window.current_settings.date_style,
+                        self.settings_window.current_settings.time_format_24h,
+                        &self.settings_window.current_settings.custom_date_format,
+                    );
+
+                let matches = original_object_name.as_deref() == Some(name)
+                    && original_directory.as_deref() == Some(original_dir_str.as_str());
+
+                if matches
+                    && let Ok(pidl) = SHGetIDListFromObject(&item)
+                {
+                    let pidl_size = ILGetSize(Some(pidl as _)) as usize;
+                    let mut pidl_bytes = vec![0u8; pidl_size];
+                    std::ptr::copy_nonoverlapping(pidl as *const u8, pidl_bytes.as_mut_ptr(), pidl_size);
+                    ILFree(Some(pidl as _));
+
+                    let deleted_time = deleted_time_raw.unwrap_or(0);
+                    let is_better = match &best {
+                        Some((t, _)) => deleted_time > *t,
+                        None => true,
+                    };
+                    if is_better {
+                        best = Some((deleted_time, pidl_bytes));
+                    }
+                }
+            }
+
+            CoTaskMemFree(Some(recycle_pidl as _));
+        }
+
+        best.map(|(_, pidl)| pidl)
     }
 
     pub fn open_properties_multi(&self, paths: &[PathBuf]) {
@@ -4385,6 +4592,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         before_entries,
                         true,
                         side,
+                        HashMap::new(),
                         HashMap::new(),
                         PasteOrigin::UserAction,
                     );
