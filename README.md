@@ -302,6 +302,7 @@
 - [x] **SVG preview** - vector files (including gzip-compressed `.svgz`) are rasterized and shown as an image, not just an icon
 - [x] **Syntax highlighting** - code files (and fenced code blocks inside rendered Markdown) get colored keywords/strings/numbers/comments, powered by `syntect`
 - [x] **EPUB text extraction** - reads a book's actual chapters in order instead of showing its raw internal zip file tree
+- [x] **7z archive listing** - previews a `.7z`'s contents the same way zip archives already are, indentation and all
 - [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
 - [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
 - [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder

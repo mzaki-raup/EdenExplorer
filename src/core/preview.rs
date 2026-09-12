@@ -230,6 +230,7 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
         "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" => load_office_preview(path),
         "zip" | "jar" | "war" | "apk" | "xpi" => load_archive_preview(path),
         "epub" => load_epub_preview(path),
+        "7z" => load_7z_preview(path),
         "ttf" | "otf" | "ttc" | "otc" => load_font_preview(path),
         "svg" => load_svg_preview(path, false),
         "svgz" => load_svg_preview(path, true),
@@ -1096,6 +1097,61 @@ fn load_archive_preview(path: &Path) -> PreviewPayload {
     PreviewPayload::Archive { entries, truncated }
 }
 
+/// Same idea as `load_archive_preview`, but for `.7z` - a completely
+/// different container format from zip, so it needs its own crate
+/// (`sevenz-rust2`, a maintained fork of the unmaintained `sevenz-rust`; RAR
+/// support was deliberately skipped instead, since the only practical crate
+/// for it wraps the non-free-licensed official UnRAR library). Only listing
+/// is needed here (no extraction), and `sevenz_rust2::Archive::open` already
+/// hands back every entry's name/size/directory-ness directly - no need to
+/// open a reader or decompress anything just to show the file tree. Builds
+/// the exact same `ArchiveEntry` shape `load_archive_preview` does, so the
+/// existing indented-by-depth rendering in `itemviewer_preview.rs` needs no
+/// changes at all for this new format.
+fn load_7z_preview(path: &Path) -> PreviewPayload {
+    let archive = match sevenz_rust2::Archive::open(path) {
+        Ok(a) => a,
+        Err(err) => return PreviewPayload::Error(format!("Couldn't read .7z archive: {err}")),
+    };
+
+    let mut sort_keys: Vec<(String, ArchiveEntry)> = Vec::with_capacity(archive.files.len());
+    for entry in &archive.files {
+        let raw_name = entry.name.replace('\\', "/");
+        let trimmed = raw_name.trim_end_matches('/');
+        if trimmed.is_empty() {
+            continue;
+        }
+        let is_dir = entry.is_directory || raw_name.ends_with('/');
+        let depth = trimmed.matches('/').count();
+        let display_name = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
+
+        sort_keys.push((
+            trimmed.to_string(),
+            ArchiveEntry {
+                name: display_name,
+                is_dir,
+                size: entry.size,
+                depth,
+            },
+        ));
+    }
+
+    if sort_keys.is_empty() {
+        return PreviewPayload::Unsupported("This archive appears to be empty.".to_string());
+    }
+
+    sort_keys.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let truncated = sort_keys.len() > MAX_ARCHIVE_ENTRIES;
+    let entries = sort_keys
+        .into_iter()
+        .take(MAX_ARCHIVE_ENTRIES)
+        .map(|(_, entry)| entry)
+        .collect();
+
+    PreviewPayload::Archive { entries, truncated }
+}
+
 const SVG_PREVIEW_TARGET_LONG_EDGE: f32 = 1024.0;
 
 /// Rasterizes an SVG (or gzip-compressed .svgz) file to an RGBA bitmap via
@@ -1462,5 +1518,60 @@ mod epub_tests {
         assert!(text.contains("Visible text."));
         assert!(!text.contains("color: red"));
         assert!(!text.contains("alert"));
+    }
+}
+
+#[cfg(test)]
+mod sevenz_tests {
+    use super::*;
+
+    /// Builds a small real `.7z` archive (one top-level file, one nested
+    /// file inside a directory) via `sevenz_rust2`'s own writer, then
+    /// verifies `load_7z_preview` lists it the same way `load_archive_preview`
+    /// already lists a zip: sorted, with depth reflecting nesting.
+    #[test]
+    fn lists_entries_from_a_real_7z_archive() {
+        let dir = std::env::temp_dir().join(format!(
+            "eden_explorer_sevenz_test_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let archive_path = dir.join("test.7z");
+
+        {
+            let mut writer = sevenz_rust2::ArchiveWriter::create(&archive_path).unwrap();
+            writer
+                .push_archive_entry(
+                    sevenz_rust2::ArchiveEntry {
+                        name: "root.txt".to_string(),
+                        ..Default::default()
+                    },
+                    Some(std::io::Cursor::new(b"hello".to_vec())),
+                )
+                .unwrap();
+            writer
+                .push_archive_entry(
+                    sevenz_rust2::ArchiveEntry {
+                        name: "subdir/nested.txt".to_string(),
+                        ..Default::default()
+                    },
+                    Some(std::io::Cursor::new(b"world".to_vec())),
+                )
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        let payload = load_7z_preview(&archive_path);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let PreviewPayload::Archive { entries, truncated } = payload else {
+            panic!("expected an Archive payload");
+        };
+        assert!(!truncated);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "root.txt");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[1].name, "nested.txt");
+        assert_eq!(entries[1].depth, 1);
     }
 }
