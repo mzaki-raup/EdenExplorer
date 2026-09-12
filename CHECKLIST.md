@@ -102,6 +102,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Plain text preview with encoding sniffing |
 | Completed | Text extraction preview for PDF and Word (.docx) |
 | Completed | Rendered Markdown — headings, emphasis, lists, code, quotes, rules, task lists, simple tables |
+| Completed | **Mermaid diagram rendering in Markdown preview** — fenced ` ```mermaid ` code blocks render as real diagrams instead of plain code, scoped to flowcharts (`graph`/`flowchart` TD/LR/BT/RL, box/rounded/diamond/circle node shapes, solid/dashed edges with optional labels) and sequence diagrams (participants incl. `as` aliases, solid/dashed arrows, optional arrowheads). Hand-rolled regex parsing + a from-scratch layout (Kahn's-algorithm topological ranking for flowcharts, with a cycle-safe fallback; fixed-column lifelines for sequence diagrams) painted directly via `egui::Painter` primitives (`core/mermaid.rs`) - no embedded browser/JS runtime, consistent with this app's architecture. A block that fails to parse (unsupported diagram type, malformed syntax) falls back to the existing plain code-block rendering rather than vanishing. |
 | Completed | Image preview |
 | Completed | Animated GIF playback |
 | Completed | Video playback with play / pause and seek slider |

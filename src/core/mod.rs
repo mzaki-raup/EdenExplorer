@@ -7,6 +7,7 @@ pub mod everything;
 pub mod fs;
 pub mod indexer;
 pub mod launch;
+pub mod mermaid;
 pub mod network;
 pub mod network_mdns;
 pub mod network_wsd;

@@ -1240,31 +1240,61 @@ fn draw_markdown(
                     if let Some(code) = code_block.take() {
                         let code = code.trim_end_matches('\n').to_string();
                         let lang = code_block_lang.take();
-                        egui::Frame::NONE
-                            .fill(code_bg)
-                            .inner_margin(egui::Margin::same(8))
-                            .corner_radius(4)
-                            .show(ui, |ui| {
-                                let has_syntax = lang.as_deref().is_some_and(|lang| {
-                                    crate::core::syntax_highlight::has_syntax_for_extension(lang)
-                                });
-                                if let Some(lang) = lang.filter(|_| has_syntax) {
-                                    let job = crate::core::syntax_highlight::highlighted_layout_job(
-                                        &code,
-                                        &lang,
-                                        egui::FontId::monospace(base_size),
-                                        ui.visuals().dark_mode,
-                                    );
-                                    ui.add(egui::Label::new(job).wrap());
-                                } else {
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(code).monospace().size(base_size),
-                                        )
-                                        .wrap(),
-                                    );
-                                }
+
+                        let mermaid_diagram = lang
+                            .as_deref()
+                            .filter(|l| l.eq_ignore_ascii_case("mermaid"))
+                            .and_then(|_| {
+                                let diagram_font = egui::FontId::proportional(base_size);
+                                let measure = |text: &str, font_id: &egui::FontId| {
+                                    ui.painter()
+                                        .layout_no_wrap(text.to_string(), font_id.clone(), text_color)
+                                        .size()
+                                };
+                                crate::core::mermaid::parse_and_layout(&code, &diagram_font, &measure)
                             });
+
+                        if let Some(diagram) = mermaid_diagram {
+                            let diagram_font = egui::FontId::proportional(base_size);
+                            let size = crate::core::mermaid::size(&diagram);
+                            let (rect, _response) =
+                                ui.allocate_exact_size(size + egui::vec2(4.0, 4.0), egui::Sense::hover());
+                            crate::core::mermaid::paint(
+                                ui.painter(),
+                                rect.min + egui::vec2(2.0, 2.0),
+                                &diagram,
+                                &diagram_font,
+                                text_color,
+                                weak_color,
+                                code_bg,
+                            );
+                        } else {
+                            egui::Frame::NONE
+                                .fill(code_bg)
+                                .inner_margin(egui::Margin::same(8))
+                                .corner_radius(4)
+                                .show(ui, |ui| {
+                                    let has_syntax = lang.as_deref().is_some_and(|lang| {
+                                        crate::core::syntax_highlight::has_syntax_for_extension(lang)
+                                    });
+                                    if let Some(lang) = lang.filter(|_| has_syntax) {
+                                        let job = crate::core::syntax_highlight::highlighted_layout_job(
+                                            &code,
+                                            &lang,
+                                            egui::FontId::monospace(base_size),
+                                            ui.visuals().dark_mode,
+                                        );
+                                        ui.add(egui::Label::new(job).wrap());
+                                    } else {
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(code).monospace().size(base_size),
+                                            )
+                                            .wrap(),
+                                        );
+                                    }
+                                });
+                        }
                         ui.add_space(6.0);
                         // The code block's own source range was never
                         // flushed through `flush_job` (it's drawn straight
