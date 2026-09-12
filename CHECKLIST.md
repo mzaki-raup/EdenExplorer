@@ -211,7 +211,7 @@ Rationale and detail for each item is in `PRD.md` §9.
 | State | Item |
 |---|---|
 | Pending | Operation queue with pause / resume and aggregate progress |
-| Pending | Undo stack for moves and renames beyond Recycle Bin restore |
+| In-Progress | **Undo stack for moves and renames beyond Recycle Bin restore** — a shared `undo_stack`/`redo_stack` (`VecDeque<UndoableOperation>`, capped at 50, in-memory only, never persisted) on `MainWindow`. **Phase 1 (Rename) done**: renaming a single item via the `RenameRequest` handler pushes an `UndoableOperation::Rename { old_path, new_path }`; Ctrl+Z (`undo()`)/Ctrl+Y or Ctrl+Shift+Z (`redo()`) reverse/reapply it via the same `rename_one_native` call the rename handler itself uses, guarded so they don't also fire while a rename/bulk-rename dialog is open. A fresh rename after an undo correctly clears the redo stack (verified: Ctrl+Y then does nothing). Still pending: BulkRename, Move, Copy, and making paste-conflict Replace non-destructive/undoable - see the approved plan for the full phase breakdown. |
 | Completed | Richer same-name conflict resolution UI — see Phase 4's paste/drag-and-drop conflict modal entry |
 | Pending | Checksum / hash panel |
 

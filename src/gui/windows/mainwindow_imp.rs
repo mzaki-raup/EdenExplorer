@@ -235,6 +235,26 @@ fn path_display_label(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
+/// A single reversible action, recorded on `MainWindow::undo_stack`/
+/// `redo_stack` after it completes successfully. Every variant is
+/// symmetric: undo walks it one direction, redo walks the exact same data
+/// the other direction - see `MainWindow::undo`/`redo`.
+///
+/// Deliberately not persisted anywhere: an entry is tied to specific paths
+/// at a specific moment, and if the app restarted and the user touched
+/// those files through Explorer or another program meanwhile, replaying a
+/// stale undo could silently act on the wrong current file. Every
+/// mainstream file manager drops undo history on restart for this exact
+/// reason - this stays purely in-memory.
+pub enum UndoableOperation {
+    Rename { old_path: PathBuf, new_path: PathBuf },
+}
+
+/// Cap on `MainWindow::undo_stack`/`redo_stack` (each) - matches
+/// `MAX_SAVED_SEARCHES`'s precedent for "generous but bounded" per-session
+/// state that isn't persisted to disk.
+const MAX_UNDO_STACK: usize = 50;
+
 /// Metadata for a paste (or cut-move) running via the robocopy-backed
 /// engine (see `core::robocopy`) - kept in `MainWindow::pending_robocopy_pastes`,
 /// keyed by the notification id `paste_clipboard_native` created for it, so
@@ -1256,9 +1276,13 @@ impl MainWindow {
 
                     // Avoid no-op rename
                     if path != target {
-                        if let Err(e) = Self::rename_one_native(&path, trimmed) {
-                            eprintln!("Native rename failed: {:?}", e);
-                        }
+                        let renamed_ok = match Self::rename_one_native(&path, trimmed) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                eprintln!("Native rename failed: {:?}", e);
+                                false
+                            }
+                        };
 
                         // Queue the renamed file for auto-selection after refresh
                         let side = self.focused_split;
@@ -1269,6 +1293,13 @@ impl MainWindow {
 
                         if self.tags_state.remap_path_prefix(path.as_path(), &target) {
                             self.persist_tags();
+                        }
+
+                        if renamed_ok {
+                            self.push_undo(UndoableOperation::Rename {
+                                old_path: path.clone(),
+                                new_path: target.clone(),
+                            });
                         }
                     }
                 }
@@ -1929,6 +1960,72 @@ impl MainWindow {
         }
 
         Ok(())
+    }
+
+    /// Records a freshly-completed, reversible operation on `undo_stack`,
+    /// clearing `redo_stack` - a fresh user action always invalidates
+    /// whatever redo history existed (it no longer describes "what comes
+    /// after the current state"). Every push site that represents a *new*
+    /// user action (as opposed to an undo/redo of a previous one) must clear
+    /// redo this way; undo/redo completions push to the *opposite* stack
+    /// instead (see `undo`/`redo`), never through this method.
+    fn push_undo(&mut self, op: UndoableOperation) {
+        self.undo_stack.push_back(op);
+        while self.undo_stack.len() > MAX_UNDO_STACK {
+            self.undo_stack.pop_front();
+        }
+        self.redo_stack.clear();
+    }
+
+    /// Reverses the most recently completed reversible operation, if any -
+    /// wired to Ctrl+Z (see `handle_global_shortcuts`). Pops the entry
+    /// immediately (rather than waiting for the reversal itself to finish)
+    /// so a second Ctrl+Z can't double-fire on the same in-flight entry;
+    /// on success the entry moves to `redo_stack` so Ctrl+Y can restore it.
+    pub fn undo(&mut self) {
+        let Some(op) = self.undo_stack.pop_back() else {
+            return;
+        };
+
+        match &op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                let Some(new_name) = old_path.file_name().map(|n| n.to_string_lossy().to_string())
+                else {
+                    return;
+                };
+                if Self::rename_one_native(new_path, &new_name).is_ok() {
+                    self.redo_stack.push_back(op);
+                    self.load_path();
+                } else {
+                    eprintln!("Undo failed: could not rename back to original name");
+                }
+            }
+        }
+    }
+
+    /// Re-applies the most recently undone operation, if any - wired to
+    /// Ctrl+Y (primary) / Ctrl+Shift+Z (secondary) in
+    /// `handle_global_shortcuts`. Mirrors `undo`: pops from `redo_stack`
+    /// first, pushes back to `undo_stack` only on success.
+    pub fn redo(&mut self) {
+        let Some(op) = self.redo_stack.pop_back() else {
+            return;
+        };
+
+        match &op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                let Some(new_name) = new_path.file_name().map(|n| n.to_string_lossy().to_string())
+                else {
+                    return;
+                };
+                if Self::rename_one_native(old_path, &new_name).is_ok() {
+                    self.undo_stack.push_back(op);
+                    self.load_path();
+                } else {
+                    eprintln!("Redo failed: could not re-apply rename");
+                }
+            }
+        }
     }
 
     /// Renames one item in place (same parent, new name only) via a single
@@ -3075,6 +3172,9 @@ impl MainWindow {
                 input.key_pressed(egui::Key::F2),
                 alt && input.key_pressed(egui::Key::Enter),
                 ctrl && input.key_pressed(egui::Key::F),
+                ctrl && !shift && input.key_pressed(egui::Key::Z),
+                ctrl && input.key_pressed(egui::Key::Y),
+                ctrl && shift && input.key_pressed(egui::Key::Z),
             )
         });
 
@@ -3171,6 +3271,21 @@ impl MainWindow {
 
         if shortcuts.11 {
             self.enter_search_box_edit_mode();
+        }
+
+        // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not also fire while a rename/
+        // bulk-rename dialog is actively open - same guard as F2 above.
+        let rename_ui_open =
+            self.rename_state.is_some() || self.pending_bulk_rename.is_some();
+
+        if shortcuts.12 && !rename_ui_open {
+            self.undo();
+            return;
+        }
+
+        if (shortcuts.13 || shortcuts.14) && !rename_ui_open {
+            self.redo();
+            return;
         }
     }
 

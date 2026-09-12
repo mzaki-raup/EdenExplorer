@@ -101,6 +101,17 @@ pub struct MainWindow {
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
+    /// Completed, reversible Rename/BulkRename/Move/Copy operations, most
+    /// recent last - see `UndoableOperation`'s doc comment in
+    /// `mainwindow_imp.rs`. Deliberately in-memory only (never persisted),
+    /// capped at `MAX_UNDO_STACK`.
+    pub(crate) undo_stack:
+        std::collections::VecDeque<crate::gui::windows::mainwindow_imp::UndoableOperation>,
+    /// Operations undone via `MainWindow::undo`, available to redo via
+    /// Ctrl+Y/Ctrl+Shift+Z - cleared whenever a fresh Rename/BulkRename/
+    /// Move/Copy is pushed onto `undo_stack`.
+    pub(crate) redo_stack:
+        std::collections::VecDeque<crate::gui::windows::mainwindow_imp::UndoableOperation>,
 
     // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
@@ -329,6 +340,8 @@ impl Default for MainWindow {
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
             notifications_state: NotificationsState::default(),
+            undo_stack: std::collections::VecDeque::new(),
+            redo_stack: std::collections::VecDeque::new(),
             theme_dirty: true,
             window_override_set: false,
             dragdrop: None,
