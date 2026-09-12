@@ -268,6 +268,33 @@ pub struct PendingPaste {
     paths: Vec<PathBuf>,
     is_cut: bool,
     side: SplitSide,
+    /// Same map `start_robocopy_paste` received to build the robocopy jobs -
+    /// kept around (rather than discarded after the jobs are built) so
+    /// `poll_pending_paste` can compute each source's *exact* final name for
+    /// Undo/Redo bookkeeping once the job completes; a source not in this
+    /// map kept its own name.
+    renames: HashMap<PathBuf, String>,
+    /// Whether this job is a normal user-initiated paste/drag-drop, or is
+    /// itself the mechanism undoing/redoing a previous Move/Copy - see
+    /// `PasteOrigin`.
+    origin: PasteOrigin,
+}
+
+/// What triggered a `PendingPaste` job - determines which stack
+/// `poll_pending_paste` pushes the resulting `UndoableOperation` onto once
+/// the job completes (see that function's doc comment for the full table).
+#[allow(dead_code)]
+pub enum PasteOrigin {
+    /// A normal paste or drag-and-drop initiated directly by the user.
+    UserAction,
+    /// This job *is* `MainWindow::undo()` reversing a previously-pushed
+    /// Move/Copy - carries the original operation so it can be pushed onto
+    /// `redo_stack` unchanged on success (no need to re-derive it).
+    UndoOf(UndoableOperation),
+    /// This job *is* `MainWindow::redo()` re-applying a previously-undone
+    /// Move/Copy - carries the original operation so it can be pushed back
+    /// onto `undo_stack` unchanged on success.
+    RedoOf(UndoableOperation),
 }
 
 /// The user's choice in the paste-conflict modal - see
@@ -1476,6 +1503,7 @@ impl MainWindow {
             is_cut,
             side,
             HashMap::new(),
+            PasteOrigin::UserAction,
         );
     }
 
@@ -1493,6 +1521,7 @@ impl MainWindow {
         is_cut: bool,
         side: SplitSide,
         renames: HashMap<PathBuf, String>,
+        origin: PasteOrigin,
     ) {
         if paths.is_empty() {
             return;
@@ -1523,6 +1552,8 @@ impl MainWindow {
                 paths,
                 is_cut,
                 side,
+                renames,
+                origin,
             },
         );
     }
@@ -1579,6 +1610,7 @@ impl MainWindow {
             prompt.is_cut,
             prompt.side,
             renames,
+            PasteOrigin::UserAction,
         );
     }
 
@@ -4127,6 +4159,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         true,
                         side,
                         HashMap::new(),
+                        PasteOrigin::UserAction,
                     );
                 }
 
