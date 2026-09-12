@@ -228,7 +228,8 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
         "pdf" => load_pdf_preview(path),
         "md" | "markdown" => load_markdown_preview(path),
         "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" => load_office_preview(path),
-        "zip" | "jar" | "war" | "apk" | "xpi" | "epub" => load_archive_preview(path),
+        "zip" | "jar" | "war" | "apk" | "xpi" => load_archive_preview(path),
+        "epub" => load_epub_preview(path),
         "ttf" | "otf" | "ttc" | "otc" => load_font_preview(path),
         "svg" => load_svg_preview(path, false),
         "svgz" => load_svg_preview(path, true),
@@ -811,6 +812,238 @@ fn load_docx_text_preview(path: &Path) -> PreviewPayload {
     PreviewPayload::Text(text)
 }
 
+/// Extracts an EPUB's readable text (in reading order) rather than showing
+/// its internal zip file tree, which is all the generic archive listing
+/// would otherwise offer for what's really a text document. Reuses the same
+/// `zip::ZipArchive` + `quick_xml::reader::Reader` combo `load_docx_text_preview`
+/// already does, since an EPUB is a zip container too - just walking the
+/// standard EPUB structure (a `META-INF/container.xml` pointer to an OPF
+/// manifest/spine) instead of Word's fixed `word/document.xml` path.
+fn load_epub_preview(path: &Path) -> PreviewPayload {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(err) => return PreviewPayload::Error(format!("Couldn't open file: {err}")),
+    };
+
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(err) => return PreviewPayload::Error(format!("Couldn't read .epub: {err}")),
+    };
+
+    let container_xml = match read_zip_entry_to_string(&mut archive, "META-INF/container.xml") {
+        Ok(s) => s,
+        Err(err) => return PreviewPayload::Error(format!("Couldn't find EPUB container: {err}")),
+    };
+
+    let Some(opf_path) = find_opf_path(&container_xml) else {
+        return PreviewPayload::Error("Couldn't find EPUB content manifest".to_string());
+    };
+
+    let opf_xml = match read_zip_entry_to_string(&mut archive, &opf_path) {
+        Ok(s) => s,
+        Err(err) => return PreviewPayload::Error(format!("Couldn't read EPUB manifest: {err}")),
+    };
+
+    let opf_dir = Path::new(&opf_path).parent().unwrap_or(Path::new(""));
+    let spine_paths = spine_content_paths(&opf_xml, opf_dir);
+
+    if spine_paths.is_empty() {
+        return PreviewPayload::Unsupported(
+            "This EPUB has no readable content documents.".to_string(),
+        );
+    }
+
+    let mut text = String::new();
+    for content_path in spine_paths {
+        let Ok(xhtml) = read_zip_entry_to_string(&mut archive, &content_path) else {
+            continue;
+        };
+
+        let chapter_text = extract_xhtml_text(&xhtml);
+        let chapter_text = chapter_text.trim();
+        if !chapter_text.is_empty() {
+            if !text.is_empty() {
+                text.push_str("\n\n");
+            }
+            text.push_str(chapter_text);
+        }
+
+        if text.len() > MAX_TEXT_PREVIEW_BYTES {
+            break;
+        }
+    }
+
+    if text.trim().is_empty() {
+        return PreviewPayload::Unsupported(
+            "This EPUB appears to have no text content.".to_string(),
+        );
+    }
+    if text.len() > MAX_TEXT_PREVIEW_BYTES {
+        text.truncate(MAX_TEXT_PREVIEW_BYTES);
+        text.push_str("\n\n… (preview truncated)");
+    }
+    PreviewPayload::Text(text)
+}
+
+fn read_zip_entry_to_string(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    name: &str,
+) -> Result<String, String> {
+    let mut entry = archive.by_name(name).map_err(|err| err.to_string())?;
+    let mut s = String::new();
+    entry
+        .read_to_string(&mut s)
+        .map_err(|err| err.to_string())?;
+    Ok(s)
+}
+
+/// Pulls the OPF manifest's path out of an EPUB's `META-INF/container.xml`,
+/// e.g. `<rootfile full-path="OEBPS/content.opf" .../>` -> `"OEBPS/content.opf"`.
+fn find_opf_path(container_xml: &str) -> Option<String> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::from_str(container_xml);
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if e.local_name().as_ref() == b"rootfile" =>
+            {
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"full-path"
+                        && let Ok(value) = attr.unescape_value()
+                    {
+                        return Some(value.to_string());
+                    }
+                }
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            _ => {}
+        }
+        buf.clear();
+    }
+}
+
+/// Walks an EPUB's OPF manifest (`<item id="..." href="...">`) and spine
+/// (`<itemref idref="...">`, the reading order) to produce the ordered list
+/// of content-document zip entry paths, resolved relative to the OPF file's
+/// own directory (hrefs inside an OPF are always relative to it, not to the
+/// zip root).
+fn spine_content_paths(opf_xml: &str, opf_dir: &Path) -> Vec<String> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+    use std::collections::HashMap;
+
+    let mut reader = Reader::from_str(opf_xml);
+    let mut buf = Vec::new();
+    let mut manifest: HashMap<String, String> = HashMap::new();
+    let mut spine_order: Vec<String> = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match e.local_name().as_ref() {
+                b"item" => {
+                    let mut id = None;
+                    let mut href = None;
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"id" => id = attr.unescape_value().ok().map(|v| v.to_string()),
+                            b"href" => href = attr.unescape_value().ok().map(|v| v.to_string()),
+                            _ => {}
+                        }
+                    }
+                    if let (Some(id), Some(href)) = (id, href) {
+                        manifest.insert(id, href);
+                    }
+                }
+                b"itemref" => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"idref"
+                            && let Ok(value) = attr.unescape_value()
+                        {
+                            spine_order.push(value.to_string());
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    spine_order
+        .into_iter()
+        .filter_map(|idref| manifest.get(&idref))
+        .map(|href| normalize_zip_entry_path(opf_dir.join(href)))
+        .collect()
+}
+
+/// Joins an OPF-relative href onto the OPF's own directory and renders it as
+/// a forward-slash zip entry name - `Path::join` produces backslashes on
+/// Windows, which `zip::ZipArchive::by_name` won't match against a real
+/// (always forward-slash) zip entry path.
+fn normalize_zip_entry_path(path: PathBuf) -> String {
+    path.components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Extracts visible text from an EPUB content document (XHTML), inserting a
+/// newline at block-level boundaries (`</p>`, `<br/>`, headings, list items)
+/// so chapters read as actual paragraphs rather than one run-on line -
+/// simpler than `extract_docx_text` since XHTML doesn't need WordprocessingML's
+/// `w:t`/`w:tab` run-splitting, just plain tag-stripping.
+fn extract_xhtml_text(xhtml: &str) -> String {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::from_str(xhtml);
+    reader.config_mut().trim_text(false);
+
+    let mut out = String::new();
+    let mut buf = Vec::new();
+    let mut skip_depth = 0u32;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => match e.local_name().as_ref() {
+                b"script" | b"style" => skip_depth += 1,
+                b"br" => out.push('\n'),
+                _ => {}
+            },
+            Ok(Event::Empty(e)) if e.local_name().as_ref() == b"br" => out.push('\n'),
+            Ok(Event::End(e)) => match e.local_name().as_ref() {
+                b"script" | b"style" => skip_depth = skip_depth.saturating_sub(1),
+                b"p" | b"div" | b"h1" | b"h2" | b"h3" | b"h4" | b"h5" | b"h6" | b"li" | b"tr" => {
+                    out.push('\n');
+                }
+                _ => {}
+            },
+            Ok(Event::Text(t)) => {
+                if skip_depth == 0
+                    && let Ok(text) = t.decode()
+                {
+                    out.push_str(&text);
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    out
+}
+
 fn load_archive_preview(path: &Path) -> PreviewPayload {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
@@ -1160,4 +1393,74 @@ fn extract_docx_text(xml: &str) -> String {
     }
 
     out
+}
+
+#[cfg(test)]
+mod epub_tests {
+    use super::*;
+
+    #[test]
+    fn finds_opf_path_in_container_xml() {
+        let xml = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+        assert_eq!(find_opf_path(xml), Some("OEBPS/content.opf".to_string()));
+    }
+
+    #[test]
+    fn resolves_spine_order_from_manifest_and_spine() {
+        let opf = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf">
+  <manifest>
+    <item id="ch2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="css" href="style.css" media-type="text/css"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+    <itemref idref="ch2"/>
+  </spine>
+</package>"#;
+        let paths = spine_content_paths(opf, Path::new("OEBPS"));
+        assert_eq!(
+            paths,
+            vec![
+                "OEBPS/chapter1.xhtml".to_string(),
+                "OEBPS/chapter2.xhtml".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_paragraphs_with_newlines_between_them() {
+        let xhtml = r#"<html><body>
+<h1>Chapter One</h1>
+<p>First paragraph.</p>
+<p>Second paragraph.</p>
+</body></html>"#;
+        let text = extract_xhtml_text(xhtml);
+        assert!(text.contains("Chapter One"));
+        assert!(text.contains("First paragraph."));
+        assert!(text.contains("Second paragraph."));
+        // Each block ends with its own newline, so the paragraphs aren't
+        // run together into one line.
+        assert!(text.contains("Chapter One\n"));
+        assert!(text.contains("First paragraph.\n"));
+    }
+
+    #[test]
+    fn extraction_skips_script_and_style_content() {
+        let xhtml = r#"<html><body>
+<style>body { color: red; }</style>
+<script>alert('hi');</script>
+<p>Visible text.</p>
+</body></html>"#;
+        let text = extract_xhtml_text(xhtml);
+        assert!(text.contains("Visible text."));
+        assert!(!text.contains("color: red"));
+        assert!(!text.contains("alert"));
+    }
 }
