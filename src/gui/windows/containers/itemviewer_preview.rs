@@ -8,7 +8,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::handle_editing_file_name;
-use crate::gui::windows::containers::structs::{ExplorerState, RenameState};
+use crate::gui::windows::containers::structs::{ExplorerState, FindInPreviewState, RenameState};
 use chrono::{DateTime, Local};
 use eframe::egui;
 use egui::TextBuffer;
@@ -31,6 +31,7 @@ pub fn draw_preview_view(
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
     preview_selection: &mut Option<PathBuf>,
     icon_cache: &IconCache,
     palette: &ThemePalette,
@@ -224,6 +225,7 @@ pub fn draw_preview_view(
                     preview_service,
                     video_service,
                     audio_service,
+                    find_in_preview,
                     preview_selection.as_deref(),
                     palette,
                 );
@@ -250,6 +252,7 @@ pub fn draw_preview_pane(
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
     selection: Option<&Path>,
     palette: &ThemePalette,
 ) {
@@ -328,6 +331,7 @@ pub fn draw_preview_pane(
                     preview_service,
                     video_service,
                     audio_service,
+                    find_in_preview,
                     path,
                     palette,
                 ),
@@ -444,6 +448,78 @@ fn draw_waveform(ui: &mut egui::Ui, size: egui::Vec2, waveform: &crate::core::au
     }
 }
 
+/// A small find toolbar for the Text/Markdown preview payloads: a toggle
+/// button (shows/hides the rest), a query field, and Next/Prev + match count
+/// once there's a query. Recomputes matches against `haystack` (the plain
+/// text, or the raw Markdown source) whenever the query changes.
+fn draw_find_bar(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    find_in_preview: &mut FindInPreviewState,
+    haystack: &str,
+) {
+    ui.horizontal(|ui| {
+        let icon = if find_in_preview.active {
+            regular::X
+        } else {
+            regular::MAGNIFYING_GLASS
+        };
+        if ui
+            .add(egui::Button::new(egui::RichText::new(icon).size(14.0)))
+            .on_hover_text(i18n.tr("preview_find_toggle"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            find_in_preview.active = !find_in_preview.active;
+            if find_in_preview.active {
+                find_in_preview.recompute(haystack);
+            }
+        }
+
+        if !find_in_preview.active {
+            return;
+        }
+
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut find_in_preview.query)
+                .desired_width(160.0)
+                .hint_text(i18n.tr("preview_find_hint")),
+        );
+        if resp.changed() {
+            find_in_preview.recompute(haystack);
+        }
+
+        if find_in_preview.query.is_empty() {
+            return;
+        }
+
+        if find_in_preview.match_count() == 0 {
+            ui.weak(i18n.tr("preview_find_no_matches"));
+            return;
+        }
+
+        ui.label(format!(
+            "{}/{}",
+            find_in_preview.current_match_number(),
+            find_in_preview.match_count()
+        ));
+        if ui
+            .add(egui::Button::new(regular::CARET_UP))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            find_in_preview.prev_match();
+        }
+        if ui
+            .add(egui::Button::new(regular::CARET_DOWN))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            find_in_preview.next_match();
+        }
+    });
+}
+
 /// Renders `text` as a selectable-but-read-only block, backed by a real
 /// `TextEdit` widget rather than a `Label` (its `TextBuffer` is `&str`,
 /// whose `insert_text`/`delete_char_range` are no-ops - the standard egui
@@ -461,7 +537,13 @@ fn draw_waveform(ui: &mut egui::Ui, size: egui::Vec2, waveform: &crate::core::au
 /// was at the *end of last frame* (before this frame's press event can
 /// touch it) the moment the right-button press is seen, rather than
 /// waiting for `secondary_clicked()`.
-fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, ext: &str, palette: &ThemePalette) {
+fn draw_selectable_text_with_copy(
+    ui: &mut egui::Ui,
+    text: &str,
+    ext: &str,
+    palette: &ThemePalette,
+    jump_to: Option<(usize, usize)>,
+) {
     let text_edit_id = ui.make_persistent_id("preview_pane_text_edit");
     let panel_rect = ui.available_rect_before_wrap();
 
@@ -544,15 +626,41 @@ fn draw_selectable_text_with_copy(ui: &mut egui::Ui, text: &str, ext: &str, pale
         }
     };
 
+    // A pending jump (Next/Prev in the find bar) sets the widget's cursor
+    // range *before* it renders this frame - `TextEdit` reads persisted
+    // `TextEditState` at the start of `.show()`, so this takes effect
+    // immediately rather than a frame late.
+    let jump_char_range = jump_to.map(|(start_byte, end_byte)| {
+        let start_char = text[..start_byte].chars().count();
+        let end_char = text[..end_byte].chars().count();
+        (start_char, end_char)
+    });
+    if let Some((start_char, end_char)) = jump_char_range {
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ui.ctx(), text_edit_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+            egui::text::CCursor::new(start_char),
+            egui::text::CCursor::new(end_char),
+        )));
+        state.store(ui.ctx(), text_edit_id);
+    }
+
     let mut text_ref: &str = text;
-    ui.add(
-        egui::TextEdit::multiline(&mut text_ref)
-            .id(text_edit_id)
-            .font(widget_font_id)
-            .frame(egui::Frame::NONE)
-            .desired_width(f32::INFINITY)
-            .layouter(&mut layouter),
-    );
+    let output = egui::TextEdit::multiline(&mut text_ref)
+        .id(text_edit_id)
+        .font(widget_font_id)
+        .frame(egui::Frame::NONE)
+        .desired_width(f32::INFINITY)
+        .layouter(&mut layouter)
+        .show(ui);
+
+    if let Some((start_char, _)) = jump_char_range {
+        let rect = output
+            .galley
+            .pos_from_cursor(egui::text::CCursor::new(start_char))
+            .translate(output.galley_pos.to_vec2());
+        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+    }
 }
 
 fn palette_text_color(ui: &egui::Ui) -> egui::Color32 {
@@ -595,9 +703,12 @@ fn draw_preview_content(
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
     path: &Path,
     palette: &ThemePalette,
 ) {
+    find_in_preview.ensure_current_path(path);
+
     if is_audio_extension(path) {
         audio_service.set_current(path);
         audio_service.tick(ui.ctx());
@@ -807,20 +918,24 @@ fn draw_preview_content(
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
+            draw_find_bar(ui, i18n, find_in_preview, &text);
+            let jump_to = find_in_preview.take_jump_target();
             egui::ScrollArea::both()
                 .id_salt("preview_pane_text")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    draw_selectable_text_with_copy(ui, &text, &ext, palette);
+                    draw_selectable_text_with_copy(ui, &text, &ext, palette, jump_to);
                 });
         }
         Some(PreviewPayload::Markdown(markdown)) => {
+            draw_find_bar(ui, i18n, find_in_preview, &markdown);
+            let jump_to_byte = find_in_preview.take_jump_target().map(|(start, _)| start);
             egui::ScrollArea::both()
                 .id_salt("preview_pane_markdown")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     arm_markdown_copy_on_right_click(ui);
-                    draw_markdown(ui, palette, &markdown);
+                    draw_markdown(ui, palette, &markdown, jump_to_byte);
                 });
         }
         Some(PreviewPayload::Image { .. }) | Some(PreviewPayload::Animated { .. }) => {
@@ -880,7 +995,12 @@ fn draw_preview_content(
 /// against this app's egui version. HTML blocks, footnotes, and definition
 /// lists are silently skipped - rare in the kind of README/notes-style
 /// Markdown this is meant for.
-fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
+fn draw_markdown(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    markdown: &str,
+    jump_to_byte: Option<usize>,
+) {
     use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
     let base_size = palette.text_size;
@@ -902,11 +1022,35 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
     let mut list_stack: Vec<(bool, u64)> = Vec::new();
     let mut job = egui::text::LayoutJob::default();
     let mut job_has_content = false;
+    // The source byte range spanned by everything folded into `job` since
+    // the last flush - used to tell whether a pending find-in-preview match
+    // (a byte offset into `markdown`) falls inside the block about to be
+    // flushed, so we can scroll to it. Code blocks/tables are rendered
+    // outside `job` (a `Frame` and a `Grid`, not a `Label`) and deliberately
+    // aren't tracked here - find-in-preview only resolves to paragraph/
+    // heading/list-item/block-quote granularity, not into a fenced code
+    // block or table cell.
+    let mut block_range: Option<(usize, usize)> = None;
 
-    fn flush_job(ui: &mut egui::Ui, job: &mut egui::text::LayoutJob, has_content: &mut bool) {
+    /// Renders the accumulated `job` as a `Label` (if it has any content),
+    /// and scrolls to it if `jump_to_byte` falls within the source range
+    /// that went into it.
+    fn flush_job(
+        ui: &mut egui::Ui,
+        job: &mut egui::text::LayoutJob,
+        has_content: &mut bool,
+        block_range: &mut Option<(usize, usize)>,
+        jump_to_byte: Option<usize>,
+    ) {
+        let range = block_range.take();
         if *has_content {
             job.wrap.max_width = ui.available_width().max(1.0);
-            ui.label(job.clone());
+            let response = ui.label(job.clone());
+            if let (Some(target), Some((start, end))) = (jump_to_byte, range)
+                && (start..end).contains(&target)
+            {
+                ui.scroll_to_rect(response.rect, Some(egui::Align::Center));
+            }
             *job = egui::text::LayoutJob::default();
             *has_content = false;
         }
@@ -915,22 +1059,28 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
     let mut events = Parser::new_ext(
         markdown,
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS,
-    );
+    )
+    .into_offset_iter();
 
-    while let Some(event) = events.next() {
+    while let Some((event, source_range)) = events.next() {
+        block_range = Some(match block_range {
+            Some((start, _)) => (start, source_range.end),
+            None => (source_range.start, source_range.end),
+        });
+
         match event {
             Event::Start(tag) => match tag {
                 Tag::Heading { level, .. } => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     ui.add_space(8.0);
                     heading_level = Some(level);
                 }
                 Tag::BlockQuote(_) => {
                     blockquote_depth += 1;
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                 }
                 Tag::CodeBlock(kind) => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     code_block = Some(String::new());
                     code_block_lang = match kind {
                         pulldown_cmark::CodeBlockKind::Fenced(lang) if !lang.is_empty() => {
@@ -940,11 +1090,11 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                     };
                 }
                 Tag::List(start) => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     list_stack.push((start.is_some(), start.unwrap_or(1)));
                 }
                 Tag::Item => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     let depth = list_stack.len().saturating_sub(1) as f32;
                     let prefix = match list_stack.last_mut() {
                         Some((true, n)) => {
@@ -970,24 +1120,24 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                 Tag::Strikethrough => strike_depth += 1,
                 Tag::Link { .. } => link_depth += 1,
                 Tag::Table(_) => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     draw_markdown_table(ui, &mut events, base_size, text_color, strong_color);
                 }
                 _ => {}
             },
             Event::End(tag_end) => match tag_end {
                 TagEnd::Paragraph => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     ui.add_space(6.0);
                 }
                 TagEnd::Heading(_) => {
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     ui.add_space(4.0);
                     heading_level = None;
                 }
                 TagEnd::BlockQuote(_) => {
                     blockquote_depth = blockquote_depth.saturating_sub(1);
-                    flush_job(ui, &mut job, &mut job_has_content);
+                    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                     ui.add_space(4.0);
                 }
                 TagEnd::CodeBlock => {
@@ -1020,6 +1170,12 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                                 }
                             });
                         ui.add_space(6.0);
+                        // The code block's own source range was never
+                        // flushed through `flush_job` (it's drawn straight
+                        // into a `Frame`, not folded into `job`) - clear it
+                        // here so it doesn't get misattributed to whatever
+                        // paragraph flushes next.
+                        block_range = None;
                     }
                 }
                 TagEnd::List(_) => {
@@ -1028,7 +1184,7 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                         ui.add_space(4.0);
                     }
                 }
-                TagEnd::Item => flush_job(ui, &mut job, &mut job_has_content),
+                TagEnd::Item => flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte),
                 TagEnd::Emphasis => italic_depth = italic_depth.saturating_sub(1),
                 TagEnd::Strong => bold_depth = bold_depth.saturating_sub(1),
                 TagEnd::Strikethrough => strike_depth = strike_depth.saturating_sub(1),
@@ -1098,9 +1254,9 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
                 job.append(" ", 0.0, egui::text::TextFormat::default());
                 job_has_content = true;
             }
-            Event::HardBreak => flush_job(ui, &mut job, &mut job_has_content),
+            Event::HardBreak => flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte),
             Event::Rule => {
-                flush_job(ui, &mut job, &mut job_has_content);
+                flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
                 ui.separator();
             }
             Event::TaskListMarker(checked) => {
@@ -1119,7 +1275,7 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
         }
     }
 
-    flush_job(ui, &mut job, &mut job_has_content);
+    flush_job(ui, &mut job, &mut job_has_content, &mut block_range, jump_to_byte);
 }
 
 /// Renders a Markdown table (already-consumed `Tag::Table` start event) as an
@@ -1129,7 +1285,7 @@ fn draw_markdown(ui: &mut egui::Ui, palette: &ThemePalette, markdown: &str) {
 /// simple.
 fn draw_markdown_table(
     ui: &mut egui::Ui,
-    events: &mut pulldown_cmark::Parser,
+    events: &mut pulldown_cmark::OffsetIter<'_>,
     base_size: f32,
     text_color: egui::Color32,
     strong_color: egui::Color32,
@@ -1143,7 +1299,7 @@ fn draw_markdown_table(
             let mut in_head = false;
             let mut cell_text = String::new();
 
-            for event in events.by_ref() {
+            for (event, _range) in events.by_ref() {
                 match event {
                     Event::Start(Tag::TableHead) => in_head = true,
                     Event::End(TagEnd::TableHead) => {

@@ -137,6 +137,8 @@ pub struct TabView {
     /// Live audio playback + waveform, mirroring `video_service` for the
     /// preview pane's audio-file case.
     pub audio_service: crate::core::audio::AudioPreviewService,
+    /// Find-in-preview state for the Text/Markdown preview content pane.
+    pub find_in_preview: FindInPreviewState,
     /// Whether the navbar's inline search box is currently being edited on
     /// this pane (replaces the breadcrumb the same way address-bar editing
     /// does).
@@ -185,6 +187,7 @@ impl TabView {
             preview_selection: None,
             video_service: crate::core::video::VideoPreviewService::default(),
             audio_service: crate::core::audio::AudioPreviewService::default(),
+            find_in_preview: FindInPreviewState::default(),
             search_box_editing: false,
             search_box_buffer: String::new(),
             search_box_scope: crate::core::everything::SearchScope::Everywhere,
@@ -950,6 +953,165 @@ pub struct RenameState {
     pub new_name: String,
     pub should_focus: bool,
     pub validation_error_show: bool,
+}
+
+/// Find-in-preview state for `ItemViewerDisplayMode::Preview`'s content pane
+/// (Text and Markdown payloads only - see `itemviewer_preview.rs`). Matches
+/// are byte ranges into the payload's own source string (the plain text, or
+/// the raw Markdown before rendering), computed by a case-insensitive
+/// substring search - kept here rather than in `itemviewer_preview.rs` since
+/// it's plain per-tab UI state, matching where `RenameState`/`GalleryState`
+/// and friends already live.
+#[derive(Default)]
+pub struct FindInPreviewState {
+    pub active: bool,
+    pub query: String,
+    current_path: Option<PathBuf>,
+    matches: Vec<(usize, usize)>,
+    current: usize,
+    /// Set for exactly one frame after the current match changes (a fresh
+    /// search, or Next/Prev) - `take_jump_target` clears it, so the
+    /// text/markdown renderer only scrolls once per change instead of
+    /// fighting the user's own manual scrolling every frame.
+    jump_requested: bool,
+}
+
+impl FindInPreviewState {
+    /// Resets all find state when the previewed file changes - a match
+    /// range from the previous file is meaningless for a new one. Call once
+    /// per frame before anything else touches this state.
+    pub fn ensure_current_path(&mut self, path: &Path) {
+        if self.current_path.as_deref() != Some(path) {
+            self.current_path = Some(path.to_path_buf());
+            self.active = false;
+            self.query.clear();
+            self.matches.clear();
+            self.current = 0;
+            self.jump_requested = false;
+        }
+    }
+
+    pub fn match_count(&self) -> usize {
+        self.matches.len()
+    }
+
+    pub fn current_match_number(&self) -> usize {
+        self.current + 1
+    }
+
+    /// Re-runs the search against `haystack` (the previewed text, or the
+    /// raw Markdown source) and jumps to the first match.
+    pub fn recompute(&mut self, haystack: &str) {
+        self.matches.clear();
+        if !self.query.is_empty() {
+            let query_lower = self.query.to_lowercase();
+            let haystack_lower = haystack.to_lowercase();
+            let mut start = 0;
+            while let Some(found) = haystack_lower[start..].find(&query_lower) {
+                let match_start = start + found;
+                let match_end = match_start + query_lower.len();
+                self.matches.push((match_start, match_end));
+                start = match_end.max(match_start + 1);
+            }
+        }
+        self.current = 0;
+        self.jump_requested = !self.matches.is_empty();
+    }
+
+    pub fn next_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current = (self.current + 1) % self.matches.len();
+            self.jump_requested = true;
+        }
+    }
+
+    pub fn prev_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current = (self.current + self.matches.len() - 1) % self.matches.len();
+            self.jump_requested = true;
+        }
+    }
+
+    /// The current match's byte range, if a jump was requested this frame -
+    /// clears the request so it only fires once.
+    pub fn take_jump_target(&mut self) -> Option<(usize, usize)> {
+        if self.jump_requested {
+            self.jump_requested = false;
+            self.matches.get(self.current).copied()
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod find_in_preview_tests {
+    use super::FindInPreviewState;
+    use std::path::Path;
+
+    #[test]
+    fn recompute_finds_every_case_insensitive_occurrence() {
+        let mut state = FindInPreviewState::default();
+        state.query = "cat".to_string();
+        state.recompute("The cat sat on THE mat, next to another cat.");
+        assert_eq!(state.match_count(), 2);
+    }
+
+    #[test]
+    fn recompute_with_empty_query_clears_matches() {
+        let mut state = FindInPreviewState::default();
+        state.query = String::new();
+        state.recompute("anything at all");
+        assert_eq!(state.match_count(), 0);
+    }
+
+    #[test]
+    fn next_and_prev_wrap_around() {
+        let mut state = FindInPreviewState::default();
+        state.query = "a".to_string();
+        state.recompute("a b a b a");
+        assert_eq!(state.match_count(), 3);
+        assert_eq!(state.current_match_number(), 1);
+
+        state.next_match();
+        assert_eq!(state.current_match_number(), 2);
+        state.next_match();
+        state.next_match();
+        assert_eq!(state.current_match_number(), 1); // wrapped forward
+
+        state.prev_match();
+        assert_eq!(state.current_match_number(), 3); // wrapped backward
+    }
+
+    #[test]
+    fn take_jump_target_fires_once_per_change() {
+        let mut state = FindInPreviewState::default();
+        state.query = "b".to_string();
+        state.recompute("a b c");
+        assert_eq!(state.take_jump_target(), Some((2, 3)));
+        // Same match, no new change - shouldn't jump again on its own.
+        assert_eq!(state.take_jump_target(), None);
+
+        state.next_match();
+        assert!(state.take_jump_target().is_some());
+    }
+
+    #[test]
+    fn ensure_current_path_resets_state_on_file_change() {
+        let mut state = FindInPreviewState::default();
+        state.ensure_current_path(Path::new("C:/a.txt")); // first selection
+        state.query = "x".to_string();
+        state.recompute("x marks the spot");
+        state.active = true;
+
+        state.ensure_current_path(Path::new("C:/a.txt")); // re-selecting the same file
+        assert_eq!(state.match_count(), 1); // untouched
+
+        state.ensure_current_path(Path::new("C:/b.txt")); // switched to a different file
+        assert!(!state.active);
+        assert_eq!(state.query, "");
+        assert_eq!(state.match_count(), 0);
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -76,6 +76,7 @@ pub fn draw_item_viewer(
     let preview_service = &mut view.preview_service;
     let video_service = &mut view.video_service;
     let audio_service = &mut view.audio_service;
+    let find_in_preview = &mut view.find_in_preview;
     let preview_selection = &mut view.preview_selection;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
@@ -263,6 +264,7 @@ pub fn draw_item_viewer(
             preview_service,
             video_service,
             audio_service,
+            find_in_preview,
             icon_cache,
             palette,
             explorer_state,
@@ -287,6 +289,7 @@ pub fn draw_item_viewer(
             preview_service,
             video_service,
             audio_service,
+            find_in_preview,
             preview_selection,
             icon_cache,
             palette,
@@ -1180,6 +1183,7 @@ pub fn draw_item_viewer(
                         preview_service,
                         video_service,
                         audio_service,
+                        find_in_preview,
                         preview_selection.as_deref(),
                         palette,
                     );

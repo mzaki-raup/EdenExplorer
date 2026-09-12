@@ -12,7 +12,8 @@ use crate::gui::windows::containers::itemviewer_helper::{
 };
 use crate::gui::windows::containers::itemviewer_preview::{PREVIEW_PANE_WIDTH, draw_preview_pane};
 use crate::gui::windows::containers::structs::{
-    ColumnEntry, ColumnItem, ColumnsViewState, ExplorerState, RenameState, TagsState,
+    ColumnEntry, ColumnItem, ColumnsViewState, ExplorerState, FindInPreviewState, RenameState,
+    TagsState,
 };
 use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
@@ -82,6 +83,7 @@ pub fn draw_column_preview_view(
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
     icon_cache: &IconCache,
     palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
@@ -135,6 +137,7 @@ pub fn draw_column_preview_view(
                     preview_service,
                     video_service,
                     audio_service,
+                    find_in_preview,
                     columns_state.selected_file.as_deref(),
                     palette,
                 );
