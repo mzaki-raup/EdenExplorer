@@ -264,6 +264,7 @@ bulk_rename_no_changes = Belum ada yang diganti namanya - sesuaikan pola di atas
 recent_locations = Terkini
 recent_locations_empty_state = Belum ada lokasi terkini. Folder yang Anda kunjungi akan muncul di sini.
 remove_recent_location = Hapus dari Terkini
+clear_recent_locations = Hapus Semua
 theme_font = Font
 theme_mono_font = Font Monospace
 launch-unknown-option = 

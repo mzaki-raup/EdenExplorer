@@ -262,6 +262,7 @@ bulk_rename_no_changes = 暂无可重命名的项目 - 请调整上方的模式
 recent_locations = 最近
 recent_locations_empty_state = 尚无最近访问的位置。您访问过的文件夹会显示在这里。
 remove_recent_location = 从最近记录中移除
+clear_recent_locations = 全部清除
 theme_font = 字体
 theme_mono_font = 等宽字体
 launch-unknown-option = 

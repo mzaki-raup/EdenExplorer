@@ -29,7 +29,7 @@ fn draw_section_header(
     palette: &ThemePalette,
     label: &str,
     expanded: &mut bool,
-) -> bool {
+) -> (bool, egui::Response) {
     let chevron = if *expanded {
         regular::CARET_DOWN
     } else {
@@ -46,12 +46,13 @@ fn draw_section_header(
         .stroke(egui::Stroke::NONE)
         .frame(false),
     );
-    if resp.clicked() {
+    let toggled = if resp.clicked() {
         *expanded = !*expanded;
         true
     } else {
         false
-    }
+    };
+    (toggled, resp)
 }
 
 /// Draw the sidebar, supporting favorites reordering
@@ -92,12 +93,13 @@ pub fn draw_sidebar(
                     ui.add_space(8.0);
                     ui.spacing_mut().item_spacing.y *= palette.sidebar_item_spacing_y;
 
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("places"),
                         &mut sidebar_state.places_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.places_expanded {
                         ui.add_space(8.0);
 
@@ -191,12 +193,13 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("storage"),
                         &mut sidebar_state.storage_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.storage_expanded {
                         ui.add_space(4.0);
 
@@ -256,12 +259,13 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("favorites"),
                         &mut sidebar_state.favorites_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.favorites_expanded {
                     ui.add_space(4.0);
 
@@ -445,12 +449,13 @@ pub fn draw_sidebar(
                     } // favorites_expanded
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("tags"),
                         &mut sidebar_state.tags_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.tags_expanded {
                         ui.add_space(4.0);
 
@@ -477,12 +482,13 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("saved_searches"),
                         &mut sidebar_state.saved_searches_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.saved_searches_expanded {
                         ui.add_space(4.0);
 
@@ -604,12 +610,24 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, recent_locations_header_resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("recent_locations"),
                         &mut sidebar_state.recent_locations_expanded,
                     );
+                    sections_changed |= changed;
+                    if !recent_locations_state.items.is_empty() {
+                        Popup::context_menu(&recent_locations_header_resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_eden_text_overrides(ui, palette);
+                                if ui.button(&i18n.tr("clear_recent_locations")).clicked() {
+                                    action.clear_recent_locations = true;
+                                    ui.close();
+                                }
+                            });
+                    }
                     if sidebar_state.recent_locations_expanded {
                         ui.add_space(4.0);
 
@@ -663,12 +681,13 @@ pub fn draw_sidebar(
                     }
 
                     ui.add_space(6.0);
-                    sections_changed |= draw_section_header(
+                    let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
                         &i18n.tr("shared_network"),
                         &mut sidebar_state.shared_network_expanded,
                     );
+                    sections_changed |= changed;
                     if sidebar_state.shared_network_expanded {
                         ui.add_space(4.0);
 

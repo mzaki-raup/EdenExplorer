@@ -262,6 +262,7 @@ bulk_rename_no_changes = 尚無可重新命名的項目 - 請調整上方的模�
 recent_locations = 最近
 recent_locations_empty_state = 尚無最近造訪的位置。您造訪過的資料夾會顯示在這裡。
 remove_recent_location = 從最近記錄中移除
+clear_recent_locations = 全部清除
 theme_font = 字體
 theme_mono_font = 等寬字體
 launch-unknown-option = 

@@ -298,6 +298,7 @@ bulk_rename_no_changes = Nothing to rename yet - adjust the pattern above
 recent_locations = Recent
 recent_locations_empty_state = No recent locations yet. Folders you visit will show up here.
 remove_recent_location = Remove from Recent
+clear_recent_locations = Clear All
 theme_font = Font
 theme_mono_font = Monospace Font
 launch-unknown-option = 

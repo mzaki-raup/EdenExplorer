@@ -262,6 +262,7 @@ bulk_rename_no_changes = まだ変更する項目がありません - 上のパ�
 recent_locations = 最近使用した場所
 recent_locations_empty_state = 最近使用した場所はまだありません。訪れたフォルダーがここに表示されます。
 remove_recent_location = 最近使用した項目から削除
+clear_recent_locations = すべてクリア
 theme_font = フォント
 theme_mono_font = モノスペースフォント
 launch-unknown-option = 

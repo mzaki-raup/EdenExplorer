@@ -1162,6 +1162,9 @@ pub struct SidebarAction {
     /// menu - navigating to one doesn't need its own action, it already
     /// reuses `nav_to` (a recent location is just a real path).
     pub remove_recent_location: Option<PathBuf>,
+    /// "Clear All" was chosen from the Recent Locations section header's
+    /// context menu.
+    pub clear_recent_locations: bool,
 }
 
 #[derive(Default)]
@@ -1415,6 +1418,10 @@ impl RecentLocationsState {
 
     pub fn remove(&mut self, path: &Path) {
         self.items.retain(|p| p != path);
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
     }
 }
 
@@ -1917,6 +1924,17 @@ mod recent_locations_tests {
 
         let restored = RecentLocationsState::from_snapshot(state.to_snapshot());
         assert_eq!(restored.items, state.items);
+    }
+
+    #[test]
+    fn clear_empties_the_list() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        state.clear();
+
+        assert!(state.items.is_empty());
     }
 }
 

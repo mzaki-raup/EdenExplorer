@@ -3796,6 +3796,10 @@ impl MainWindow {
                 self.recent_locations_state.remove(&path);
                 self.persist_recent_locations();
             }
+            if action.clear_recent_locations {
+                self.recent_locations_state.clear();
+                self.persist_recent_locations();
+            }
         }
     }
 
