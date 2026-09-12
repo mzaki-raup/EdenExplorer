@@ -2203,6 +2203,7 @@ pub fn compute_item_viewer_column_layout(
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
+    is_search_view: bool,
     show_item_viewer_icons: bool,
     palette: &ThemePalette,
     font_id: &FontId,
@@ -2212,6 +2213,54 @@ pub fn compute_item_viewer_column_layout(
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     viewport_width: f32,
 ) -> ItemViewerColumnLayout {
+    // Search view has no persisted column-width storage of its own (see
+    // `visible_order`) - it reuses the *file* view's `is_drive_view=false,
+    // is_recycle_bin_view=false` storage slots, but under a different
+    // column set (it includes `OriginalDirectory`, which the file view's
+    // storage has no slot for, while lacking `Created`, whose slot the
+    // file view *does* have). Letting a "Size to Fit" request run through
+    // the normal `set_all_column_widths`/`set_column_width` path for a
+    // search tab was writing search-result-derived widths straight into
+    // the *file* view's persisted sizes (Type/Size/Modified do have slots
+    // there) - corrupting every normal folder tab's column widths the
+    // next time settings were saved. Bypassing the whole fit/persisted-
+    // width system for search view and computing fresh, unstored widths
+    // every frame instead avoids that class of bug entirely, at the cost
+    // of search columns not being manually resizable/rememberable between
+    // sessions - an acceptable tradeoff for what's a supplementary,
+    // non-customizable display.
+    if is_search_view {
+        column_state.pending_fit_request = None;
+        let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, true);
+        let widths = compute_item_viewer_column_widths(
+            ui,
+            i18n,
+            files,
+            &filter_state.cached_indices,
+            folder_sizes,
+            is_drive_view,
+            show_item_viewer_icons,
+            palette,
+            font_id,
+            file_type_cache,
+            file_size_text_cache,
+            folder_size_text_cache,
+            drive_size_text_cache,
+        );
+        return ItemViewerColumnLayout {
+            ordered_columns,
+            name_width: widths.name,
+            type_width: widths.type_width,
+            size_width: widths.size_width,
+            usage_width: 0.0,
+            modified_width: widths.modified_width,
+            created_width: 0.0,
+            deleted_width: 0.0,
+            original_directory_width: widths.original_directory_width,
+            column_sizes_changed: false,
+        };
+    }
+
     let mut fit_request = column_state.pending_fit_request.take();
 
     // A column state whose sizes are still sitting at the untouched generic
@@ -2241,7 +2290,7 @@ pub fn compute_item_viewer_column_layout(
         }
     }
 
-    let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view);
+    let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, is_search_view);
 
     let mut column_sizes_changed = false;
     let current_width = viewport_width.max(1.0);

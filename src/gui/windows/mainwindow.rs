@@ -156,6 +156,7 @@ impl Default for MainWindow {
             restore_last_session_tabs,
             default_display_mode,
             default_search_scope,
+            search_engine,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -184,6 +185,7 @@ impl Default for MainWindow {
             restore_last_session_tabs,
             default_display_mode,
             default_search_scope,
+            search_engine,
             custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
             tab_groups: crate::core::tab_groups::load_tab_groups(),
         };
@@ -612,6 +614,7 @@ impl eframe::App for MainWindow {
                             .restore_last_session_tabs,
                         self.settings_window.current_settings.default_display_mode,
                         self.settings_window.current_settings.default_search_scope,
+                        self.settings_window.current_settings.search_engine,
                     );
 
                     self.last_window_size = Some(current_size);

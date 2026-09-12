@@ -140,6 +140,7 @@ impl Default for AppSettings {
             restore_last_session_tabs: false,
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
+            search_engine: crate::core::everything::SearchEngine::default(),
             custom_context_menu: Vec::new(),
             tab_groups: Vec::new(),
         }
@@ -1009,6 +1010,59 @@ fn draw_behavior_section(
             palette,
         );
     });
+
+    settings_section(ui, palette, |ui| {
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(ui, &i18n.tr("settings_search_engine"), None, palette);
+            },
+            |ui| {
+                let mut selected = settings.current_settings.search_engine;
+                let selected_text = search_engine_setting_label(i18n, selected);
+
+                draw_dropdown(
+                    ui,
+                    palette,
+                    "search_engine_selector",
+                    SETTINGS_COMBO_WIDTH,
+                    selected_text,
+                    |ui| {
+                        for engine in [
+                            crate::core::everything::SearchEngine::Everything,
+                            crate::core::everything::SearchEngine::BuiltIn,
+                        ] {
+                            if ui
+                                .selectable_label(
+                                    selected == engine,
+                                    search_engine_setting_label(i18n, engine),
+                                )
+                                .clicked()
+                            {
+                                selected = engine;
+                            }
+                        }
+                    },
+                );
+
+                if selected != settings.current_settings.search_engine {
+                    settings.current_settings.search_engine = selected;
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+        info_icon(ui, &i18n.tr("tooltip_settings_search_engine"), palette);
+    });
+}
+
+fn search_engine_setting_label(
+    i18n: &I18n,
+    engine: crate::core::everything::SearchEngine,
+) -> String {
+    match engine {
+        crate::core::everything::SearchEngine::Everything => i18n.tr("search_engine_everything"),
+        crate::core::everything::SearchEngine::BuiltIn => i18n.tr("search_engine_builtin"),
+    }
 }
 
 fn search_scope_setting_label(

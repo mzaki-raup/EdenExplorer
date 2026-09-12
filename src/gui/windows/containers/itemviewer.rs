@@ -78,7 +78,7 @@ pub fn draw_item_viewer(
     let preview_selection = &mut view.preview_selection;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
-    let search_unavailable = view.search_unavailable;
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
@@ -163,8 +163,6 @@ pub fn draw_item_viewer(
         ui.centered_and_justified(|ui| {
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
-            } else if search_unavailable {
-                ui.label(i18n.tr("search_everything_not_running"));
             } else {
                 ui.label(i18n.tr("folder_is_empty"));
             }
@@ -321,7 +319,6 @@ pub fn draw_item_viewer(
             is_focused,
             active_tab_id,
             current_dir,
-            search_unavailable,
         )
         .or(action);
     }
@@ -340,8 +337,6 @@ pub fn draw_item_viewer(
             ui.centered_and_justified(|ui| {
                 if is_loading && files.is_empty() {
                     ui.add(egui::Spinner::new().size(28.0));
-                } else if search_unavailable {
-                    ui.label(i18n.tr("search_everything_not_running"));
                 } else {
                     ui.label(i18n.tr("folder_is_empty"));
                 }
@@ -401,6 +396,7 @@ pub fn draw_item_viewer(
                 folder_sizes,
                 is_drive_view,
                 is_recycle_bin_view,
+                is_search_view,
                 show_item_viewer_icons,
                 palette,
                 &font_id,
@@ -808,25 +804,36 @@ pub fn draw_item_viewer(
                 // ------------------- END OF TABLE VIEW -------------------
                 let checkbox_column_count = if layout.show_checkboxes { 1 } else { 0 };
 
-                for (column_index, &column) in column_layout.ordered_columns.iter().enumerate() {
-                    let table_index = column_index + checkbox_column_count;
+                // Search view has no persisted column-width storage of its
+                // own (it reuses the fixed column set computed in
+                // `visible_order` rather than a fourth
+                // `Vec<ItemViewerHeaderColumn>`/sizes pair alongside file/
+                // drive/recycle-bin's) - skip the write-back entirely there
+                // rather than let every frame see a "not the stored width"
+                // mismatch (since there's nothing to compare against) and
+                // fire `ColumnSizesChanged` in a loop.
+                if !is_search_view {
+                    for (column_index, &column) in column_layout.ordered_columns.iter().enumerate()
+                    {
+                        let table_index = column_index + checkbox_column_count;
 
-                    let Some(&actual_width) = actual_column_widths.get(table_index) else {
-                        continue;
-                    };
+                        let Some(&actual_width) = actual_column_widths.get(table_index) else {
+                            continue;
+                        };
 
-                    let stored_width =
-                        column_state.column_width(is_drive_view, is_recycle_bin_view, column);
+                        let stored_width =
+                            column_state.column_width(is_drive_view, is_recycle_bin_view, column);
 
-                    if stored_width.map_or(true, |stored| (stored - actual_width).abs() > 0.5) {
-                        column_state.set_column_width(
-                            is_drive_view,
-                            is_recycle_bin_view,
-                            column,
-                            actual_width,
-                        );
+                        if stored_width.map_or(true, |stored| (stored - actual_width).abs() > 0.5) {
+                            column_state.set_column_width(
+                                is_drive_view,
+                                is_recycle_bin_view,
+                                column,
+                                actual_width,
+                            );
 
-                        action = Some(ItemViewerAction::ColumnSizesChanged);
+                            action = Some(ItemViewerAction::ColumnSizesChanged);
+                        }
                     }
                 }
 

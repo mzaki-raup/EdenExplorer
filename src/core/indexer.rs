@@ -99,6 +99,8 @@ struct AppSettingsSnapshot {
     default_display_mode: ItemViewerDisplayMode,
     #[serde(default)]
     default_search_scope: crate::core::everything::DefaultSearchScope,
+    #[serde(default)]
+    search_engine: crate::core::everything::SearchEngine,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -183,6 +185,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             restore_last_session_tabs: false,
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
+            search_engine: crate::core::everything::SearchEngine::default(),
         }
     }
 }
@@ -646,6 +649,7 @@ pub fn load_app_settings() -> (
     bool,
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
+    crate::core::everything::SearchEngine,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -692,6 +696,7 @@ pub fn load_app_settings() -> (
         snapshot.restore_last_session_tabs,
         snapshot.default_display_mode,
         snapshot.default_search_scope,
+        snapshot.search_engine,
     )
 }
 
@@ -725,6 +730,7 @@ fn default_app_settings(
     bool,
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
+    crate::core::everything::SearchEngine,
 ) {
     (
         true,
@@ -754,6 +760,7 @@ fn default_app_settings(
         false,
         ItemViewerDisplayMode::Details,
         crate::core::everything::DefaultSearchScope::default(),
+        crate::core::everything::SearchEngine::default(),
     )
 }
 
@@ -785,6 +792,7 @@ pub fn save_app_settings(
     restore_last_session_tabs: bool,
     default_display_mode: ItemViewerDisplayMode,
     default_search_scope: crate::core::everything::DefaultSearchScope,
+    search_engine: crate::core::everything::SearchEngine,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -819,6 +827,7 @@ pub fn save_app_settings(
         restore_last_session_tabs,
         default_display_mode,
         default_search_scope,
+        search_engine,
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

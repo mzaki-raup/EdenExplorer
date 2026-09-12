@@ -36,6 +36,24 @@ impl Default for DefaultSearchScope {
     }
 }
 
+/// Which engine powers search. Everything is the default (near-instant,
+/// index-backed), but it requires the user to have voidtools Everything
+/// installed and running - `BuiltIn` is a real filesystem walk that always
+/// works, just slower, and is what a fresh/no-Everything install falls
+/// back to automatically (see `check_everything_available` at the call
+/// site in `load_path_with_fallback`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SearchEngine {
+    Everything,
+    BuiltIn,
+}
+
+impl Default for SearchEngine {
+    fn default() -> Self {
+        Self::Everything
+    }
+}
+
 /// Cap on how many results a single search pulls across the IPC boundary -
 /// keeps a maximally broad query (e.g. a single letter against `Everywhere`)
 /// from stalling the IPC round-trip or flooding the UI with an unusable
@@ -123,6 +141,9 @@ fn everything_item_to_file_item(
 ) -> Option<FileItem> {
     let name = item.get_string(RequestFlags::FileName)?;
     let path = PathBuf::from(item.get_string(RequestFlags::FullPathAndFileName)?);
+    let original_directory = path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string());
 
     let attributes = item.get_u32(RequestFlags::Attributes).unwrap_or(0);
     let is_dir = attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
@@ -163,6 +184,6 @@ fn everything_item_to_file_item(
         modified_raw,
         created_raw,
         None,
-        None,
+        original_directory,
     ))
 }

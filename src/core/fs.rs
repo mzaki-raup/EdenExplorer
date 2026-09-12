@@ -653,6 +653,125 @@ pub fn filetime_struct_to_i64(ft: FILETIME) -> Option<i64> {
     if value == 0 { None } else { Some(value as i64) }
 }
 
+/// Converts a Rust `SystemTime` (as returned by `Metadata::modified()`/
+/// `created()`) to the same raw Windows FILETIME tick count (100ns
+/// intervals since 1601) that `filetime_to_string`/`filetime_struct_to_i64`
+/// already work with elsewhere - so the built-in search's `std::fs`-based
+/// walk produces `FileItem`s with dates formatted identically to every
+/// other listing, despite not going through the NT/IPC APIs that hand back
+/// a `FILETIME` directly.
+fn system_time_to_filetime_raw(t: std::time::SystemTime) -> Option<i64> {
+    let dur = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+    let ticks = (dur.as_secs() as i64 + 11_644_473_600) * 10_000_000 + dur.subsec_nanos() as i64 / 100;
+    Some(ticks)
+}
+
+/// Maximum number of results the built-in (non-Everything) search collects
+/// before stopping - it walks the real filesystem live rather than
+/// consulting a pre-built index, so an unbounded "Everywhere" search could
+/// otherwise run for a very long time over a large disk.
+pub const BUILTIN_SEARCH_MAX_RESULTS: usize = 5_000;
+
+/// Fallback search used when the user has no Everything install (or
+/// prefers not to use it, per the "Search engine" setting): walks the real
+/// filesystem from `scope_folder` (or every drive, if `None` - "Everywhere")
+/// looking for names containing `query` (case-insensitive), streaming
+/// matches into `tx` as they're found. Matches `scan_dir_async`'s contract
+/// exactly (send-per-item, let `tx` drop when done) so it drops into the
+/// same progressive-fill polling as everything else.
+pub fn search_builtin_async(
+    query: String,
+    scope_folder: Option<PathBuf>,
+    tx: Sender<FileItem>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+    custom_date_format: String,
+) {
+    use std::os::windows::fs::MetadataExt;
+
+    thread::spawn(move || {
+        let query_lower = query.to_lowercase();
+        if query_lower.is_empty() {
+            return;
+        }
+
+        let roots: Vec<PathBuf> = match scope_folder {
+            Some(dir) => vec![dir],
+            None => crate::core::drives::get_drive_infos()
+                .into_iter()
+                .map(|d| d.path)
+                .collect(),
+        };
+
+        let mut sent = 0usize;
+        let mut stack = roots;
+
+        'walk: while let Some(dir) = stack.pop() {
+            let entries = match std::fs::read_dir(&dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            for entry in entries.flatten() {
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+
+                let name = entry.file_name().to_string_lossy().to_string();
+                let attributes = metadata.file_attributes();
+                let is_dir = attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
+                let is_reparse = attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+
+                // Only traverse real directories - skip symlinks/junctions,
+                // the same way parallel_directory_scan does, so a reparse
+                // point pointing back up the tree can't cause an infinite
+                // loop.
+                if is_dir && !is_reparse {
+                    stack.push(entry.path());
+                }
+
+                if !name.to_lowercase().contains(&query_lower) {
+                    continue;
+                }
+
+                let is_hidden = attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0;
+                let file_size = if is_dir { None } else { Some(metadata.len()) };
+                let modified_raw = metadata.modified().ok().and_then(system_time_to_filetime_raw);
+                let created_raw = metadata.created().ok().and_then(system_time_to_filetime_raw);
+                let modified_time = modified_raw
+                    .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format));
+                let created_time = created_raw
+                    .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format));
+                let original_directory = Some(dir.to_string_lossy().to_string());
+
+                let item = FileItem::new(
+                    name,
+                    entry.path(),
+                    is_dir,
+                    is_hidden,
+                    None,
+                    file_size,
+                    modified_time,
+                    created_time,
+                    None,
+                    modified_raw,
+                    created_raw,
+                    None,
+                    original_directory,
+                );
+
+                if tx.send(item).is_err() {
+                    break 'walk;
+                }
+                sent += 1;
+                if sent >= BUILTIN_SEARCH_MAX_RESULTS {
+                    break 'walk;
+                }
+            }
+        }
+    });
+}
+
 /// Source: Windows SDK propkey.h
 pub const PKEY_SIZE: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),

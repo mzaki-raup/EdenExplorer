@@ -134,11 +134,6 @@ pub struct TabView {
     /// the selected file is a video - kept separate from `preview_service`
     /// since it's a continuously-updated resource, not a one-shot payload.
     pub video_service: crate::core::video::VideoPreviewService,
-    /// Set by `load_path_with_fallback` when this view is a search-results
-    /// tab and Everything.exe couldn't be reached - lets the generic
-    /// item-viewer renderers show an inline "Everything isn't running"
-    /// message instead of the ordinary "folder is empty" one.
-    pub search_unavailable: bool,
     /// Whether the navbar's inline search box is currently being edited on
     /// this pane (replaces the breadcrumb the same way address-bar editing
     /// does).
@@ -186,7 +181,6 @@ impl TabView {
             preview_service: crate::core::preview::PreviewService::default(),
             preview_selection: None,
             video_service: crate::core::video::VideoPreviewService::default(),
-            search_unavailable: false,
             search_box_editing: false,
             search_box_buffer: String::new(),
             search_box_scope: crate::core::everything::SearchScope::Everywhere,
@@ -706,6 +700,7 @@ impl ItemViewerColumnState {
         &self,
         is_drive_view: bool,
         is_recycle_bin_view: bool,
+        is_search_view: bool,
     ) -> Vec<ItemViewerHeaderColumn> {
         let allowed: &[ItemViewerHeaderColumn] = if is_drive_view {
             &[
@@ -722,6 +717,20 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Deleted,
                 ItemViewerHeaderColumn::Created,
             ]
+        } else if is_search_view {
+            // Search results come from many different folders (unlike a
+            // normal listing, where every row shares the tab's own current
+            // directory) - reusing `OriginalDirectory` (the same column the
+            // Recycle Bin already shows "where this came from" in) surfaces
+            // each match's actual location instead of leaving that
+            // information only visible one file at a time via Properties.
+            &[
+                ItemViewerHeaderColumn::Name,
+                ItemViewerHeaderColumn::OriginalDirectory,
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Modified,
+            ]
         } else {
             &[
                 ItemViewerHeaderColumn::Name,
@@ -731,6 +740,15 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Created,
             ]
         };
+
+        // Search view's column set is fixed (not reordered/toggled by the
+        // user) - there's no dedicated persisted order for it, and its
+        // `allowed` set (above) includes `OriginalDirectory`, which the
+        // normal file view's own persisted order never contains, so
+        // intersecting with `self.order(...)` below would silently drop it.
+        if is_search_view {
+            return allowed.to_vec();
+        }
 
         let mut visible = Vec::with_capacity(allowed.len());
 

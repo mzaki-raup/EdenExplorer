@@ -73,6 +73,8 @@ pub struct AppSettings {
     pub default_display_mode: ItemViewerDisplayMode,
     #[serde(default)]
     pub default_search_scope: crate::core::everything::DefaultSearchScope,
+    #[serde(default)]
+    pub search_engine: crate::core::everything::SearchEngine,
     /// Loaded/saved separately from the rest of these fields - see
     /// `core::context_menu_settings`.
     #[serde(default)]

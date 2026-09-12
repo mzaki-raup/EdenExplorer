@@ -620,6 +620,7 @@ impl MainWindow {
                 .restore_last_session_tabs,
             self.settings_window.current_settings.default_display_mode,
             self.settings_window.current_settings.default_search_scope,
+            self.settings_window.current_settings.search_engine,
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
@@ -684,7 +685,6 @@ impl MainWindow {
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
-            view.search_unavailable = false;
         }
         self.folder_sizes.clear();
         self.file_size_text_cache.clear();
@@ -717,28 +717,41 @@ impl MainWindow {
         }
 
         if let Some((query, scope_folder)) = parse_search_view_path(&current_path) {
-            if !check_everything_available() {
-                // Leave `files` empty and flag it so the item-viewer
-                // renderers show an inline "Everything isn't running"
-                // message instead of the ordinary "folder is empty" text.
-                self.active_tab_mut().view_mut(side).search_unavailable = true;
-                return;
-            }
-
-            let scope = match scope_folder {
-                Some(dir) => SearchScope::CurrentFolder(dir),
-                None => SearchScope::Everywhere,
-            };
+            // Everything is preferred (near-instant, index-backed) when the
+            // setting asks for it and it's actually reachable - but silently
+            // fall back to the built-in filesystem walk rather than erroring
+            // when it isn't, so a machine that's never had Everything
+            // installed just gets a (slower, always-available) search
+            // instead of a dead end.
+            let use_everything = matches!(
+                self.settings_window.current_settings.search_engine,
+                crate::core::everything::SearchEngine::Everything
+            ) && check_everything_available();
 
             let (tx, rx) = unbounded();
-            search_everything_async(
-                query,
-                scope,
-                tx,
-                self.settings_window.current_settings.date_style,
-                self.settings_window.current_settings.time_format_24h,
-                self.settings_window.current_settings.custom_date_format.clone(),
-            );
+            if use_everything {
+                let scope = match scope_folder {
+                    Some(dir) => SearchScope::CurrentFolder(dir),
+                    None => SearchScope::Everywhere,
+                };
+                search_everything_async(
+                    query,
+                    scope,
+                    tx,
+                    self.settings_window.current_settings.date_style,
+                    self.settings_window.current_settings.time_format_24h,
+                    self.settings_window.current_settings.custom_date_format.clone(),
+                );
+            } else {
+                crate::core::fs::search_builtin_async(
+                    query,
+                    scope_folder,
+                    tx,
+                    self.settings_window.current_settings.date_style,
+                    self.settings_window.current_settings.time_format_24h,
+                    self.settings_window.current_settings.custom_date_format.clone(),
+                );
+            }
             let view = self.active_tab_mut().view_mut(side);
             view.rx = Some(rx);
             view.is_loading = true;
@@ -2397,6 +2410,7 @@ impl MainWindow {
                         _restore_last_session_tabs,
                         _default_display_mode,
                         _default_search_scope,
+                        _search_engine,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;

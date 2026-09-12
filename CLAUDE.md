@@ -603,6 +603,40 @@ PowerShell process) rather than the app's own code - if you're using the
     controls whose total width isn't known in advance (translated text,
     variable row width), prefer `horizontal_wrapped` over subtracting a
     guessed constant from `available_width()`.
+- **Reusing an existing view kind's column-width *storage* for a new view
+  kind, without also matching its exact column *set*, silently writes one
+  view's widths into another's persisted slots.** The search-results view
+  reuses the "file view" `is_drive_view=false, is_recycle_bin_view=false`
+  branch of `ItemViewerColumnState` for its column set (`visible_order` in
+  `structs.rs`) so it could show an `OriginalDirectory` column - but
+  `column_width`/`set_column_width`'s positional index maps for that
+  branch are keyed to the *file* view's own five columns (Name/Type/Size/
+  Modified/Created), which don't include `OriginalDirectory` and do
+  include `Created` (which search doesn't show). Triggering "Size All
+  Columns to Fit" on a search tab called `set_all_column_widths` with the
+  same `(false, false)` pair a real folder tab uses, which routed the
+  search results' content-derived Type/Size/Modified widths straight into
+  the *global, persisted* `item_viewer_file_column_sizes` - the exact
+  storage every normal folder tab reads its column widths from - because
+  `set_column_width` writes by column name into whatever slot that
+  `(is_drive_view, is_recycle_bin_view)` pair resolves to, with no concept
+  of "this caller meant something different by that pair." Silently
+  corrupting a real folder's remembered column widths from a search tab
+  interaction is a much worse bug than the "not working" the user actually
+  reported. Fixed by having `compute_item_viewer_column_layout` special-
+  case search view at the very top: it now returns freshly content-fitted
+  widths every single frame, never reads or writes any persisted storage,
+  and never sets `column_sizes_changed` - trading away per-search manual
+  resize/persistence (a search tab's columns are always auto-fit, which is
+  what a "Size to Fit" click would have produced anyway) for the guarantee
+  that a supplementary view can never touch another view kind's saved
+  settings. When a new view kind reuses another one's `(is_drive_view,
+  is_recycle_bin_view)`-keyed storage for column *selection*, check
+  whether every write path keyed the same way (`set_column_width`,
+  `set_all_column_widths`, the per-frame width-drift write-back) also gets
+  called for that new view kind before assuming read-only reuse is safe -
+  a column set that's a superset/subset of the reused branch's own set is
+  exactly the mismatch that corrupts silently instead of erroring.
 
 ## Operational Instructions
 
