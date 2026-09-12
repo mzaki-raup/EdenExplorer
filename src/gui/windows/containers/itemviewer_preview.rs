@@ -542,6 +542,7 @@ fn draw_selectable_text_with_copy(
     text: &str,
     ext: &str,
     palette: &ThemePalette,
+    highlight_range: Option<(usize, usize)>,
     jump_to: Option<(usize, usize)>,
 ) {
     let text_edit_id = ui.make_persistent_id("preview_pane_text_edit");
@@ -568,16 +569,42 @@ fn draw_selectable_text_with_copy(
     let has_syntax = crate::core::syntax_highlight::has_syntax_for_extension(ext);
     let ext_owned = ext.to_string();
 
+    // The current find-in-preview match (if any), converted to a char range
+    // once up front - `paint_text_selection` (the same function egui's own
+    // `TextEdit` uses to paint a *selected* range) works in char cursors,
+    // not bytes. Baked directly into the galley below rather than relying
+    // on `TextEdit`'s built-in selection painting, since that's gated on
+    // the widget actually having keyboard focus - which this read-only
+    // preview widget never does - so it would silently never show.
+    let highlight_char_range = highlight_range.map(|(start_byte, end_byte)| {
+        let start_char = text[..start_byte].chars().count();
+        let end_char = text[..end_byte].chars().count();
+        egui::text::CCursorRange::two(
+            egui::text::CCursor::new(start_char),
+            egui::text::CCursor::new(end_char),
+        )
+    });
+
     // `.layouter` runs at least once per frame per egui's own docs, so the
-    // resulting `Arc<Galley>` is cached keyed by (text length, dark-mode) -
-    // cheap enough to check every frame, and re-highlighting only happens
-    // when the previewed file or the theme actually changes, not on every
-    // repaint. A length-only key is an approximation (it can't tell two
-    // same-length edits apart), but this buffer is read-only, so the text
-    // itself never changes without the cache key (the enclosing `path`)
-    // changing too, which already invalidates `PreviewService`'s own cache
-    // and re-triggers this whole function with new `text`.
-    type HighlightCache = std::sync::Arc<std::sync::Mutex<Option<(usize, bool, std::sync::Arc<egui::Galley>)>>>;
+    // resulting `Arc<Galley>` is cached keyed by (text length, dark-mode,
+    // highlighted range) - cheap enough to check every frame, and rebuilding
+    // only happens when the previewed file, the theme, or the current find
+    // match actually changes, not on every repaint. A length-only key is an
+    // approximation (it can't tell two same-length edits apart), but this
+    // buffer is read-only, so the text itself never changes without the
+    // cache key (the enclosing `path`) changing too, which already
+    // invalidates `PreviewService`'s own cache and re-triggers this whole
+    // function with new `text`.
+    type HighlightCache = std::sync::Arc<
+        std::sync::Mutex<
+            Option<(
+                usize,
+                bool,
+                Option<egui::text::CCursorRange>,
+                std::sync::Arc<egui::Galley>,
+            )>,
+        >,
+    >;
     let cache: HighlightCache = ui.ctx().data_mut(|d| {
         d.get_temp_mut_or_insert_with(text_edit_id, || {
             std::sync::Arc::new(std::sync::Mutex::new(None))
@@ -589,61 +616,61 @@ fn draw_selectable_text_with_copy(
         let dark_mode = ui.visuals().dark_mode;
         let text = buf.as_str();
 
-        if has_syntax {
-            let mut guard = cache.lock().unwrap();
-            let needs_rebuild = match guard.as_ref() {
-                Some((len, cached_dark, _)) => *len != text.len() || *cached_dark != dark_mode,
-                None => true,
-            };
-            if needs_rebuild {
-                let mut job = crate::core::syntax_highlight::highlighted_layout_job(
+        let mut guard = cache.lock().unwrap();
+        let needs_rebuild = match guard.as_ref() {
+            Some((len, cached_dark, cached_highlight, _)) => {
+                *len != text.len()
+                    || *cached_dark != dark_mode
+                    || *cached_highlight != highlight_char_range
+            }
+            None => true,
+        };
+        if needs_rebuild {
+            let mut job = if has_syntax {
+                crate::core::syntax_highlight::highlighted_layout_job(
                     text,
                     &ext_owned,
                     font_id.clone(),
                     dark_mode,
+                )
+            } else {
+                let mut job = egui::text::LayoutJob::default();
+                job.append(
+                    text,
+                    0.0,
+                    egui::TextFormat::simple(font_id.clone(), palette_text_color(ui)),
                 );
-                job.wrap.max_width = wrap_width;
-                let galley = ui.fonts_mut(|f| f.layout_job(job));
-                *guard = Some((text.len(), dark_mode, galley));
-            } else if let Some((_, _, galley)) = guard.as_ref() {
-                if (galley.job.wrap.max_width - wrap_width).abs() > 0.5 {
-                    let mut job = (*galley.job).clone();
-                    job.wrap.max_width = wrap_width;
-                    let new_galley = ui.fonts_mut(|f| f.layout_job(job));
-                    *guard = Some((text.len(), dark_mode, new_galley));
-                }
-            }
-            guard.as_ref().unwrap().2.clone()
-        } else {
-            let mut job = egui::text::LayoutJob::default();
-            job.append(
-                text,
-                0.0,
-                egui::TextFormat::simple(font_id.clone(), palette_text_color(ui)),
-            );
+                job
+            };
             job.wrap.max_width = wrap_width;
-            ui.fonts_mut(|f| f.layout_job(job))
+            let mut galley = ui.fonts_mut(|f| f.layout_job(job));
+            if let Some(range) = highlight_char_range {
+                egui::text_selection::visuals::paint_text_selection(
+                    &mut galley,
+                    ui.visuals(),
+                    &range,
+                    None,
+                );
+            }
+            *guard = Some((text.len(), dark_mode, highlight_char_range, galley));
+        } else if let Some((_, _, _, galley)) = guard.as_ref()
+            && (galley.job.wrap.max_width - wrap_width).abs() > 0.5
+        {
+            let mut job = (*galley.job).clone();
+            job.wrap.max_width = wrap_width;
+            let mut new_galley = ui.fonts_mut(|f| f.layout_job(job));
+            if let Some(range) = highlight_char_range {
+                egui::text_selection::visuals::paint_text_selection(
+                    &mut new_galley,
+                    ui.visuals(),
+                    &range,
+                    None,
+                );
+            }
+            *guard = Some((text.len(), dark_mode, highlight_char_range, new_galley));
         }
+        guard.as_ref().unwrap().3.clone()
     };
-
-    // A pending jump (Next/Prev in the find bar) sets the widget's cursor
-    // range *before* it renders this frame - `TextEdit` reads persisted
-    // `TextEditState` at the start of `.show()`, so this takes effect
-    // immediately rather than a frame late.
-    let jump_char_range = jump_to.map(|(start_byte, end_byte)| {
-        let start_char = text[..start_byte].chars().count();
-        let end_char = text[..end_byte].chars().count();
-        (start_char, end_char)
-    });
-    if let Some((start_char, end_char)) = jump_char_range {
-        let mut state =
-            egui::widgets::text_edit::TextEditState::load(ui.ctx(), text_edit_id).unwrap_or_default();
-        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-            egui::text::CCursor::new(start_char),
-            egui::text::CCursor::new(end_char),
-        )));
-        state.store(ui.ctx(), text_edit_id);
-    }
 
     let mut text_ref: &str = text;
     let output = egui::TextEdit::multiline(&mut text_ref)
@@ -654,7 +681,8 @@ fn draw_selectable_text_with_copy(
         .layouter(&mut layouter)
         .show(ui);
 
-    if let Some((start_char, _)) = jump_char_range {
+    if let Some((start_byte, _)) = jump_to {
+        let start_char = text[..start_byte].chars().count();
         let rect = output
             .galley
             .pos_from_cursor(egui::text::CCursor::new(start_char))
@@ -665,6 +693,20 @@ fn draw_selectable_text_with_copy(
 
 fn palette_text_color(ui: &egui::Ui) -> egui::Color32 {
     ui.visuals().text_color()
+}
+
+/// Background color for a find-in-preview match, painted behind the matched
+/// run in the Markdown preview (the Text preview instead reuses egui's own
+/// `selection.bg_fill` via `paint_text_selection`, which is already
+/// theme-aware) - a warm highlighter-pen yellow/amber rather than this app's
+/// accent color, so a match doesn't get lost among links/headings that may
+/// already use the accent color for their own styling.
+fn find_highlight_bg_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_rgba_unmultiplied(255, 200, 0, 90)
+    } else {
+        egui::Color32::from_rgb(255, 235, 130)
+    }
 }
 
 /// Right-click-to-copy for the *rendered* Markdown preview, which (unlike
@@ -919,23 +961,34 @@ fn draw_preview_content(
                 .unwrap_or("")
                 .to_ascii_lowercase();
             draw_find_bar(ui, i18n, find_in_preview, &text);
+            ui.add_space(6.0);
+            let highlight_range = find_in_preview.current_match_range();
             let jump_to = find_in_preview.take_jump_target();
             egui::ScrollArea::both()
                 .id_salt("preview_pane_text")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    draw_selectable_text_with_copy(ui, &text, &ext, palette, jump_to);
+                    draw_selectable_text_with_copy(
+                        ui,
+                        &text,
+                        &ext,
+                        palette,
+                        highlight_range,
+                        jump_to,
+                    );
                 });
         }
         Some(PreviewPayload::Markdown(markdown)) => {
             draw_find_bar(ui, i18n, find_in_preview, &markdown);
+            ui.add_space(6.0);
+            let highlight_range = find_in_preview.current_match_range();
             let jump_to_byte = find_in_preview.take_jump_target().map(|(start, _)| start);
             egui::ScrollArea::both()
                 .id_salt("preview_pane_markdown")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     arm_markdown_copy_on_right_click(ui);
-                    draw_markdown(ui, palette, &markdown, jump_to_byte);
+                    draw_markdown(ui, palette, &markdown, highlight_range, jump_to_byte);
                 });
         }
         Some(PreviewPayload::Image { .. }) | Some(PreviewPayload::Animated { .. }) => {
@@ -999,6 +1052,7 @@ fn draw_markdown(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
     markdown: &str,
+    highlight_range: Option<(usize, usize)>,
     jump_to_byte: Option<usize>,
 ) {
     use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -1054,6 +1108,48 @@ fn draw_markdown(
             *job = egui::text::LayoutJob::default();
             *has_content = false;
         }
+    }
+
+    /// Appends `text` to `job` with `format`, splitting it into up to three
+    /// runs (before/matched/after) and giving the matched run a highlighted
+    /// background when `highlight_range` (a byte range in the *source*
+    /// Markdown) overlaps `source_range` (this `Event::Text`'s own source
+    /// byte range). Falls back to one plain append whenever the overlap
+    /// can't be resolved cleanly (no overlap, or `text` doesn't line up
+    /// byte-for-byte with `source_range` - e.g. an HTML entity that decoded
+    /// to a different length than its source spelling) rather than risk
+    /// slicing at a non-char boundary.
+    fn append_with_highlight(
+        job: &mut egui::text::LayoutJob,
+        text: &str,
+        source_range: &std::ops::Range<usize>,
+        format: egui::text::TextFormat,
+        highlight_range: Option<(usize, usize)>,
+        highlight_bg: egui::Color32,
+    ) {
+        if let Some((highlight_start, highlight_end)) = highlight_range
+            && text.len() == source_range.len()
+        {
+            let overlap_start = highlight_start.max(source_range.start);
+            let overlap_end = highlight_end.min(source_range.end);
+            if overlap_start < overlap_end {
+                let local_start = overlap_start - source_range.start;
+                let local_end = overlap_end - source_range.start;
+                if text.is_char_boundary(local_start) && text.is_char_boundary(local_end) {
+                    if local_start > 0 {
+                        job.append(&text[..local_start], 0.0, format.clone());
+                    }
+                    let mut highlighted = format.clone();
+                    highlighted.background = highlight_bg;
+                    job.append(&text[local_start..local_end], 0.0, highlighted);
+                    if local_end < text.len() {
+                        job.append(&text[local_end..], 0.0, format);
+                    }
+                    return;
+                }
+            }
+        }
+        job.append(text, 0.0, format);
     }
 
     let mut events = Parser::new_ext(
@@ -1223,9 +1319,10 @@ fn draw_markdown(
                     } else {
                         egui::Stroke::NONE
                     };
-                    job.append(
+                    append_with_highlight(
+                        &mut job,
                         &text,
-                        0.0,
+                        &source_range,
                         egui::text::TextFormat {
                             font_id: egui::FontId::proportional(size),
                             color,
@@ -1233,6 +1330,8 @@ fn draw_markdown(
                             strikethrough,
                             ..Default::default()
                         },
+                        highlight_range,
+                        find_highlight_bg_color(ui),
                     );
                     job_has_content = true;
                 }

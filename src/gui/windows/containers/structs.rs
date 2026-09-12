@@ -999,6 +999,15 @@ impl FindInPreviewState {
         self.current + 1
     }
 
+    /// The current match's byte range, if there is one - unlike
+    /// `take_jump_target`, this doesn't consume anything, so the renderer
+    /// can call it every frame to keep the match highlighted (scrolling
+    /// only needs to happen once per change, but the highlight itself
+    /// should stay visible for as long as it's the active match).
+    pub fn current_match_range(&self) -> Option<(usize, usize)> {
+        self.matches.get(self.current).copied()
+    }
+
     /// Re-runs the search against `haystack` (the previewed text, or the
     /// raw Markdown source) and jumps to the first match.
     pub fn recompute(&mut self, haystack: &str) {
