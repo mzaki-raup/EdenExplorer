@@ -1084,6 +1084,45 @@ PowerShell process) rather than the app's own code - if you're using the
   above was), suspect the clip rect's own bounds before re-blending stroke
   colors again - give the clip a few px of slack past where content is
   expected to actually reach, rather than sizing it to the exact pixel.
+- **A settings-page "edit mode" toggle that only writes to a `selected_*`
+  field on the *editor's own* state, with no code path that also updates
+  the live value it's supposed to preview, silently does nothing when the
+  editor isn't currently showing the active value.** The Appearance page's
+  Dark/Light mode buttons (`customizetheme.rs`) only ever set `customizer.
+  selected_mode` (which palette the editor displays/edits) - the actual
+  rendered theme is a separate `MainWindow::theme` field, only changed by
+  the topbar's own theme-toggle icon. `apply_theme_customizer_action`
+  (`mainwindow_imp.rs`) only marks the live theme dirty (triggering a
+  repaint) `if mode == current_mode` - so clicking "Light mode" while the
+  app is running in Dark mode saved every subsequent color edit to disk
+  correctly, but produced zero visible change, because the mode being
+  edited was never the mode being displayed. This reads exactly like "the
+  picker doesn't work" even though the underlying color-application code
+  is completely fine. Fixed by making the mode-toggle buttons also flip the
+  live theme (a new `ThemeCustomizerAction::SetLiveMode`). When a settings
+  page has both "which thing am I editing" state and a separately-tracked
+  "what's actually live" state, check that switching the former also
+  switches the latter (or intentionally decide it shouldn't, and make that
+  obvious in the UI) - don't assume a mode toggle implies a live preview
+  just because it looks like one.
+- **A color-picker field with no reader anywhere in the codebase looks
+  identical to a working one - it renders, it opens a working picker, it
+  even sets a real struct field - only nothing draws with that field's
+  value.** The Appearance page's "Resize Handle" row edited `palette.
+  resize_handle`, a real, fully wired-up field - but the actual sidebar-
+  drag-handle paint call (`mainwindow.rs`) read `palette.
+  button_seperator_handle_fill` instead (a same-purpose field that existed
+  for historical reasons, oddly filed under "Checkboxes & Buttons"). Two
+  fields doing the same job, one of them silently dead. `grep`-ing for
+  every real field name gets easy to skip once a codebase has ~60+ palette
+  fields across a dozen customizer sections; the sort of check that
+  actually catches this is per-field, not per-section: for a "this picker
+  does nothing" report, grep the *exact* field name (not just the section)
+  across the whole codebase and confirm at least one non-customizer call
+  site reads it, before assuming the wiring is fine because the section
+  "looks complete." Fixed by repointing the real call site to the
+  correctly-named field and deleting the dead one outright, rather than
+  leaving two fields for one control.
 
 ## Operational Instructions
 
