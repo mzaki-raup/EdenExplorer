@@ -271,23 +271,19 @@ fn status_icon(status: FileOpStatus) -> &'static str {
     }
 }
 
-/// Every status uses the user's own accent color (`palette.primary`) rather
-/// than a fixed red/green - `drive_usage_normal`/`drive_usage_critical`
-/// looked like an improvement over a hardcoded literal, but they're
-/// themselves fixed literals in `get_default_palette` that
-/// `regenerate_base_derived_colors` never re-derives from the accent, so
-/// switching to them didn't actually make the panel follow a custom accent
-/// color at all. The icon glyph (checkmark/warning/x) and the status text
-/// already distinguish Completed/Failed/Cancelled, so the color itself
-/// doesn't need to carry that meaning too - `Cancelled` alone stays neutral
-/// since "nothing happened" doesn't need the accent's emphasis.
+/// Standard, user-overridable semantic colors rather than the accent - a
+/// completed operation reads as genuinely "done" (green) regardless of
+/// which accent color the theme happens to use, matching the same
+/// completed/in-progress/failed convention as `notification_status_*`'s own
+/// doc comments. `Failed` and `Cancelled` share the "error" color rather
+/// than `Cancelled` getting its own fourth shade - the icon glyph
+/// (checkmark/warning/x) and status text already distinguish them, so the
+/// color only needs to carry "this one didn't finish normally."
 fn status_color(status: FileOpStatus, palette: &ThemePalette) -> Color32 {
     match status {
-        FileOpStatus::InProgress
-        | FileOpStatus::Paused
-        | FileOpStatus::Completed
-        | FileOpStatus::Failed => palette.primary,
-        FileOpStatus::Cancelled => palette.icon_color,
+        FileOpStatus::Completed => palette.notification_status_success,
+        FileOpStatus::InProgress | FileOpStatus::Paused => palette.notification_status_warning,
+        FileOpStatus::Failed | FileOpStatus::Cancelled => palette.notification_status_error,
     }
 }
 
@@ -403,7 +399,10 @@ pub fn draw_notifications_button(
             .fixed_pos(popup_pos)
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                egui::Frame::popup(ui.style())
+                    .fill(palette.notification_bg_color)
+                    .stroke(Stroke::new(1.0, palette.notification_border_color))
+                    .show(ui, |ui| {
                     ui.set_width(PANEL_WIDTH);
 
                     ui.horizontal(|ui| {
@@ -411,7 +410,7 @@ pub fn draw_notifications_button(
                             RichText::new(i18n.tr("notifications_title"))
                                 .size(palette.text_size)
                                 .strong()
-                                .color(ui.visuals().text_color()),
+                                .color(palette.notification_header_text_color),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if !state.operations.is_empty()
@@ -684,8 +683,8 @@ pub fn draw_toast(
         .show(ctx, |ui| {
             ui.set_width(toast_width);
             let frame = egui::Frame::popup(ui.style())
-                .fill(ui.visuals().extreme_bg_color.gamma_multiply(alpha.max(0.05)))
-                .stroke(Stroke::new(1.0, palette.borders_default.gamma_multiply(alpha)))
+                .fill(palette.notification_bg_color.gamma_multiply(alpha.max(0.05)))
+                .stroke(Stroke::new(1.0, palette.notification_border_color.gamma_multiply(alpha)))
                 .corner_radius(CornerRadius::same(palette.medium_radius));
             frame.show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -698,7 +697,7 @@ pub fn draw_toast(
                         ui.label(
                             RichText::new(operation_title(i18n, op))
                                 .size(palette.text_size)
-                                .color(ui.visuals().text_color().gamma_multiply(alpha)),
+                                .color(palette.notification_header_text_color.gamma_multiply(alpha)),
                         );
                         ui.label(
                             RichText::new(status_label(i18n, op.status))
@@ -711,4 +710,37 @@ pub fn draw_toast(
         });
 
     ctx.request_repaint_after(Duration::from_millis(200));
+}
+
+#[cfg(test)]
+mod status_color_tests {
+    use super::*;
+    use crate::gui::theme::get_default_palette;
+    use crate::gui::theme::ThemeMode;
+
+    #[test]
+    fn completed_maps_to_success_in_progress_and_paused_to_warning_failed_and_cancelled_to_error() {
+        let palette = get_default_palette(ThemeMode::Dark);
+
+        assert_eq!(
+            status_color(FileOpStatus::Completed, &palette),
+            palette.notification_status_success
+        );
+        assert_eq!(
+            status_color(FileOpStatus::InProgress, &palette),
+            palette.notification_status_warning
+        );
+        assert_eq!(
+            status_color(FileOpStatus::Paused, &palette),
+            palette.notification_status_warning
+        );
+        assert_eq!(
+            status_color(FileOpStatus::Failed, &palette),
+            palette.notification_status_error
+        );
+        assert_eq!(
+            status_color(FileOpStatus::Cancelled, &palette),
+            palette.notification_status_error
+        );
+    }
 }

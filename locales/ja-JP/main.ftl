@@ -472,3 +472,12 @@ theme_colors_toolbar_bg = ツールバー背景
 theme_colors_toolbar_icon_disabled = ツールバーアイコン（無効）
 theme_colors_preview_pane = プレビューパネル
 theme_colors_preview_pane_bg = プレビューパネル背景
+
+theme_colors_notifications = 通知
+theme_colors_notification_border = 通知の枠線
+theme_colors_notification_bg = 通知の背景
+theme_colors_notification_header_text = 通知のヘッダーテキスト
+theme_colors_notification_status_success = ステータス：成功
+theme_colors_notification_status_warning = ステータス：警告
+theme_colors_notification_status_error = ステータス：エラー
+theme_colors_notification_status_info = ステータス：情報

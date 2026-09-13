@@ -472,3 +472,12 @@ theme_colors_toolbar_bg = 工具栏背景
 theme_colors_toolbar_icon_disabled = 工具栏图标（禁用）
 theme_colors_preview_pane = 预览面板
 theme_colors_preview_pane_bg = 预览面板背景
+
+theme_colors_notifications = 通知
+theme_colors_notification_border = 通知边框
+theme_colors_notification_bg = 通知背景
+theme_colors_notification_header_text = 通知标题文字
+theme_colors_notification_status_success = 状态：成功
+theme_colors_notification_status_warning = 状态：警告
+theme_colors_notification_status_error = 状态：错误
+theme_colors_notification_status_info = 状态：信息

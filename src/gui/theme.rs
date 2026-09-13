@@ -114,6 +114,42 @@ fn default_search_active_icon_bg() -> Color32 {
     Color32::from_rgba_unmultiplied(110, 85, 160, 128)
 }
 
+// Matches the dark theme's own `borders_default`/`input_field_bg`/
+// `text_normal` defaults - the values these fields replace as direct reads
+// in the notification panel/toast.
+fn default_notification_border_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(110, 85, 160, 60)
+}
+
+fn default_notification_bg_color() -> Color32 {
+    Color32::from_rgb(30, 34, 40)
+}
+
+fn default_notification_header_text_color() -> Color32 {
+    Color32::from_rgb(160, 170, 180)
+}
+
+// Standard semantic colors - unlike the fields above, these introduce a
+// genuinely new look (the panel previously used the accent color for every
+// status) rather than preserving an old value, since that's the whole
+// point of this field: completed/in-progress/failed should read as
+// green/yellow/red regardless of the theme's own accent.
+fn default_notification_status_success() -> Color32 {
+    Color32::from_rgb(60, 190, 110)
+}
+
+fn default_notification_status_warning() -> Color32 {
+    Color32::from_rgb(235, 155, 60)
+}
+
+fn default_notification_status_error() -> Color32 {
+    Color32::from_rgb(220, 60, 60)
+}
+
+fn default_notification_status_info() -> Color32 {
+    Color32::from_rgb(0, 120, 215)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -299,6 +335,29 @@ pub struct ThemePalette {
     pub toolbar_icon_disabled_color: Color32,
     #[serde(default = "default_transparent")]
     pub preview_pane_bg_color: Color32,
+
+    // Notification panel/toast - previously a mix of ambient/shared-field
+    // reads (border/background/header text) and a single accent color used
+    // for every status (success/warning/error all read as `primary`).
+    #[serde(default = "default_notification_border_color")]
+    pub notification_border_color: Color32,
+    #[serde(default = "default_notification_bg_color")]
+    pub notification_bg_color: Color32,
+    #[serde(default = "default_notification_header_text_color")]
+    pub notification_header_text_color: Color32,
+    /// Standard semantic colors for `FileOpStatus` - completed (green),
+    /// in-progress/paused (yellow/orange), failed/cancelled (red). `_info`
+    /// (blue) has no current call site (there's no plain "info" toast in
+    /// this codebase, only `FileOpStatus`-backed ones) but is still a real,
+    /// user-editable field for future use.
+    #[serde(default = "default_notification_status_success")]
+    pub notification_status_success: Color32,
+    #[serde(default = "default_notification_status_warning")]
+    pub notification_status_warning: Color32,
+    #[serde(default = "default_notification_status_error")]
+    pub notification_status_error: Color32,
+    #[serde(default = "default_notification_status_info")]
+    pub notification_status_info: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -416,6 +475,13 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         toolbar_bg_color: Color32::TRANSPARENT,
         toolbar_icon_disabled_color: Color32::from_rgb(160, 170, 180),
         preview_pane_bg_color: Color32::TRANSPARENT,
+        notification_border_color: default_notification_border_color(),
+        notification_bg_color: default_notification_bg_color(),
+        notification_header_text_color: Color32::from_rgb(160, 170, 180),
+        notification_status_success: default_notification_status_success(),
+        notification_status_warning: default_notification_status_warning(),
+        notification_status_error: default_notification_status_error(),
+        notification_status_info: default_notification_status_info(),
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -531,6 +597,13 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         toolbar_bg_color: Color32::TRANSPARENT,
         toolbar_icon_disabled_color: Color32::from_rgb(70, 78, 86),
         preview_pane_bg_color: Color32::TRANSPARENT,
+        notification_border_color: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        notification_bg_color: Color32::from_rgb(247, 248, 250),
+        notification_header_text_color: Color32::from_rgb(70, 78, 86),
+        notification_status_success: Color32::from_rgb(54, 168, 82),
+        notification_status_warning: Color32::from_rgb(235, 155, 60),
+        notification_status_error: Color32::from_rgb(200, 52, 52),
+        notification_status_info: Color32::from_rgb(0, 120, 215),
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette

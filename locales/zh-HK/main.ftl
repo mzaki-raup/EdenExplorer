@@ -472,3 +472,12 @@ theme_colors_toolbar_bg = 工具列背景
 theme_colors_toolbar_icon_disabled = 工具列圖示（停用）
 theme_colors_preview_pane = 預覽面板
 theme_colors_preview_pane_bg = 預覽面板背景
+
+theme_colors_notifications = 通知
+theme_colors_notification_border = 通知邊框
+theme_colors_notification_bg = 通知背景
+theme_colors_notification_header_text = 通知標題文字
+theme_colors_notification_status_success = 狀態：成功
+theme_colors_notification_status_warning = 狀態：警告
+theme_colors_notification_status_error = 狀態：錯誤
+theme_colors_notification_status_info = 狀態：資訊

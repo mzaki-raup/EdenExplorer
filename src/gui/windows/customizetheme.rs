@@ -1048,6 +1048,66 @@ pub fn draw_theme_customizer_content(
                                     &mut editing_palette.preview_pane_bg_color,
                                 );
                             });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_notifications"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_notifications")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_border",
+                                    &mut editing_palette.notification_border_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_bg",
+                                    &mut editing_palette.notification_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_header_text",
+                                    &mut editing_palette.notification_header_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_status_success",
+                                    &mut editing_palette.notification_status_success,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_status_warning",
+                                    &mut editing_palette.notification_status_warning,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_status_error",
+                                    &mut editing_palette.notification_status_error,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_notification_status_info",
+                                    &mut editing_palette.notification_status_info,
+                                );
+                            });
                     });
                 });
 

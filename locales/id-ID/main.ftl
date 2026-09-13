@@ -471,3 +471,12 @@ theme_colors_toolbar_bg = Latar Belakang Bilah Alat
 theme_colors_toolbar_icon_disabled = Ikon Bilah Alat (Nonaktif)
 theme_colors_preview_pane = Panel Pratinjau
 theme_colors_preview_pane_bg = Latar Belakang Panel Pratinjau
+
+theme_colors_notifications = Notifikasi
+theme_colors_notification_border = Batas Notifikasi
+theme_colors_notification_bg = Latar Belakang Notifikasi
+theme_colors_notification_header_text = Teks Judul Notifikasi
+theme_colors_notification_status_success = Status: Berhasil
+theme_colors_notification_status_warning = Status: Peringatan
+theme_colors_notification_status_error = Status: Kesalahan
+theme_colors_notification_status_info = Status: Info

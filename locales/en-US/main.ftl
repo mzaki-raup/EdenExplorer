@@ -468,3 +468,12 @@ theme_colors_toolbar_bg = Toolbar Background
 theme_colors_toolbar_icon_disabled = Toolbar Icon (Disabled)
 theme_colors_preview_pane = Preview Pane
 theme_colors_preview_pane_bg = Preview Pane Background
+
+theme_colors_notifications = Notifications
+theme_colors_notification_border = Notification Border
+theme_colors_notification_bg = Notification Background
+theme_colors_notification_header_text = Notification Header Text
+theme_colors_notification_status_success = Status: Success
+theme_colors_notification_status_warning = Status: Warning
+theme_colors_notification_status_error = Status: Error
+theme_colors_notification_status_info = Status: Info
