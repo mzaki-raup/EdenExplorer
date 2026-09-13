@@ -331,7 +331,7 @@ pub fn draw_theme_customizer_content(
                         ui.horizontal_wrapped(|ui| {
                             for preset in PALETTE_PRESETS {
                                 let is_selected = editing_palette.primary == preset.accent
-                                    && editing_palette.pinned_tab_color == preset.pinned_tab_color;
+                                    && editing_palette.secondary_accent == preset.secondary;
 
                                 let (rect, resp) = ui.allocate_exact_size(
                                     egui::vec2(64.0, 32.0),
@@ -358,7 +358,7 @@ pub fn draw_theme_customizer_content(
                                             ne: radius,
                                             se: radius,
                                         },
-                                        preset.pinned_tab_color,
+                                        preset.secondary,
                                     );
                                     painter.rect_stroke(
                                         rect,

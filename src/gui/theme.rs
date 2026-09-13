@@ -74,6 +74,13 @@ fn default_selection_text_color() -> Color32 {
     Color32::WHITE
 }
 
+// Matches the Default preset's own secondary (see `PALETTE_PRESETS`) so an
+// old save file loading this field for the first time sees no change until
+// it actually applies a preset.
+fn default_secondary_accent() -> Color32 {
+    Color32::from_rgb(242, 201, 76)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -199,6 +206,19 @@ pub struct ThemePalette {
     /// `style.visuals.selection.bg_fill`, not the page background.
     #[serde(default = "default_selection_text_color")]
     pub selection_text_color: Color32,
+
+    /// The theme's "second" hue, deliberately distinct from `primary` in hue
+    /// and value (a `ThemePresetDef` picks it via complementary/temperature
+    /// contrast against its own accent - see `PALETTE_PRESETS`'s doc
+    /// comment). `regenerate_base_derived_colors` tints `toolbar_icon_color`
+    /// from this instead of `primary`, so the toolbar reads as a distinct
+    /// "band" from the primary-tinted surfaces around it. Not exposed as its
+    /// own Core Colors picker - `pinned_tab_color`/`button_favorite_fill`/
+    /// `toolbar_icon_color` already have their own rows for manual tuning,
+    /// this field only exists so a preset click can set all of them
+    /// consistently in one step.
+    #[serde(default = "default_secondary_accent")]
+    pub secondary_accent: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -304,6 +324,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         widget_text_hovered: Color32::from_rgb(245, 240, 255),
         widget_text_active: Color32::from_rgb(255, 250, 255),
         selection_text_color: Color32::from_rgb(255, 255, 255),
+        secondary_accent: default_secondary_accent(),
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -407,6 +428,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         widget_text_hovered: Color32::from_rgb(25, 29, 33),
         widget_text_active: Color32::from_rgb(15, 18, 22),
         selection_text_color: Color32::from_rgb(15, 18, 22),
+        secondary_accent: default_secondary_accent(),
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -604,10 +626,15 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         palette.tab_inactive_bg_color = tint(Color32::from_rgb(28, 32, 38), base, 0.10);
 
         // Icons: white base, only slightly warmed toward the accent so they
-        // stay legible against any accent hue; toolbar icons get a touch
-        // more so the toolbar reads as "branded" at a glance.
+        // stay legible against any accent hue - this is the "60%" dominant
+        // tier (every ordinary file/folder icon shares this tint, cohering
+        // with the accent-tinted surfaces around it). Toolbar icons instead
+        // tint toward `secondary_accent`: a full, visually-bounded row of
+        // icons is exactly the "30%" tier a genuinely distinct second hue
+        // needs to actually read as present, rather than a token accent
+        // touch nobody notices.
         palette.icon_color = tint(Color32::WHITE, base, 0.15);
-        palette.toolbar_icon_color = tint(Color32::WHITE, base, 0.30);
+        palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.55);
 
         let neutral = Color32::from_rgb(160, 170, 180);
         palette.button_background = tint_alpha(neutral, base, 0.16, 20);
@@ -628,7 +655,8 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         palette.tab_inactive_bg_color = tint(Color32::from_rgb(233, 235, 239), base, 0.10);
 
         palette.icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.15);
-        palette.toolbar_icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.30);
+        palette.toolbar_icon_color =
+            tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.55);
 
         let neutral = Color32::from_rgb(160, 170, 180);
         palette.button_background = tint_alpha(neutral, base, 0.16, 95);
@@ -642,102 +670,131 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to
-/// hand-picking an accent + core colors one at a time. Deliberately small:
-/// only the accent plus a couple of curated, purely-decorative fields
-/// (the pinned-tab star, the favorite-star fill) that aren't already
-/// recomputed by `regenerate_base_derived_colors`, so applying a preset
-/// can't clobber semantic colors (drive-usage warning/critical, tab-close
-/// hover, etc.) that need to keep meaning the same across every theme.
+/// hand-picking an accent + core colors one at a time.
+///
+/// Each preset is a deliberate two-color system, not just an accent with a
+/// decorative afterthought - `accent` and `secondary` are chosen together
+/// against a checklist of real color-design principles, so the second color
+/// actually reads as intentional rather than as a random extra swatch:
+///
+/// - **Complementary / Temperature Contrast**: `secondary` sits on the
+///   opposite side of the color wheel from `accent` *and* the opposite
+///   temperature (a cool accent gets a warm secondary, and vice versa) -
+///   e.g. Midnight's cool blue accent pairs with a warm amber secondary,
+///   Sunset's warm orange accent pairs with a cool sky-blue secondary. A
+///   secondary that's just a paler/darker tint of the *same* hue as accent
+///   (an early mistake in this list, since fixed) isn't a real secondary at
+///   all - it's an analogous tint, no contrast to offer.
+/// - **Value Contrast**: every pair keeps a meaningfully different
+///   perceptual brightness (roughly a 25+ point gap in 0-255 luma), so the
+///   two halves of a preset's preview swatch - and the two roles they play
+///   in the UI - stay visually distinguishable rather than reading as one
+///   same-brightness blob.
+/// - **Analogous Ties**: contrast alone would make every preset a jarring
+///   photonegative of itself - each secondary's *saturation/value* is tuned
+///   to feel like it belongs to the same "family" as its accent (e.g. both
+///   fairly saturated and mid-toned, or both muted), which is what actually
+///   reads as "these two colors were chosen together" rather than "two
+///   colors picked at random."
+/// - **60-30-10 Rule / Visual Weight / Asymmetrical Placement**: `accent`
+///   is the dominant 60% - it tints the large surfaces (backgrounds,
+///   sidebar, row backgrounds) and the app's ordinary file/folder icons via
+///   `regenerate_base_derived_colors`. `secondary` is the 30% mid-tier -
+///   `toolbar_icon_color` (a whole, visually-bounded row of icons) tints
+///   from it instead of accent, so it has real coverage, not a token touch.
+///   `pinned_tab_color`/`button_favorite_fill` are the rare 10% pop - tiny,
+///   high-saturation accents on elements a user only occasionally sees. The
+///   two colors deliberately never share the same *kind* of element
+///   (asymmetrical placement) - accent owns backgrounds, secondary owns the
+///   toolbar band plus a couple of small pops - so they read as a designed
+///   hierarchy instead of two competing "this is the accent" signals.
+/// - **Echoing**: `secondary` reappears in three distinct places (toolbar
+///   icons, the pinned-tab star, the favorite-folder star) rather than
+///   once, so it registers as a real part of the theme's identity instead
+///   of a one-off accent nobody notices.
+///
+/// Deliberately excludes any semantic color (drive-usage warning/critical,
+/// tab-close hover, etc.) - a preset can't change what a color *means*
+/// elsewhere in the app, only the brand identity built from `accent`/
+/// `secondary`.
 pub struct ThemePresetDef {
     pub name_key: &'static str,
     pub accent: Color32,
-    pub pinned_tab_color: Color32,
-    pub button_favorite_fill: Color32,
+    pub secondary: Color32,
 }
 
 pub static PALETTE_PRESETS: &[ThemePresetDef] = &[
     ThemePresetDef {
         name_key: "theme_preset_default",
         accent: Color32::from_rgb(110, 85, 160),
-        pinned_tab_color: Color32::from_rgb(242, 201, 76),
-        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+        secondary: Color32::from_rgb(242, 201, 76),
     },
     ThemePresetDef {
         name_key: "theme_preset_midnight",
         accent: Color32::from_rgb(54, 90, 196),
-        pinned_tab_color: Color32::from_rgb(176, 196, 255),
-        button_favorite_fill: Color32::from_rgb(176, 196, 255),
+        secondary: Color32::from_rgb(224, 150, 64),
     },
     ThemePresetDef {
         name_key: "theme_preset_ocean",
         accent: Color32::from_rgb(0, 150, 160),
-        pinned_tab_color: Color32::from_rgb(224, 196, 120),
-        button_favorite_fill: Color32::from_rgb(224, 196, 120),
+        secondary: Color32::from_rgb(235, 120, 95),
     },
     ThemePresetDef {
         name_key: "theme_preset_forest",
         accent: Color32::from_rgb(46, 133, 64),
-        pinned_tab_color: Color32::from_rgb(214, 170, 64),
-        button_favorite_fill: Color32::from_rgb(214, 170, 64),
+        secondary: Color32::from_rgb(214, 170, 64),
     },
     ThemePresetDef {
         name_key: "theme_preset_sunset",
         accent: Color32::from_rgb(214, 94, 54),
-        pinned_tab_color: Color32::from_rgb(255, 178, 74),
-        button_favorite_fill: Color32::from_rgb(255, 178, 74),
+        secondary: Color32::from_rgb(110, 180, 230),
     },
     ThemePresetDef {
         name_key: "theme_preset_slate",
         accent: Color32::from_rgb(90, 98, 110),
-        pinned_tab_color: Color32::from_rgb(176, 182, 190),
-        button_favorite_fill: Color32::from_rgb(176, 182, 190),
+        secondary: Color32::from_rgb(224, 158, 64),
     },
     ThemePresetDef {
         name_key: "theme_preset_crimson",
         accent: Color32::from_rgb(196, 43, 60),
-        pinned_tab_color: Color32::from_rgb(255, 158, 122),
-        button_favorite_fill: Color32::from_rgb(255, 158, 122),
+        secondary: Color32::from_rgb(60, 190, 168),
     },
     ThemePresetDef {
         name_key: "theme_preset_magenta",
         accent: Color32::from_rgb(191, 0, 119),
-        pinned_tab_color: Color32::from_rgb(255, 158, 204),
-        button_favorite_fill: Color32::from_rgb(255, 158, 204),
+        secondary: Color32::from_rgb(60, 196, 140),
     },
     ThemePresetDef {
         name_key: "theme_preset_violet",
         accent: Color32::from_rgb(139, 58, 201),
-        pinned_tab_color: Color32::from_rgb(216, 180, 254),
-        button_favorite_fill: Color32::from_rgb(216, 180, 254),
+        secondary: Color32::from_rgb(224, 188, 72),
     },
     ThemePresetDef {
         name_key: "theme_preset_indigo",
         accent: Color32::from_rgb(63, 81, 181),
-        pinned_tab_color: Color32::from_rgb(165, 175, 224),
-        button_favorite_fill: Color32::from_rgb(165, 175, 224),
+        secondary: Color32::from_rgb(232, 168, 64),
     },
     ThemePresetDef {
         name_key: "theme_preset_skyline",
         accent: Color32::from_rgb(0, 120, 215),
-        pinned_tab_color: Color32::from_rgb(255, 214, 64),
-        button_favorite_fill: Color32::from_rgb(255, 214, 64),
+        secondary: Color32::from_rgb(255, 214, 64),
     },
     ThemePresetDef {
         name_key: "theme_preset_horizon",
         accent: Color32::from_rgb(55, 120, 185),
-        pinned_tab_color: Color32::from_rgb(235, 150, 60),
-        button_favorite_fill: Color32::from_rgb(235, 150, 60),
+        secondary: Color32::from_rgb(235, 150, 60),
     },
 ];
 
-/// Applies a named preset's accent + curated colors to `palette`, then
-/// re-derives every accent-driven surface/icon color exactly like manually
-/// editing the accent swatch would - a preset is just a bundle of manual
+/// Applies a named preset's accent + secondary to `palette`, then re-derives
+/// every accent/secondary-driven surface/icon color exactly like manually
+/// editing the two swatches would - a preset is just a bundle of manual
 /// edits applied in one click, not a separate code path.
 pub fn apply_theme_preset(palette: &mut ThemePalette, preset: &ThemePresetDef, is_dark: bool) {
     palette.primary = preset.accent;
-    palette.pinned_tab_color = preset.pinned_tab_color;
-    palette.button_favorite_fill = preset.button_favorite_fill;
+    palette.secondary_accent = preset.secondary;
+    palette.pinned_tab_color = preset.secondary;
+    palette.button_favorite_fill = preset.secondary;
     regenerate_base_derived_colors(palette, is_dark);
 }
 
