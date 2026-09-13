@@ -59,7 +59,10 @@ pub fn draw_theme_customizer_content(
     {
         {
             ui.set_width(ui.available_width());
-            // TOP SECTION: select which palette to edit
+            // TOP SECTION: select which palette to edit - also switches the
+            // live app theme to match (see `ThemeCustomizerAction::
+            // SetLiveMode`'s doc comment), so clicking "Light mode" here
+            // both edits the light palette *and* actually shows it.
             ui.horizontal(|ui| {
                 if selectable_mode(
                     ui,
@@ -69,6 +72,7 @@ pub fn draw_theme_customizer_content(
                     &i18n.tr("theme_dark"),
                 ) {
                     customizer.selected_mode = ThemeMode::Dark;
+                    action = Some(ThemeCustomizerAction::SetLiveMode(ThemeMode::Dark));
                 }
 
                 if selectable_mode(
@@ -79,8 +83,12 @@ pub fn draw_theme_customizer_content(
                     &i18n.tr("theme_light"),
                 ) {
                     customizer.selected_mode = ThemeMode::Light;
+                    action = Some(ThemeCustomizerAction::SetLiveMode(ThemeMode::Light));
                 }
             });
+            // Real gap before the scrollable content below, rather than the
+            // row's own item spacing being the only separation.
+            ui.add_space(10.0);
 
             let editing_palette = match customizer.selected_mode {
                 ThemeMode::Dark => &mut customizer.dark_palette,
@@ -712,6 +720,13 @@ pub fn draw_theme_customizer_content(
                                     "theme_colors_resize_handle",
                                     &mut editing_palette.resize_handle,
                                 );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_separator",
+                                    &mut editing_palette.separator_color,
+                                );
                             });
 
                         ui.add_space(10.0);
@@ -870,13 +885,6 @@ pub fn draw_theme_customizer_content(
                                     i18n,
                                     "theme_colors_button_favorite_fill",
                                     &mut editing_palette.button_favorite_fill,
-                                );
-                                changed |= color_row(
-                                    ui,
-                                    palette,
-                                    i18n,
-                                    "theme_colors_button_separator_handle",
-                                    &mut editing_palette.button_seperator_handle_fill,
                                 );
                             });
 

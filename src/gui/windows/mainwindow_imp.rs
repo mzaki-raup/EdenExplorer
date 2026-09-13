@@ -5009,6 +5009,10 @@ impl MainWindow {
                     }
                 }
             }
+            ThemeCustomizerAction::SetLiveMode(mode) => {
+                self.theme = mode;
+                self.theme_dirty = true;
+            }
             ThemeCustomizerAction::SidebarWidthChanged(width) => {
                 self.sidebar_state.sidebar_default_width = width;
                 crate::core::indexer::save_sidebar_sections(

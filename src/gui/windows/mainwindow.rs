@@ -45,6 +45,13 @@ use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 
+/// Thickness of the top-line indicator on the currently active pane in dual-
+/// pane mode. Kept as one named constant, not two independent literals -
+/// the primary and secondary pane each draw their own `hline`, and a past
+/// bump (2.0 -> 4.0) touched both call sites by hand, which is an easy way
+/// for the two to silently drift apart.
+const ACTIVE_PANE_INDICATOR_THICKNESS: f32 = 6.0;
+
 pub struct MainWindow {
     // MainWindow General Variables
     pub(crate) theme: ThemeMode,
@@ -846,7 +853,7 @@ impl eframe::App for MainWindow {
                                 ui.painter().rect_filled(
                                     handle_rect,
                                     handle_width / 2.0,
-                                    palette.button_seperator_handle_fill,
+                                    palette.resize_handle,
                                 );
                             }
 
@@ -1116,7 +1123,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        4.0,
+                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );
@@ -1210,7 +1217,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        4.0,
+                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );

@@ -9,6 +9,13 @@ pub enum ThemeCustomizerAction {
     /// has one width regardless of dark/light mode), so it carries the new
     /// width directly instead of a `ThemeMode`.
     SidebarWidthChanged(f32),
+    /// The customizer's own Dark/Light toggle was clicked - switches which
+    /// palette is being *edited*, but previously never touched the live
+    /// app theme (`MainWindow::theme`), so editing the mode that wasn't
+    /// currently rendered silently had no visible effect. This makes the
+    /// editor's mode toggle also become the live theme, so what's shown in
+    /// the editor is always what's on screen.
+    SetLiveMode(crate::gui::theme::ThemeMode),
 }
 
 #[derive(Clone, Debug)]

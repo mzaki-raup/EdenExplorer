@@ -85,6 +85,17 @@ fn default_button_text_color() -> Color32 {
     Color32::from_rgb(220, 226, 232)
 }
 
+// `apply_theme` resets `style.visuals` to egui's own stock dark/light
+// defaults before applying palette overrides, but never touched
+// `widgets.noninteractive.bg_stroke` - the color every plain `ui.separator()`
+// call actually draws. Matches egui's own stock dark-mode value (same
+// "close enough for a migration fallback" reasoning as `default_icon_color_
+// dark` above - a serde default fn has no way to know which mode's palette
+// it's filling in for) rather than a fixed arbitrary literal.
+fn default_separator_color() -> Color32 {
+    egui::Visuals::dark().widgets.noninteractive.bg_stroke.color
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -177,7 +188,6 @@ pub struct ThemePalette {
     pub button_background: Color32,
     pub button_stroke: Color32,
     pub button_favorite_fill: Color32,
-    pub button_seperator_handle_fill: Color32,
 
     // 🎯 Corner radius values
     pub small_radius: u8,
@@ -231,6 +241,14 @@ pub struct ThemePalette {
     /// color too without sacrificing legibility.
     #[serde(default = "default_button_text_color")]
     pub button_text_color: Color32,
+
+    /// Color of every plain `ui.separator()` line app-wide (Settings page
+    /// section dividers, the notification panel divider, toolbar dividers,
+    /// etc.) - previously not palette-driven at all (`apply_theme` never
+    /// touched `widgets.noninteractive.bg_stroke`, so every separator used
+    /// egui's own stock gray regardless of theme).
+    #[serde(default = "default_separator_color")]
+    pub separator_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -309,7 +327,6 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 20),
         button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
         button_favorite_fill: Color32::from_rgb(242, 201, 76),
-        button_seperator_handle_fill: Color32::from_gray(120),
 
         // 🎯 Corner radius values
         small_radius: 2,
@@ -338,6 +355,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         selection_text_color: Color32::from_rgb(255, 255, 255),
         secondary_accent: default_secondary_accent(),
         button_text_color: default_button_text_color(),
+        separator_color: egui::Visuals::dark().widgets.noninteractive.bg_stroke.color,
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -414,7 +432,6 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 95),
         button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
         button_favorite_fill: Color32::from_rgb(242, 201, 76),
-        button_seperator_handle_fill: Color32::from_gray(180),
 
         // 🎯 Corner radius values
         small_radius: 2,
@@ -443,6 +460,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         selection_text_color: Color32::from_rgb(15, 18, 22),
         secondary_accent: default_secondary_accent(),
         button_text_color: Color32::from_rgb(35, 41, 47),
+        separator_color: egui::Visuals::light().widgets.noninteractive.bg_stroke.color,
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -553,6 +571,7 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     style.visuals.widgets.hovered.fg_stroke.color = palette.widget_text_hovered;
     style.visuals.widgets.active.fg_stroke.color = palette.widget_text_active;
     style.visuals.widgets.noninteractive.fg_stroke.color = palette.text_normal;
+    style.visuals.widgets.noninteractive.bg_stroke.color = palette.separator_color;
 
     ctx.set_style_of(theme, style);
     ctx.set_theme(theme);

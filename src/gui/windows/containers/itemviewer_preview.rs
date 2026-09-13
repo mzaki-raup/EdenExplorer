@@ -280,8 +280,33 @@ pub fn draw_preview_pane(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            ui.label(egui::RichText::new(file_name).strong());
-            ui.add_space(4.0);
+            // Its own small bordered box, bold + larger than body text, so
+            // the previewed file's name reads as a real header rather than
+            // just another line of the pane - outer margin only on the
+            // top/left/bottom (not right, since it already reads as
+            // anchored to the pane's own top-left corner).
+            egui::Frame::NONE
+                .stroke(egui::Stroke::new(1.0, palette.borders_default))
+                .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                .inner_margin(egui::Margin {
+                    left: 8,
+                    right: 8,
+                    top: 4,
+                    bottom: 4,
+                })
+                .outer_margin(egui::Margin {
+                    left: 4,
+                    right: 0,
+                    top: 4,
+                    bottom: 6,
+                })
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(file_name)
+                            .strong()
+                            .size(palette.text_size + 3.0),
+                    );
+                });
 
             ui.horizontal(|ui| {
                 draw_preview_pane_tab_button(
