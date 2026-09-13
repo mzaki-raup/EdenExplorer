@@ -237,47 +237,65 @@ fn draw_bordered_breadcrumb(
     let pill_border =
         egui::Color32::from_rgba_unmultiplied(pill_border.r(), pill_border.g(), pill_border.b(), (pill_border.a() as u16 * 2).min(255) as u8);
 
-    egui::Frame::NONE
-        .stroke(egui::Stroke::new(1.5, pill_border))
-        .corner_radius(egui::CornerRadius::same(palette.small_radius))
-        .inner_margin(egui::Margin {
-            left: side_margin as i8,
-            right: side_margin as i8,
-            top: 3,
-            bottom: 5,
-        })
-        .show(ui, |ui| {
-            let target_width = (full_width - right_gap).max(0.0);
-            let content_width = (target_width - side_margin * 2.0).max(0.0);
-            // Fixed-size allocation (not just `set_min_width`/relying on
-            // content to size the frame) is what actually forces the plain
-            // breadcrumb and the search box to the same height - handing
-            // the content a rect of an exact, predetermined size rather
-            // than letting it claim however much room it naturally wants.
-            ui.allocate_ui_with_layout(
-                egui::vec2(content_width, ADDRESS_BAR_CONTENT_HEIGHT),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    draw_breadcrumb_row_contents(
-                        ui,
-                        i18n,
-                        icon_cache,
-                        tab,
-                        tab_id,
-                        palette,
-                        drag_active,
-                        hovered_target_ref,
-                        pointer_pos,
-                        pointer_released,
-                        breadcrumb_drop_target,
-                        action,
-                        content_width,
-                        tags,
-                        saved_search_count,
-                    );
-                },
-            );
-        });
+    // Every previous attempt at forcing a fixed height here (`set_min_height`,
+    // `allocate_ui_with_layout` with a fixed size, a zero-width invisible
+    // spacer inside a nested `with_layout`) still let egui's own layout
+    // machinery decide the final size from whatever content actually got
+    // drawn - every one of those APIs is documented/designed to shrink back
+    // down to (or grow past) the content's real bounding box, not to hold a
+    // hard, unconditional size. The only way to truly guarantee a constant
+    // height regardless of content is to never let content size this rect
+    // at all: allocate the *entire* bordered pill up front as one exact
+    // rect (`allocate_exact_size`, the same primitive icon buttons already
+    // use for a real, non-negotiable size), paint the border ourselves,
+    // and hand the content a `new_child` ui that's clipped to fit inside -
+    // so overflow is invisible instead of growing the row.
+    let top_margin = 3.0;
+    let bottom_margin = 5.0;
+    let frame_height = ADDRESS_BAR_CONTENT_HEIGHT + top_margin + bottom_margin;
+    let target_width = (full_width - right_gap).max(0.0);
+
+    let (pill_rect, _resp) =
+        ui.allocate_exact_size(egui::vec2(target_width, frame_height), egui::Sense::hover());
+
+    if ui.is_rect_visible(pill_rect) {
+        ui.painter().rect_stroke(
+            pill_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            egui::Stroke::new(1.5, pill_border),
+            egui::StrokeKind::Outside,
+        );
+    }
+
+    let content_rect = egui::Rect::from_min_max(
+        pill_rect.min + egui::vec2(side_margin, top_margin),
+        pill_rect.max - egui::vec2(side_margin, bottom_margin),
+    );
+    let content_width = content_rect.width().max(0.0);
+
+    let mut content_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    content_ui.set_clip_rect(content_rect);
+    draw_breadcrumb_row_contents(
+        &mut content_ui,
+        i18n,
+        icon_cache,
+        tab,
+        tab_id,
+        palette,
+        drag_active,
+        hovered_target_ref,
+        pointer_pos,
+        pointer_released,
+        breadcrumb_drop_target,
+        action,
+        content_width,
+        tags,
+        saved_search_count,
+    );
 }
 
 /// Replaces the breadcrumb row's contents with an inline query box + scope
@@ -321,7 +339,7 @@ fn draw_search_box_contents(
             .inner_margin(egui::Margin {
                 left: 8,
                 right: 8,
-                top: 4,
+                top: 2,
                 bottom: 4,
             })
             .show(ui, |ui| {

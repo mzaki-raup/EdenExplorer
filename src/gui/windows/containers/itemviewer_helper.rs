@@ -1473,15 +1473,29 @@ pub fn handle_global_actions(
 
         let text_edit_id = ui.id().with("filter_input");
 
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut filter_state.query)
-                .id(text_edit_id)
-                .desired_width(200.0)
-                .font(FontId::new(
-                    palette.text_size,
-                    egui::FontFamily::Proportional,
-                )),
-        );
+        let response = egui::Frame::NONE
+            .fill(palette.input_field_bg)
+            .stroke(egui::Stroke::new(1.0, palette.borders_default))
+            .corner_radius(egui::CornerRadius::same(palette.small_radius))
+            .inner_margin(egui::Margin {
+                left: 8,
+                right: 8,
+                top: 4,
+                bottom: 4,
+            })
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut filter_state.query)
+                        .id(text_edit_id)
+                        .frame(egui::Frame::NONE)
+                        .desired_width(200.0)
+                        .font(FontId::new(
+                            palette.text_size,
+                            egui::FontFamily::Proportional,
+                        )),
+                )
+            })
+            .inner;
 
         if !filter_state.focus_requested {
             response.request_focus();
