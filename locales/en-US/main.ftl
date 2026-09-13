@@ -491,3 +491,8 @@ theme_custom_theme_delete_confirm = Theme name
 
 theme_custom_theme_secondary = Secondary
 theme_custom_theme_update = Update Theme
+
+custom_context_menu_export = Export
+custom_context_menu_import = Import
+settings_tags = Tags
+tooltip_settings_tags = Manage your tag groups: rename, recolor, reorder, or delete them, and see which items belong to each group.

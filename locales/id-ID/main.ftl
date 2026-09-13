@@ -494,3 +494,8 @@ theme_custom_theme_delete_confirm = Nama tema
 
 theme_custom_theme_secondary = Warna Kedua
 theme_custom_theme_update = Perbarui Tema
+
+custom_context_menu_export = Ekspor
+custom_context_menu_import = Impor
+settings_tags = Tag
+tooltip_settings_tags = Kelola grup tag Anda: ganti nama, ubah warna, urutkan ulang, atau hapus, serta lihat item mana saja yang termasuk dalam setiap grup.

@@ -107,6 +107,21 @@ struct CustomContextMenuSnapshot {
     entries: Vec<CustomContextMenuEntry>,
 }
 
+/// A standalone, human-readable export of *just* the custom context menu -
+/// distinct from `core::indexer::SettingsExportBundle`, which already
+/// carries this same list as part of a full settings export (it clones
+/// `AppSettings` wholesale, and `custom_context_menu` lives on that struct).
+/// This one lets a user share/back up only their custom commands, e.g. to
+/// hand a coworker a single "right-click tools" file without also exporting
+/// every other app setting.
+#[derive(Serialize, Deserialize)]
+pub struct ContextMenuExportBundle {
+    pub format_version: u32,
+    pub entries: Vec<CustomContextMenuEntry>,
+}
+
+pub const CONTEXT_MENU_EXPORT_FORMAT_VERSION: u32 = 1;
+
 fn cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("context_menu.bin"))
@@ -246,5 +261,45 @@ mod substitute_tests {
         let all = [PathBuf::from(r"C:\a.txt"), PathBuf::from(r"C:\b.txt")];
 
         assert_eq!(substitute("%*", &primary, &all), r#""C:\a.txt" "C:\b.txt""#);
+    }
+
+    /// Exercises the exact serialize/deserialize path the Export/Import
+    /// Custom Context Menu buttons use (`serde_json` round-trip through
+    /// `ContextMenuExportBundle`), independent of the file-dialog/disk-write
+    /// plumbing around it - a deterministic check for the part that's
+    /// actually new, since the dialog + `std::fs::write`/`read_to_string`
+    /// calls are the same already-proven pattern `ExportSettings`/
+    /// `ImportSettings` use elsewhere.
+    #[test]
+    fn context_menu_export_bundle_round_trips_through_json() {
+        let mut entry = CustomContextMenuEntry::new_leaf(1);
+        entry.label = "Edit With Notepad".to_string();
+        entry.executable = "notepad.exe".to_string();
+        entry.arguments = "%L".to_string();
+
+        let mut submenu = CustomContextMenuEntry::new_submenu(2);
+        submenu.label = "Tools".to_string();
+        submenu.children.push({
+            let mut child = CustomContextMenuEntry::new_leaf(3);
+            child.label = "Child Command".to_string();
+            child
+        });
+
+        let bundle = ContextMenuExportBundle {
+            format_version: CONTEXT_MENU_EXPORT_FORMAT_VERSION,
+            entries: vec![entry, submenu],
+        };
+
+        let json = serde_json::to_string_pretty(&bundle).expect("serialize");
+        let round_tripped: ContextMenuExportBundle =
+            serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(round_tripped.format_version, CONTEXT_MENU_EXPORT_FORMAT_VERSION);
+        assert_eq!(round_tripped.entries.len(), 2);
+        assert_eq!(round_tripped.entries[0].label, "Edit With Notepad");
+        assert_eq!(round_tripped.entries[0].executable, "notepad.exe");
+        assert_eq!(round_tripped.entries[0].arguments, "%L");
+        assert_eq!(round_tripped.entries[1].children.len(), 1);
+        assert_eq!(round_tripped.entries[1].children[0].label, "Child Command");
     }
 }

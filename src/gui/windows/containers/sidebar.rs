@@ -467,12 +467,24 @@ pub fn draw_sidebar(
                             );
                         } else {
                             for group in tags_state.groups.iter() {
+                                // `regular::TAG` and `fill::TAG` are the exact
+                                // same Unicode codepoint (egui_phosphor just
+                                // exposes both weights' code as separate
+                                // constants for convenience) - which glyph
+                                // actually renders depends entirely on which
+                                // *font family* is requested, since "Fill" is
+                                // registered under its own named family
+                                // (`fonts.rs`), not merged into `Proportional`.
+                                // Passing `fill::TAG` alone (as this used to)
+                                // silently rendered the outline glyph anyway.
                                 let resp = draw_sidebar_virtual_item(
                                     ui,
                                     &group.name,
                                     egui_phosphor::fill::TAG,
                                     group.color,
                                     palette,
+                                    egui::FontFamily::Name("phosphor_fill".into()),
+                                    palette.sidebar_icon_size * 0.75,
                                 );
                                 if resp.clicked() {
                                     action.open_tag_view = Some(group.id);
@@ -562,6 +574,8 @@ pub fn draw_sidebar(
                                         regular::MAGNIFYING_GLASS,
                                         palette.icon_color,
                                         palette,
+                                        egui::FontFamily::Proportional,
+                                        palette.sidebar_icon_size,
                                     );
                                     if resp.clicked() {
                                         action.open_saved_search = Some(item.id);
@@ -988,6 +1002,8 @@ fn draw_sidebar_virtual_item(
     icon: &str,
     color: egui::Color32,
     palette: &ThemePalette,
+    icon_font_family: egui::FontFamily,
+    icon_size: f32,
 ) -> egui::Response {
     let height = if palette.sidebar_item_spacing_y > 1.0 {
         18.0 * palette.sidebar_item_spacing_y
@@ -1008,13 +1024,12 @@ fn draw_sidebar_virtual_item(
         );
     }
 
-    let icon_size = palette.sidebar_icon_size;
     let icon_center = egui::pos2(rect.min.x + 4.0 + icon_size / 2.0, rect.center().y);
     ui.painter().text(
         icon_center,
         egui::Align2::CENTER_CENTER,
         icon,
-        egui::FontId::new(icon_size, egui::FontFamily::Proportional),
+        egui::FontId::new(icon_size, icon_font_family),
         color,
     );
 

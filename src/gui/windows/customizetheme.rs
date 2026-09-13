@@ -1370,6 +1370,7 @@ pub fn draw_theme_customizer_content(
                 });
 
             // FOOTER
+            ui.add_space(8.0);
             ui.horizontal(|ui| {
                 if eden_button(ui, palette, &i18n.tr("theme_export")).clicked() {
                     action = Some(ThemeCustomizerAction::ExportTheme(customizer.selected_mode));
@@ -1389,6 +1390,7 @@ pub fn draw_theme_customizer_content(
                     ));
                 }
             });
+            ui.add_space(8.0);
 
             if changed && action.is_none() {
                 action = Some(ThemeCustomizerAction::ThemeUpdated(

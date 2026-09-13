@@ -83,6 +83,17 @@ pub fn draw_custom_context_menu_settings(
             }
         });
 
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            if eden_button(ui, palette, &i18n.tr("custom_context_menu_export")).clicked() {
+                action = Some(SettingsAction::ExportContextMenu);
+            }
+            if eden_button(ui, palette, &i18n.tr("custom_context_menu_import")).clicked() {
+                action = Some(SettingsAction::ImportContextMenu);
+            }
+        });
+
         ui.add_space(10.0);
 
         if settings.current_settings.custom_context_menu.is_empty() {

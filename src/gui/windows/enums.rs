@@ -32,6 +32,14 @@ pub enum SettingsAction {
     ApplySettings,
     ExportSettings,
     ImportSettings,
+    /// Export/import *just* the custom context menu list (see
+    /// `core::context_menu_settings::ContextMenuExportBundle`) - a full
+    /// settings export/import already carries this list as part of
+    /// `AppSettings`, this is for sharing/backing up only the custom
+    /// commands. Import replaces the current list wholesale, matching how a
+    /// full settings import already replaces `AppSettings` wholesale.
+    ExportContextMenu,
+    ImportContextMenu,
     /// Produced by the Settings page's Appearance category (which embeds the
     /// same theme editor that used to be its own floating window) - handled
     /// identically to how that window's actions always were.

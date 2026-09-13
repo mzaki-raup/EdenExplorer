@@ -495,3 +495,8 @@ theme_custom_theme_delete_confirm = テーマ名
 
 theme_custom_theme_secondary = セカンダリカラー
 theme_custom_theme_update = テーマを更新
+
+custom_context_menu_export = エクスポート
+custom_context_menu_import = インポート
+settings_tags = タグ
+tooltip_settings_tags = タグ グループを管理します。名前の変更、色の変更、並べ替え、削除ができ、各グループに属する項目を確認できます。

@@ -11,7 +11,7 @@ use crate::gui::windows::containers::sidebar::draw_sidebar_item;
 use crate::gui::windows::containers::structs::{
     TagColumn, TagColumnFitRequest, TagColumnState, TagsState,
 };
-use crate::gui::windows::settings::reorder_buttons;
+use crate::gui::windows::settings::{reorder_buttons, setting_label};
 use eframe::egui;
 use egui::FontId;
 use egui::ScrollArea;
@@ -36,6 +36,14 @@ pub fn draw_tags(
     let pointer_released = ui.ctx().input(|input| input.pointer.primary_released());
     let groups_len = tags_state.groups.len();
 
+    setting_label(
+        ui,
+        &i18n.tr("settings_tags"),
+        Some((&i18n.tr("tooltip_settings_tags"), palette)),
+        palette,
+    );
+    ui.add_space(8.0);
+
     let tabs_width = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(tabs_width, ui.available_height()),
@@ -55,8 +63,17 @@ pub fn draw_tags(
                     .min_scrolled_height(ui.available_height())
                     .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.add_space(-4.0); // align the first group vertically with the side bar border
-                    ui.spacing_mut().item_spacing.y = 8.0;
+                    // A real top padding, not the previous negative space
+                    // (tuned back when this page had no title above it, to
+                    // pull the first group up flush with the sidebar) -
+                    // that negative offset pushed the first group's own
+                    // bordered frame slightly above this scroll area's own
+                    // clip bounds, clipping its top border off entirely
+                    // (the same "content drawn flush against/past a clip
+                    // boundary loses that edge" issue documented elsewhere
+                    // in this codebase for a different border).
+                    ui.add_space(4.0);
+                    ui.spacing_mut().item_spacing.y = 12.0;
 
                     let mut group_reorder: Option<(usize, usize)> = None;
 
@@ -411,10 +428,6 @@ pub fn draw_tags(
 
                         if should_clear_drag {
                             drag_state = None;
-                        }
-
-                        if group_index + 1 < groups_len {
-                            ui.add_space(-12.0); // remove vertical margins between tag groups
                         }
                     }
 

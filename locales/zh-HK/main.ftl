@@ -495,3 +495,8 @@ theme_custom_theme_delete_confirm = 主題名稱
 
 theme_custom_theme_secondary = 次要色
 theme_custom_theme_update = 更新主題
+
+custom_context_menu_export = 匯出
+custom_context_menu_import = 匯入
+settings_tags = 標籤
+tooltip_settings_tags = 管理您的標籤群組：重新命名、變更顏色、重新排序或刪除，並查看每個群組包含的項目。

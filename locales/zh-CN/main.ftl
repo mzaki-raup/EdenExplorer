@@ -495,3 +495,8 @@ theme_custom_theme_delete_confirm = 主题名称
 
 theme_custom_theme_secondary = 第二色
 theme_custom_theme_update = 更新主题
+
+custom_context_menu_export = 导出
+custom_context_menu_import = 导入
+settings_tags = 标签
+tooltip_settings_tags = 管理您的标签分组：重命名、更改颜色、重新排序或删除，并查看每个分组中包含的项目。

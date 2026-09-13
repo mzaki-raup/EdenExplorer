@@ -3010,6 +3010,51 @@ impl MainWindow {
                         }
                     }
                 }
+                SettingsAction::ExportContextMenu => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Eden Explorer Context Menu", &["json"])
+                        .set_file_name("eden_explorer_context_menu.json")
+                        .save_file()
+                    {
+                        let bundle = crate::core::context_menu_settings::ContextMenuExportBundle {
+                            format_version:
+                                crate::core::context_menu_settings::CONTEXT_MENU_EXPORT_FORMAT_VERSION,
+                            entries: self.settings_window.current_settings.custom_context_menu.clone(),
+                        };
+
+                        match serde_json::to_string_pretty(&bundle) {
+                            Ok(json) => {
+                                if let Err(err) = std::fs::write(&path, json) {
+                                    eprintln!("Failed to export context menu: {}", err);
+                                }
+                            }
+                            Err(err) => eprintln!("Failed to serialize context menu: {}", err),
+                        }
+                    }
+                }
+                SettingsAction::ImportContextMenu => {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Eden Explorer Context Menu", &["json"])
+                        .pick_file()
+                    {
+                        match std::fs::read_to_string(&path) {
+                            Ok(json) => match serde_json::from_str::<
+                                crate::core::context_menu_settings::ContextMenuExportBundle,
+                            >(&json)
+                            {
+                                Ok(bundle) => {
+                                    self.settings_window.current_settings.custom_context_menu =
+                                        bundle.entries;
+                                    crate::core::context_menu_settings::save_custom_context_menu(
+                                        &self.settings_window.current_settings.custom_context_menu,
+                                    );
+                                }
+                                Err(err) => eprintln!("Failed to parse context menu file: {}", err),
+                            },
+                            Err(err) => eprintln!("Failed to read context menu file: {}", err),
+                        }
+                    }
+                }
                 SettingsAction::ThemeCustomizer(theme_action) => {
                     self.apply_theme_customizer_action(ctx, theme_action);
                 }
