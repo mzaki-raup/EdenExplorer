@@ -412,7 +412,7 @@ custom_context_menu_scope_background = 資料夾背景
 custom_context_menu_is_submenu = 這是一個子選單（將指令歸類其中）
 custom_context_menu_executable = 程式
 custom_context_menu_arguments = 參數
-tooltip_custom_context_menu_arguments = %1 及 %V 代表第一個選取的路徑；%* 代表所有選取的路徑。全部會自動加上引號。
+tooltip_custom_context_menu_arguments = %1 及 %V 代表第一個選取的路徑（自動加上引號）；%* 代表所有選取的路徑（各自加上引號）。%L 為同一路徑但不加引號，適用於指令自行加引號或完全不需要引號的情況。
 custom_context_menu_run_as_admin = 以系統管理員身分執行
 custom_context_menu_run_once_per_selection = 對每個選取項目執行一次
 

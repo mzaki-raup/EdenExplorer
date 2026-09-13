@@ -409,7 +409,7 @@ custom_context_menu_scope_background = Folder background
 custom_context_menu_is_submenu = This is a submenu (groups commands under it)
 custom_context_menu_executable = Program
 custom_context_menu_arguments = Arguments
-tooltip_custom_context_menu_arguments = %1 and %V are the first selected path; %* is every selected path. All are quoted automatically.
+tooltip_custom_context_menu_arguments = %1 and %V are the first selected path (quoted automatically); %* is every selected path (each quoted). %L is the same first path with no quotes added, for commands that add their own or want none.
 custom_context_menu_run_as_admin = Run as administrator
 custom_context_menu_run_once_per_selection = Run once per selected item
 

@@ -412,7 +412,7 @@ custom_context_menu_scope_background = 文件夹背景
 custom_context_menu_is_submenu = 这是一个子菜单（将命令归入其中）
 custom_context_menu_executable = 程序
 custom_context_menu_arguments = 参数
-tooltip_custom_context_menu_arguments = %1 和 %V 表示第一个选中的路径；%* 表示所有选中的路径。均会自动加上引号。
+tooltip_custom_context_menu_arguments = %1 和 %V 表示第一个选中的路径（自动加上引号）；%* 表示所有选中的路径（每个都加引号）。%L 是同一个路径但不加引号，适用于命令自行加引号或完全不需要引号的情况。
 custom_context_menu_run_as_admin = 以管理员身份运行
 custom_context_menu_run_once_per_selection = 对每个选中项运行一次
 

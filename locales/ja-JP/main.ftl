@@ -412,7 +412,7 @@ custom_context_menu_scope_background = フォルダーの背景
 custom_context_menu_is_submenu = これはサブメニューです（配下にコマンドをまとめます）
 custom_context_menu_executable = プログラム
 custom_context_menu_arguments = 引数
-tooltip_custom_context_menu_arguments = %1 と %V は最初に選択したパス、%* は選択したすべてのパスです。すべて自動的に引用符で囲まれます。
+tooltip_custom_context_menu_arguments = %1 と %V は最初に選択したパス（自動的に引用符付き）、%* は選択したすべてのパス（それぞれ引用符付き）です。%L は同じ最初のパスを引用符なしで渡します（コマンド側で独自に引用符を付けたい場合や、まったく付けたくない場合に使用）。
 custom_context_menu_run_as_admin = 管理者として実行
 custom_context_menu_run_once_per_selection = 選択した項目ごとに一度実行
 

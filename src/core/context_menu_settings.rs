@@ -158,13 +158,19 @@ fn quote(path: &Path) -> String {
 
 /// Substitutes the classic shell verb tokens `%1`/`%V` (the "primary" path -
 /// for a single invocation this is the first selected item; for a
-/// once-per-item invocation it's that item) and `%*` (every selected path,
-/// individually quoted) into an arguments template.
+/// once-per-item invocation it's that item, both quoted) and `%*` (every
+/// selected path, individually quoted) into an arguments template. `%L`
+/// mirrors the real Windows shell verb convention (the registry's own
+/// distinction between `%1`, always quoted, and `%L`, the same "long" path
+/// with no quotes added) - it exists specifically for commands that want to
+/// do their own quoting, or none at all (e.g. `echo %L| clip` to copy a bare
+/// path with no surrounding quotes in the result).
 fn substitute(template: &str, primary: &Path, all: &[PathBuf]) -> String {
     let all_quoted = all.iter().map(|p| quote(p)).collect::<Vec<_>>().join(" ");
     template
         .replace("%1", &quote(primary))
         .replace("%V", &quote(primary))
+        .replace("%L", &primary.display().to_string())
         .replace("%*", &all_quoted)
 }
 
@@ -208,5 +214,37 @@ pub fn run(entry: &CustomContextMenuEntry, selected_paths: &[PathBuf], context_d
             .unwrap_or_else(|| context_dir.to_path_buf());
         let args = substitute(&entry.arguments, &primary, &targets);
         launch(&entry.executable, &args, entry.run_as_admin);
+    }
+}
+
+#[cfg(test)]
+mod substitute_tests {
+    use super::*;
+
+    #[test]
+    fn percent_1_and_percent_v_are_quoted_but_percent_l_is_not() {
+        let primary = PathBuf::from(r"C:\Some Folder\file.txt");
+        let all = [primary.clone()];
+
+        assert_eq!(
+            substitute("%1", &primary, &all),
+            r#""C:\Some Folder\file.txt""#
+        );
+        assert_eq!(
+            substitute("%V", &primary, &all),
+            r#""C:\Some Folder\file.txt""#
+        );
+        assert_eq!(
+            substitute("echo %L| clip", &primary, &all),
+            r"echo C:\Some Folder\file.txt| clip"
+        );
+    }
+
+    #[test]
+    fn percent_star_quotes_every_selected_path_individually() {
+        let primary = PathBuf::from(r"C:\a.txt");
+        let all = [PathBuf::from(r"C:\a.txt"), PathBuf::from(r"C:\b.txt")];
+
+        assert_eq!(substitute("%*", &primary, &all), r#""C:\a.txt" "C:\b.txt""#);
     }
 }

@@ -411,7 +411,7 @@ custom_context_menu_scope_background = Latar folder
 custom_context_menu_is_submenu = Ini adalah submenu (mengelompokkan perintah di dalamnya)
 custom_context_menu_executable = Program
 custom_context_menu_arguments = Argumen
-tooltip_custom_context_menu_arguments = %1 dan %V adalah jalur pertama yang dipilih; %* adalah semua jalur yang dipilih. Semuanya otomatis diberi tanda kutip.
+tooltip_custom_context_menu_arguments = %1 dan %V adalah jalur pertama yang dipilih (otomatis diberi tanda kutip); %* adalah semua jalur yang dipilih (masing-masing diberi tanda kutip). %L adalah jalur pertama yang sama tanpa tanda kutip, untuk perintah yang ingin menambahkan tanda kutipnya sendiri atau tidak sama sekali.
 custom_context_menu_run_as_admin = Jalankan sebagai administrator
 custom_context_menu_run_once_per_selection = Jalankan sekali untuk setiap item yang dipilih
 
