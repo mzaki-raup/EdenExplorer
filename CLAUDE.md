@@ -1023,6 +1023,34 @@ PowerShell process) rather than the app's own code - if you're using the
   `ThemePalette` shapes and upgrade field-by-field - not by continuing to
   add fields to `ThemePalette` and hoping `#[serde(default = ...)]` covers
   it, which it demonstrably does not for this struct's actual load path.
+- **A thin, translucent `Stroke` passed to `Painter::rect_stroke` can render
+  with one specific edge nearly or fully invisible, even though the
+  underlying `Rect` is provably correct - this is an anti-aliasing/alpha-
+  blending rendering artifact, not a layout, sizing, or clipping bug, and
+  chasing it as one wastes real time.** The address bar's bottom border
+  survived several real, correctly-diagnosed fixes for other bugs (a
+  duplicate inner border, a stale row-height budget, an `allocate_ui_
+  with_layout` sizing floor that let content grow past its requested size)
+  without the missing bottom edge ever actually going away, because none
+  of those were the actual cause. It was finally isolated by testing one
+  stroke parameter at a time against the exact same `pill_rect`: first a
+  temporary `rect_filled` (solid, opaque) over the rect confirmed the
+  `Rect` itself was perfectly correct and fully bounded on all sides;
+  then swapping the border's color between an opaque test color and the
+  real translucent `pill_border` color, with corner radius, width, and
+  `StrokeKind` each held fixed in turn, showed the missing edge appeared
+  *only* when the color was translucent - an opaque color at the same
+  width/radius/kind always drew a complete border. The fix was to
+  pre-blend the translucent color against its known background into a
+  fully **opaque** `Color32` before calling `rect_stroke`, removing any
+  dependence on runtime alpha compositing, rather than adjusting the
+  `Rect`, the layout, or the clip rect any further. If a border/stroke is
+  missing or broken on only one side and the rect it's drawn against has
+  already been confirmed correct (e.g. via a `rect_filled` sanity check),
+  suspect the stroke's own alpha before re-investigating layout/clipping/
+  sizing again - vary one stroke parameter (color/alpha, width, corner
+  radius, `StrokeKind`) at a time against a hardcoded test value to find
+  which one is actually responsible, rather than guessing architecturally.
 
 ## Operational Instructions
 

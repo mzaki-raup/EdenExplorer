@@ -165,6 +165,38 @@ pub fn draw_item_viewer(
         preview_service.pump(ui.ctx());
     }
 
+    // Drawn *before* the "empty" message below: `handle_global_actions`
+    // is what actually paints the type-to-filter box (when
+    // `filter_state.active`), and `ui.centered_and_justified` for the
+    // empty-state message claims the *entire* remaining rect for its own
+    // content, advancing this `ui`'s cursor all the way to the bottom of
+    // it - so if the filter box were drawn afterward using the same `ui`,
+    // it would render wherever that now-bottomed-out cursor landed instead
+    // of at the top, which is exactly what happened when a filter query
+    // matched nothing (an otherwise-ordinary, very reproducible case).
+    // Doing the reverse - filter box first, claiming the top, then
+    // centering the "no results" message in whatever's left below it -
+    // is the correct order regardless of which one calls
+    // `centered_and_justified`.
+    if !modal_input_blocked && is_focused {
+        if let Some(global_action) = handle_global_actions(
+            ui,
+            files,
+            palette,
+            tabbar_action,
+            rename_state,
+            filter_state,
+            drag_state,
+            explorer_state,
+            is_cut_mode,
+            is_drive_view,
+            is_recycle_bin_view,
+            settings_window,
+        ) {
+            action = Some(global_action);
+        }
+    }
+
     if visible_items_empty && !is_custom_layout {
         let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
@@ -209,25 +241,6 @@ pub fn draw_item_viewer(
         };
 
         draw_object_drag_ghost(ui, palette, label, false);
-    }
-
-    if !modal_input_blocked && is_focused {
-        if let Some(global_action) = handle_global_actions(
-            ui,
-            files,
-            palette,
-            tabbar_action,
-            rename_state,
-            filter_state,
-            drag_state,
-            explorer_state,
-            is_cut_mode,
-            is_drive_view,
-            is_recycle_bin_view,
-            settings_window,
-        ) {
-            action = Some(global_action);
-        }
     }
 
     if display_mode == ItemViewerDisplayMode::Columns && !is_drive_view && !is_recycle_bin_view {

@@ -239,16 +239,32 @@ fn draw_bordered_breadcrumb(
     // plain "two adjacent boxes" gap would need to be.
     let right_gap = 16.0;
 
-    // `borders_default` is a deliberately faint accent tint everywhere else
-    // it's used (a subtle divider/outline), but the address bar is a field
-    // the user actively looks for and clicks into - at that same low alpha
-    // it read as "barely there" rather than as a real field boundary. Boost
-    // just this stroke's alpha instead of changing `borders_default` itself
-    // (which would also thin out every other divider that deliberately
-    // wants to stay subtle).
-    let pill_border = palette.borders_default;
-    let pill_border =
-        egui::Color32::from_rgba_unmultiplied(pill_border.r(), pill_border.g(), pill_border.b(), (pill_border.a() as u16 * 2).min(255) as u8);
+    // `borders_default` is a deliberately faint, *translucent* accent tint
+    // everywhere else it's used (a subtle divider/outline) - merely
+    // doubling that alpha (an earlier attempt) still left it translucent,
+    // and a thin translucent stroke turned out to be genuinely fragile:
+    // isolated by testing an otherwise-identical opaque stroke, which
+    // rendered a complete four-sided border every time, while the
+    // translucent version's bottom edge would intermittently fail to
+    // render at all (not clipped - a `rect_filled` diagnostic over the
+    // exact same rect showed a perfectly clean bottom edge, ruling out
+    // sizing/clipping; only the translucent *stroke* had a missing edge).
+    // Rather than depend on a translucent color's anti-aliasing/blending
+    // always working out, this border is fully opaque - blended once,
+    // ahead of time, against the address bar's own background
+    // (`input_field_bg`) rather than left to alpha-composite against
+    // whatever's underneath at paint time.
+    let pill_border = {
+        let accent = palette.borders_default;
+        let bg = palette.input_field_bg;
+        let t = accent.a() as f32 / 255.0;
+        let blend = |a: u8, b: u8| (b as f32 + (a as f32 - b as f32) * t).round() as u8;
+        egui::Color32::from_rgb(
+            blend(accent.r(), bg.r()),
+            blend(accent.g(), bg.g()),
+            blend(accent.b(), bg.b()),
+        )
+    };
 
     // Every previous attempt at forcing a fixed height here (`set_min_height`,
     // `allocate_ui_with_layout` with a fixed size, a zero-width invisible
