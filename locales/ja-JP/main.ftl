@@ -481,3 +481,7 @@ theme_colors_notification_status_success = ステータス：成功
 theme_colors_notification_status_warning = ステータス：警告
 theme_colors_notification_status_error = ステータス：エラー
 theme_colors_notification_status_info = ステータス：情報
+
+theme_colors_primary_button_text = 主要ボタンのテキスト
+theme_colors_button_disabled_bg = 無効ボタンの背景
+theme_colors_button_disabled_text = 無効ボタンのテキスト

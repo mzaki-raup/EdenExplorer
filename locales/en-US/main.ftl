@@ -477,3 +477,7 @@ theme_colors_notification_status_success = Status: Success
 theme_colors_notification_status_warning = Status: Warning
 theme_colors_notification_status_error = Status: Error
 theme_colors_notification_status_info = Status: Info
+
+theme_colors_primary_button_text = Primary Button Text
+theme_colors_button_disabled_bg = Disabled Button Background
+theme_colors_button_disabled_text = Disabled Button Text

@@ -480,3 +480,7 @@ theme_colors_notification_status_success = Status: Berhasil
 theme_colors_notification_status_warning = Status: Peringatan
 theme_colors_notification_status_error = Status: Kesalahan
 theme_colors_notification_status_info = Status: Info
+
+theme_colors_primary_button_text = Teks Tombol Utama
+theme_colors_button_disabled_bg = Latar Belakang Tombol Nonaktif
+theme_colors_button_disabled_text = Teks Tombol Nonaktif

@@ -481,3 +481,7 @@ theme_colors_notification_status_success = 狀態：成功
 theme_colors_notification_status_warning = 狀態：警告
 theme_colors_notification_status_error = 狀態：錯誤
 theme_colors_notification_status_info = 狀態：資訊
+
+theme_colors_primary_button_text = 主要按鈕文字
+theme_colors_button_disabled_bg = 停用按鈕背景
+theme_colors_button_disabled_text = 停用按鈕文字

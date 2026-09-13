@@ -505,9 +505,18 @@ pub fn eden_text_label(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) ->
 pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egui::Response {
     apply_eden_visual_overrides(ui, palette);
     apply_eden_text_overrides(ui, palette);
+    // `ui.is_enabled()` reflects a caller wrapping this in `ui.add_enabled(_ui)`
+    // (e.g. a "Create" button gated on a non-empty name) - egui's own
+    // automatic disabled-opacity fade still applies on top of whichever pair
+    // is picked here, same as every other disabled control in the app.
+    let (fill, text_color) = if ui.is_enabled() {
+        (palette.button_background, palette.button_text_color)
+    } else {
+        (palette.button_disabled_bg, palette.button_disabled_text)
+    };
     ui.add(
-        Button::new(RichText::new(text).color(palette.button_text_color))
-            .fill(palette.button_background)
+        Button::new(RichText::new(text).color(text_color))
+            .fill(fill)
             .stroke(Stroke::new(1.0, palette.button_stroke))
             .corner_radius(CornerRadius::same(palette.medium_radius)),
     )
@@ -517,9 +526,14 @@ pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egu
 /// user's accent color so it reads as the default choice at a glance.
 pub fn primary_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
     apply_eden_text_overrides(ui, palette);
+    let (fill, text_color) = if ui.is_enabled() {
+        (palette.primary, palette.primary_button_text_color)
+    } else {
+        (palette.button_disabled_bg, palette.button_disabled_text)
+    };
     ui.add(
-        Button::new(RichText::new(text).color(Color32::WHITE))
-            .fill(palette.primary)
+        Button::new(RichText::new(text).color(text_color))
+            .fill(fill)
             .corner_radius(CornerRadius::same(palette.medium_radius)),
     )
 }

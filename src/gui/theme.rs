@@ -150,6 +150,26 @@ fn default_notification_status_info() -> Color32 {
     Color32::from_rgb(0, 120, 215)
 }
 
+// `primary_dialog_button` previously hardcoded its text to plain white
+// regardless of theme/mode - matches that exact literal.
+fn default_primary_button_text_color() -> Color32 {
+    Color32::WHITE
+}
+
+// `eden_button` previously had no disabled/enabled distinction at all - it
+// always drew with `button_background`/`button_text_color`, and relied
+// purely on egui's automatic disabled-opacity fade to look "disabled".
+// Defaulting these to the dark theme's own `button_background`/
+// `button_text_color` values preserves that exact look until a user
+// actually picks a distinct disabled color.
+fn default_button_disabled_bg() -> Color32 {
+    Color32::from_rgba_unmultiplied(160, 170, 180, 20)
+}
+
+fn default_button_disabled_text() -> Color32 {
+    Color32::from_rgb(220, 226, 232)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -358,6 +378,17 @@ pub struct ThemePalette {
     pub notification_status_error: Color32,
     #[serde(default = "default_notification_status_info")]
     pub notification_status_info: Color32,
+
+    // Button color completeness - a dedicated text color for the dialog
+    // "primary" button (previously hardcoded to plain white regardless of
+    // theme) and a real disabled-state pair for `eden_button` (previously
+    // no distinction at all beyond egui's own automatic opacity fade).
+    #[serde(default = "default_primary_button_text_color")]
+    pub primary_button_text_color: Color32,
+    #[serde(default = "default_button_disabled_bg")]
+    pub button_disabled_bg: Color32,
+    #[serde(default = "default_button_disabled_text")]
+    pub button_disabled_text: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -482,6 +513,12 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         notification_status_warning: default_notification_status_warning(),
         notification_status_error: default_notification_status_error(),
         notification_status_info: default_notification_status_info(),
+        primary_button_text_color: default_primary_button_text_color(),
+        // Overwritten below by `regenerate_base_derived_colors` (tracks
+        // `button_background`/`button_text_color`) - placeholder value here
+        // is never actually observed.
+        button_disabled_bg: Color32::TRANSPARENT,
+        button_disabled_text: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -604,6 +641,9 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         notification_status_warning: Color32::from_rgb(235, 155, 60),
         notification_status_error: Color32::from_rgb(200, 52, 52),
         notification_status_info: Color32::from_rgb(0, 120, 215),
+        primary_button_text_color: Color32::WHITE,
+        button_disabled_bg: Color32::TRANSPARENT,
+        button_disabled_text: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -853,6 +893,12 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     // for, so an accent/preset change still updates it automatically) while
     // still being directly editable on its own, like every other field here.
     palette.search_active_icon_bg = palette.primary_hover;
+    // Same reasoning: previously a disabled `eden_button` looked identical
+    // to an enabled one (just faded by egui's own opacity multiply), so
+    // these default to matching `button_background`/`button_text_color`
+    // exactly, tracking the accent/preset the same way those two do.
+    palette.button_disabled_bg = palette.button_background;
+    palette.button_disabled_text = palette.button_text_color;
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to

@@ -481,3 +481,7 @@ theme_colors_notification_status_success = 状态：成功
 theme_colors_notification_status_warning = 状态：警告
 theme_colors_notification_status_error = 状态：错误
 theme_colors_notification_status_info = 状态：信息
+
+theme_colors_primary_button_text = 主按钮文字
+theme_colors_button_disabled_bg = 禁用按钮背景
+theme_colors_button_disabled_text = 禁用按钮文字
