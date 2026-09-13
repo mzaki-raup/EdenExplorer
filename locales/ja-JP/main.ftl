@@ -492,3 +492,6 @@ theme_custom_theme_save = 現在の色を保存
 theme_custom_theme_delete = テーマを削除
 theme_custom_theme_delete_title = カスタムテーマの削除
 theme_custom_theme_delete_confirm = テーマ名
+
+theme_custom_theme_secondary = セカンダリカラー
+theme_custom_theme_update = テーマを更新

@@ -491,3 +491,6 @@ theme_custom_theme_save = Simpan Warna Saat Ini
 theme_custom_theme_delete = Hapus tema
 theme_custom_theme_delete_title = Hapus Tema Kustom
 theme_custom_theme_delete_confirm = Nama tema
+
+theme_custom_theme_secondary = Warna Kedua
+theme_custom_theme_update = Perbarui Tema

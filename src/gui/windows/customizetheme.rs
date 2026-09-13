@@ -7,7 +7,7 @@ use crate::gui::theme::{
 };
 use crate::gui::utils::rgba_color_edit_button;
 use crate::gui::utils::widgets::{
-    apply_eden_visual_overrides, clickable_icon, draw_dropdown, eden_button, eden_text_label,
+    apply_eden_visual_overrides, draw_dropdown, eden_button, eden_text_label,
     eden_toggle_button, ghost_dialog_button, primary_dialog_button,
 };
 use crate::gui::windows::enums::ThemeCustomizerAction;
@@ -436,74 +436,172 @@ pub fn draw_theme_customizer_content(
                         ui.add_space(6.0);
 
                         ui.horizontal_wrapped(|ui| {
+                            // Each entry is allocated as one atomic rect
+                            // (swatch + delete button together), not a
+                            // nested `ui.horizontal` - a composite child ui
+                            // inside `horizontal_wrapped` throws off its
+                            // running-width bookkeeping, which is what made
+                            // the gap between entries visibly uneven
+                            // (reported directly: "the list is not align").
+                            // Every other wrapped swatch row in this file
+                            // (Prebuilt Themes, Color Scheme) is a single
+                            // flat widget per entry for the same reason.
+                            const SWATCH_W: f32 = 64.0;
+                            const GAP: f32 = 6.0;
+                            const TRASH_W: f32 = 24.0;
+                            const ROW_H: f32 = 32.0;
+                            const NAME_GAP: f32 = 3.0;
+                            const NAME_H: f32 = 15.0;
+                            let entry_w = SWATCH_W + GAP + TRASH_W;
+
                             for entry in &customizer.custom_themes {
-                                ui.horizontal(|ui| {
-                                    let is_selected = editing_palette.primary == entry.accent
-                                        && editing_palette.secondary_accent == entry.secondary;
+                                let is_selected = editing_palette.primary == entry.accent
+                                    && editing_palette.secondary_accent == entry.secondary;
 
-                                    let (rect, resp) = ui.allocate_exact_size(
-                                        egui::vec2(64.0, 32.0),
-                                        egui::Sense::click(),
+                                // Full block (swatch+trash row, plus the
+                                // theme's own name underneath) is one atomic
+                                // allocation for the same reason as above -
+                                // the name was previously only a hover
+                                // tooltip, with nothing shown at a glance.
+                                let (rect, _resp) = ui.allocate_exact_size(
+                                    egui::vec2(entry_w, ROW_H + NAME_GAP + NAME_H),
+                                    egui::Sense::hover(),
+                                );
+
+                                let swatch_rect =
+                                    egui::Rect::from_min_size(rect.min, egui::vec2(SWATCH_W, ROW_H));
+                                let trash_rect = egui::Rect::from_min_size(
+                                    egui::pos2(rect.min.x + SWATCH_W + GAP, rect.min.y),
+                                    egui::vec2(TRASH_W, ROW_H),
+                                );
+
+                                let swatch_resp = ui.interact(
+                                    swatch_rect,
+                                    ui.id().with(("custom_theme_swatch", entry.id)),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(swatch_rect) {
+                                    let radius = palette.small_radius;
+                                    let painter = ui.painter();
+                                    painter.rect_filled(
+                                        swatch_rect,
+                                        egui::CornerRadius::same(radius),
+                                        entry.accent,
                                     );
-                                    if ui.is_rect_visible(rect) {
-                                        let radius = palette.small_radius;
-                                        let painter = ui.painter();
-                                        painter.rect_filled(
-                                            rect,
-                                            egui::CornerRadius::same(radius),
-                                            entry.accent,
-                                        );
-                                        let strip_w = rect.width() / 2.0;
-                                        let strip = egui::Rect::from_min_size(
-                                            egui::pos2(rect.min.x + strip_w, rect.min.y),
-                                            egui::vec2(strip_w, rect.height()),
-                                        );
-                                        painter.rect_filled(
-                                            strip,
-                                            egui::CornerRadius {
-                                                nw: 0,
-                                                sw: 0,
-                                                ne: radius,
-                                                se: radius,
-                                            },
-                                            entry.secondary,
-                                        );
-                                        painter.rect_stroke(
-                                            rect,
-                                            egui::CornerRadius::same(radius),
-                                            if is_selected {
-                                                egui::Stroke::new(2.0, palette.text_normal)
-                                            } else {
-                                                egui::Stroke::new(1.0, palette.borders_default)
-                                            },
-                                            egui::StrokeKind::Outside,
-                                        );
-                                    }
-                                    let resp = resp.on_hover_text(entry.name.clone());
-                                    if resp.clicked() {
-                                        editing_palette.primary = entry.accent;
-                                        editing_palette.secondary_accent = entry.secondary;
-                                        editing_palette.pinned_tab_color = entry.secondary;
-                                        editing_palette.button_favorite_fill = entry.secondary;
-                                        regenerate_base_derived_colors(
-                                            editing_palette,
-                                            customizer.selected_mode == ThemeMode::Dark,
-                                        );
-                                        changed = true;
-                                    }
+                                    let strip_w = swatch_rect.width() / 2.0;
+                                    let strip = egui::Rect::from_min_size(
+                                        egui::pos2(swatch_rect.min.x + strip_w, swatch_rect.min.y),
+                                        egui::vec2(strip_w, swatch_rect.height()),
+                                    );
+                                    painter.rect_filled(
+                                        strip,
+                                        egui::CornerRadius {
+                                            nw: 0,
+                                            sw: 0,
+                                            ne: radius,
+                                            se: radius,
+                                        },
+                                        entry.secondary,
+                                    );
+                                    painter.rect_stroke(
+                                        swatch_rect,
+                                        egui::CornerRadius::same(radius),
+                                        if is_selected {
+                                            egui::Stroke::new(2.0, palette.text_normal)
+                                        } else {
+                                            egui::Stroke::new(1.0, palette.borders_default)
+                                        },
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                                let swatch_resp = swatch_resp
+                                    .on_hover_text(entry.name.clone())
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if swatch_resp.clicked() {
+                                    editing_palette.primary = entry.accent;
+                                    editing_palette.secondary_accent = entry.secondary;
+                                    editing_palette.pinned_tab_color = entry.secondary;
+                                    editing_palette.button_favorite_fill = entry.secondary;
+                                    regenerate_base_derived_colors(
+                                        editing_palette,
+                                        customizer.selected_mode == ThemeMode::Dark,
+                                    );
+                                    changed = true;
+                                }
 
-                                    if clickable_icon(ui, regular::TRASH, palette)
-                                        .on_hover_text(i18n.tr("theme_custom_theme_delete"))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                    {
-                                        customizer.custom_theme_delete_confirm = Some(entry.id);
+                                let trash_resp = ui.interact(
+                                    trash_rect,
+                                    ui.id().with(("custom_theme_delete", entry.id)),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(trash_rect) {
+                                    let painter = ui.painter();
+                                    if trash_resp.hovered() {
+                                        painter.rect_filled(
+                                            trash_rect,
+                                            egui::CornerRadius::same(palette.small_radius),
+                                            palette.primary_hover.linear_multiply(0.4),
+                                        );
                                     }
-                                });
+                                    painter.text(
+                                        trash_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        regular::TRASH,
+                                        egui::FontId::default(),
+                                        palette.icon_color,
+                                    );
+                                }
+                                if trash_resp
+                                    .on_hover_text(i18n.tr("theme_custom_theme_delete"))
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    customizer.custom_theme_delete_confirm = Some(entry.id);
+                                }
+
+                                // The name itself, not just a hover tooltip -
+                                // truncated to fit the swatch's own width via
+                                // the same helper the sidebar uses for its
+                                // item labels, rather than overflowing into
+                                // the next entry.
+                                let name_font =
+                                    egui::FontId::proportional(palette.tooltip_text_size);
+                                let (display_name, _truncated) = crate::gui::utils::truncate_item_text(
+                                    ui,
+                                    &entry.name,
+                                    entry_w,
+                                    &name_font,
+                                    palette.text_normal,
+                                );
+                                if ui.is_rect_visible(rect) {
+                                    ui.painter().text(
+                                        egui::pos2(
+                                            rect.min.x + entry_w / 2.0,
+                                            rect.min.y + ROW_H + NAME_GAP + NAME_H / 2.0,
+                                        ),
+                                        egui::Align2::CENTER_CENTER,
+                                        display_name,
+                                        name_font,
+                                        palette.text_normal,
+                                    );
+                                }
                             }
                         });
 
                         ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            apply_eden_visual_overrides(ui, palette);
+                            // `secondary_accent` has no Core Colors picker of
+                            // its own (see its doc comment in `theme.rs`) -
+                            // without this, saving a custom theme would
+                            // silently capture whatever that field last
+                            // happened to be (only ever set as a side effect
+                            // of clicking a whole prebuilt preset), with no
+                            // way to actually choose it.
+                            eden_text_label(ui, palette, &i18n.tr("theme_custom_theme_secondary"));
+                            color_picker_control(ui, &mut customizer.new_custom_theme_secondary);
+                        });
+                        ui.add_space(4.0);
                         ui.horizontal(|ui| {
                             apply_eden_visual_overrides(ui, palette);
                             ui.add(
@@ -511,20 +609,45 @@ pub fn draw_theme_customizer_content(
                                     .hint_text(i18n.tr("theme_custom_theme_name_hint"))
                                     .desired_width(180.0),
                             );
-                            let can_create =
-                                !customizer.new_custom_theme_name.trim().is_empty();
+                            let trimmed_name = customizer.new_custom_theme_name.trim().to_string();
+                            let can_create = !trimmed_name.is_empty();
+                            // Saving under a name that already exists in
+                            // this list updates that entry in place instead
+                            // of creating a duplicate - matched case-
+                            // insensitively so "midnight"/"Midnight" are
+                            // treated as the same theme. The button's own
+                            // label reflects which one is about to happen.
+                            let existing_id = customizer
+                                .custom_themes
+                                .iter()
+                                .find(|e| e.name.eq_ignore_ascii_case(&trimmed_name))
+                                .map(|e| e.id);
+                            let save_label = if existing_id.is_some() {
+                                i18n.tr("theme_custom_theme_update")
+                            } else {
+                                i18n.tr("theme_custom_theme_save")
+                            };
                             let create_resp = ui.add_enabled_ui(can_create, |ui| {
-                                primary_dialog_button(ui, palette, &i18n.tr("theme_custom_theme_save"))
+                                primary_dialog_button(ui, palette, &save_label)
                             });
                             if create_resp.inner.clicked() {
-                                let id = customizer.custom_themes_next_id;
-                                customizer.custom_themes_next_id += 1;
-                                customizer.custom_themes.push(CustomThemeEntry {
-                                    id,
-                                    name: customizer.new_custom_theme_name.trim().to_string(),
-                                    accent: editing_palette.primary,
-                                    secondary: editing_palette.secondary_accent,
-                                });
+                                if let Some(id) = existing_id {
+                                    if let Some(existing) =
+                                        customizer.custom_themes.iter_mut().find(|e| e.id == id)
+                                    {
+                                        existing.accent = editing_palette.primary;
+                                        existing.secondary = customizer.new_custom_theme_secondary;
+                                    }
+                                } else {
+                                    let id = customizer.custom_themes_next_id;
+                                    customizer.custom_themes_next_id += 1;
+                                    customizer.custom_themes.push(CustomThemeEntry {
+                                        id,
+                                        name: trimmed_name,
+                                        accent: editing_palette.primary,
+                                        secondary: customizer.new_custom_theme_secondary,
+                                    });
+                                }
                                 customizer.new_custom_theme_name.clear();
                                 custom_themes_changed = true;
                             }

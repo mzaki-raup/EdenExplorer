@@ -488,3 +488,6 @@ theme_custom_theme_save = Save Current Colors
 theme_custom_theme_delete = Delete theme
 theme_custom_theme_delete_title = Delete Custom Theme
 theme_custom_theme_delete_confirm = Theme name
+
+theme_custom_theme_secondary = Secondary
+theme_custom_theme_update = Update Theme

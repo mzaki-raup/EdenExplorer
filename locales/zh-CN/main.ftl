@@ -492,3 +492,6 @@ theme_custom_theme_save = 保存当前颜色
 theme_custom_theme_delete = 删除主题
 theme_custom_theme_delete_title = 删除自定义主题
 theme_custom_theme_delete_confirm = 主题名称
+
+theme_custom_theme_secondary = 第二色
+theme_custom_theme_update = 更新主题
