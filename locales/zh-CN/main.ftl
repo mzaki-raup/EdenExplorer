@@ -42,6 +42,7 @@ tooltip_favorites_add = 将当前目录添加到收藏夹
 tooltip_favorites_remove = 从收藏夹中移除当前目录
 tooltip_open_terminal = 在当前目录中打开终端
 tooltip_search = 搜索文件和文件夹
+tooltip_search_close = 关闭搜索
 search_placeholder = 搜索文件和文件夹...
 search_filter_syntax_hint = 可输入的过滤条件:ext:pdf、size:>10mb、size:<1kb、modified:today、modified:yesterday、modified:thisweek、content:关键词(搜索文件内容;仅在"此文件夹"范围下有效,使用 Everything 引擎时还需在 Everything 自身设置中启用内容索引)。可与普通文字组合使用,例如:"invoice ext:pdf size:>100kb"。
 search_scope_current_folder = 此文件夹

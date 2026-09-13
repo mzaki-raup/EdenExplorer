@@ -42,6 +42,7 @@ tooltip_favorites_add = Tambahkan direktori saat ini ke favorit
 tooltip_favorites_remove = Hapus direktori saat ini dari favorit
 tooltip_open_terminal = Buka terminal di direktori saat ini
 tooltip_search = Cari file dan folder
+tooltip_search_close = Tutup pencarian
 search_placeholder = Cari file dan folder...
 search_filter_syntax_hint = Filter yang bisa diketik: ext:pdf, size:>10mb, size:<1kb, modified:today, modified:yesterday, modified:thisweek, content:kata (mencari isi file; hanya berfungsi dengan cakupan "Folder ini", dan pada mesin Everything hanya jika Content Indexing diaktifkan di pengaturan Everything sendiri). Bisa digabung dengan teks biasa, contoh: "invoice ext:pdf size:>100kb".
 search_scope_current_folder = Folder ini

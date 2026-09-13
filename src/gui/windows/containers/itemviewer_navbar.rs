@@ -106,6 +106,7 @@ pub fn draw_itemviewer_navigation_bar(
                 can_go_back,
                 can_go_forward,
                 tab.display_mode,
+                tab.search_box_editing,
             );
 
             merge_toolbar_action(&mut action, toolbar_action);
@@ -135,6 +136,7 @@ pub fn draw_itemviewer_navigation_bar(
                 can_go_back,
                 can_go_forward,
                 tab.display_mode,
+                tab.search_box_editing,
             );
 
             merge_toolbar_action(&mut action, toolbar_action);
@@ -205,11 +207,25 @@ fn draw_bordered_breadcrumb(
     let full_width = ui.available_width();
     let side_margin = 6.0;
     // Gap left after the field so it never sits flush against the pane's own
-    // right edge/border, in both single-pane and split-pane layouts.
-    let right_gap = 8.0;
+    // right edge/border, in both single-pane and split-pane layouts - 8px
+    // read as "almost touching" next to the app's own thick accent-colored
+    // outer window border, so this is deliberately more generous than a
+    // plain "two adjacent boxes" gap would need to be.
+    let right_gap = 16.0;
+
+    // `borders_default` is a deliberately faint accent tint everywhere else
+    // it's used (a subtle divider/outline), but the address bar is a field
+    // the user actively looks for and clicks into - at that same low alpha
+    // it read as "barely there" rather than as a real field boundary. Boost
+    // just this stroke's alpha instead of changing `borders_default` itself
+    // (which would also thin out every other divider that deliberately
+    // wants to stay subtle).
+    let pill_border = palette.borders_default;
+    let pill_border =
+        egui::Color32::from_rgba_unmultiplied(pill_border.r(), pill_border.g(), pill_border.b(), (pill_border.a() as u16 * 2).min(255) as u8);
 
     egui::Frame::NONE
-        .stroke(egui::Stroke::new(1.5, palette.borders_default))
+        .stroke(egui::Stroke::new(1.5, pill_border))
         .corner_radius(egui::CornerRadius::same(palette.small_radius))
         .inner_margin(egui::Margin {
             left: side_margin as i8,
@@ -714,8 +730,25 @@ fn nav_icon_button(
     enabled: bool,
     hover_text: &str,
 ) -> egui::Response {
+    nav_icon_button_active(ui, icon, palette, enabled, false, hover_text)
+}
+
+/// Same as `nav_icon_button`, plus an `is_active` state (tinted with the
+/// accent, like the display-mode icons already do) for a toolbar icon that
+/// toggles a mode on/off - e.g. the search icon, which should read as
+/// "currently on" while the inline search box is showing.
+fn nav_icon_button_active(
+    ui: &mut egui::Ui,
+    icon: &str,
+    palette: &ThemePalette,
+    enabled: bool,
+    is_active: bool,
+    hover_text: &str,
+) -> egui::Response {
     let font_id = egui::FontId::proportional(TOOLBAR_ICON_SIZE);
-    let base_color = if enabled {
+    let base_color = if is_active {
+        palette.primary
+    } else if enabled {
         palette.toolbar_icon_color
     } else {
         ui.visuals().text_color()
@@ -754,6 +787,7 @@ fn nav_icon_button(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_navigation_bar_buttons(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -765,6 +799,7 @@ fn draw_navigation_bar_buttons(
     can_go_back: bool,
     can_go_forward: bool,
     display_mode: ItemViewerDisplayMode,
+    search_active: bool,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
 
@@ -911,17 +946,26 @@ fn draw_navigation_bar_buttons(
         }
     }
 
-    if nav_icon_button(
+    if nav_icon_button_active(
         ui,
         regular::MAGNIFYING_GLASS,
         palette,
         true,
-        &i18n.tr("tooltip_search"),
+        search_active,
+        &i18n.tr(if search_active {
+            "tooltip_search_close"
+        } else {
+            "tooltip_search"
+        }),
     )
     .clicked()
     {
         action.activate_search_box = true;
     }
+
+    ui.add_space(2.0);
+    ui.separator();
+    ui.add_space(2.0);
 
     let display_mode_enabled = !is_recycle_bin && !is_root;
     for (mode, icon, tooltip_key) in [
@@ -981,6 +1025,10 @@ fn draw_navigation_bar_buttons(
             action.set_display_mode = Some(mode);
         }
     }
+
+    ui.add_space(2.0);
+    ui.separator();
+    ui.add_space(2.0);
 
     if nav_icon_button(
         ui,

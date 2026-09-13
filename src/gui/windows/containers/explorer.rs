@@ -83,11 +83,17 @@ pub fn draw_tab_content(
     // approximate height of your breadcrumb/tabbar - a split pane stacks the
     // address bar above the toolbar as its own row, so it needs roughly
     // double (each row also reserves `TOOLBAR_ROW_VERTICAL_PADDING` above
-    // and below itself).
+    // and below itself). The "+8.0" covers the search box's scope-toggle
+    // icons, which are 8px taller than a plain breadcrumb row now that
+    // `clickable_active_icon` reserves padding around its glyph for a
+    // bigger click target - without it, switching a pane into search mode
+    // needed more height than this fixed budget allowed, and the address
+    // bar's own bottom border got clipped by the file list starting right
+    // where the (too-short) budget said this row should end.
     let tabbar_height = if is_split_pane {
-        58.0 + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING
+        58.0 + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING + 8.0
     } else {
-        30.0 + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING
+        30.0 + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING + 8.0
     };
 
     let old_spacing = ui.spacing().item_spacing.y;

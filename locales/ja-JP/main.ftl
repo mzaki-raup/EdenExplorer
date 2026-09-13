@@ -42,6 +42,7 @@ tooltip_favorites_add = 現在のディレクトリをお気に入りに追加
 tooltip_favorites_remove = 現在のディレクトリをお気に入りから削除
 tooltip_open_terminal = 現在のディレクトリでターミナルを開く
 tooltip_search = ファイルとフォルダーを検索
+tooltip_search_close = 検索を閉じる
 search_placeholder = ファイルとフォルダーを検索...
 search_filter_syntax_hint = 入力できるフィルター: ext:pdf, size:>10mb, size:<1kb, modified:today, modified:yesterday, modified:thisweek, content:単語(ファイルの中身を検索します。「このフォルダー」スコープでのみ機能し、Everythingエンジンでは Everything 側の設定で Content Indexing を有効にしている場合のみ機能します)。通常のテキストと組み合わせ可能です。例: "invoice ext:pdf size:>100kb"。
 search_scope_current_folder = このフォルダー

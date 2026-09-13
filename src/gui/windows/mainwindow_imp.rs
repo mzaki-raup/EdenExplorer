@@ -3234,8 +3234,18 @@ impl MainWindow {
     /// box, defaulting its scope to the current folder (recursive) when
     /// this tab is showing a real folder, or Everywhere otherwise (This PC,
     /// Recycle Bin, Settings, a tag view, or another search's results).
+    /// Clicking the toolbar's search icon again while the search box is
+    /// already showing is a cancel, not a no-op - it toggles back to the
+    /// normal breadcrumb rather than silently re-defaulting an in-progress
+    /// query every time the icon is pressed.
     pub fn enter_search_box_edit_mode(&mut self) {
         let side = self.focused_split;
+
+        if self.active_tab().view(side).search_box_editing {
+            self.active_tab_mut().view_mut(side).search_box_editing = false;
+            return;
+        }
+
         let nav = &self.active_tab().view(side).nav;
         let is_real_folder = !nav.is_root()
             && !nav.is_recycle_bin()
