@@ -624,6 +624,70 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     palette.checkbox_bg_active = base;
 }
 
+/// A named, color-only theme preset - the "bigger-grained" alternative to
+/// hand-picking an accent + core colors one at a time. Deliberately small:
+/// only the accent plus a couple of curated, purely-decorative fields
+/// (the pinned-tab star, the favorite-star fill) that aren't already
+/// recomputed by `regenerate_base_derived_colors`, so applying a preset
+/// can't clobber semantic colors (drive-usage warning/critical, tab-close
+/// hover, etc.) that need to keep meaning the same across every theme.
+pub struct ThemePresetDef {
+    pub name_key: &'static str,
+    pub accent: Color32,
+    pub pinned_tab_color: Color32,
+    pub button_favorite_fill: Color32,
+}
+
+pub static PALETTE_PRESETS: &[ThemePresetDef] = &[
+    ThemePresetDef {
+        name_key: "theme_preset_default",
+        accent: Color32::from_rgb(110, 85, 160),
+        pinned_tab_color: Color32::from_rgb(242, 201, 76),
+        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_midnight",
+        accent: Color32::from_rgb(54, 90, 196),
+        pinned_tab_color: Color32::from_rgb(176, 196, 255),
+        button_favorite_fill: Color32::from_rgb(176, 196, 255),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_ocean",
+        accent: Color32::from_rgb(0, 150, 160),
+        pinned_tab_color: Color32::from_rgb(224, 196, 120),
+        button_favorite_fill: Color32::from_rgb(224, 196, 120),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_forest",
+        accent: Color32::from_rgb(46, 133, 64),
+        pinned_tab_color: Color32::from_rgb(214, 170, 64),
+        button_favorite_fill: Color32::from_rgb(214, 170, 64),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_sunset",
+        accent: Color32::from_rgb(214, 94, 54),
+        pinned_tab_color: Color32::from_rgb(255, 178, 74),
+        button_favorite_fill: Color32::from_rgb(255, 178, 74),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_slate",
+        accent: Color32::from_rgb(90, 98, 110),
+        pinned_tab_color: Color32::from_rgb(176, 182, 190),
+        button_favorite_fill: Color32::from_rgb(176, 182, 190),
+    },
+];
+
+/// Applies a named preset's accent + curated colors to `palette`, then
+/// re-derives every accent-driven surface/icon color exactly like manually
+/// editing the accent swatch would - a preset is just a bundle of manual
+/// edits applied in one click, not a separate code path.
+pub fn apply_theme_preset(palette: &mut ThemePalette, preset: &ThemePresetDef, is_dark: bool) {
+    palette.primary = preset.accent;
+    palette.pinned_tab_color = preset.pinned_tab_color;
+    palette.button_favorite_fill = preset.button_favorite_fill;
+    regenerate_base_derived_colors(palette, is_dark);
+}
+
 pub fn apply_font_to_context(ctx: &egui::Context, palette: &ThemePalette) {
     let mut fonts = egui::FontDefinitions::default();
 

@@ -1,8 +1,8 @@
 use crate::core::utils::fonts::get_font_list;
 use crate::gui::i18n::I18n;
 use crate::gui::theme::{
-    ThemeMode, ThemePalette, apply_font_to_context, get_default_palette,
-    regenerate_base_derived_colors,
+    PALETTE_PRESETS, ThemeMode, ThemePalette, apply_font_to_context, apply_theme_preset,
+    get_default_palette, regenerate_base_derived_colors,
 };
 use crate::gui::utils::rgba_color_edit_button;
 use crate::gui::utils::widgets::{
@@ -323,6 +323,67 @@ pub fn draw_theme_customizer_content(
                             });
 
                         ui.add_space(6.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_prebuilt_themes"));
+                        ui.add_space(6.0);
+
+                        ui.horizontal_wrapped(|ui| {
+                            for preset in PALETTE_PRESETS {
+                                let is_selected = editing_palette.primary == preset.accent
+                                    && editing_palette.pinned_tab_color == preset.pinned_tab_color;
+
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    egui::vec2(64.0, 32.0),
+                                    egui::Sense::click(),
+                                );
+                                if ui.is_rect_visible(rect) {
+                                    let radius = palette.small_radius;
+                                    let painter = ui.painter();
+                                    painter.rect_filled(
+                                        rect,
+                                        egui::CornerRadius::same(radius),
+                                        preset.accent,
+                                    );
+                                    let strip_w = rect.width() / 2.0;
+                                    let strip = egui::Rect::from_min_size(
+                                        egui::pos2(rect.min.x + strip_w, rect.min.y),
+                                        egui::vec2(strip_w, rect.height()),
+                                    );
+                                    painter.rect_filled(
+                                        strip,
+                                        egui::CornerRadius {
+                                            nw: 0,
+                                            sw: 0,
+                                            ne: radius,
+                                            se: radius,
+                                        },
+                                        preset.pinned_tab_color,
+                                    );
+                                    painter.rect_stroke(
+                                        rect,
+                                        egui::CornerRadius::same(radius),
+                                        if is_selected {
+                                            egui::Stroke::new(2.0, palette.text_normal)
+                                        } else {
+                                            egui::Stroke::new(1.0, palette.borders_default)
+                                        },
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                                let resp = resp.on_hover_text(i18n.tr(preset.name_key));
+                                if resp.clicked() {
+                                    apply_theme_preset(
+                                        editing_palette,
+                                        preset,
+                                        customizer.selected_mode == ThemeMode::Dark,
+                                    );
+                                    changed = true;
+                                }
+                            }
+                        });
+
+                        ui.add_space(10.0);
                         ui.separator();
 
                         eden_text_label(ui, palette, &i18n.tr("theme_color_scheme"));
