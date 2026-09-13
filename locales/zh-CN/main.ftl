@@ -485,3 +485,10 @@ theme_colors_notification_status_info = 状态：信息
 theme_colors_primary_button_text = 主按钮文字
 theme_colors_button_disabled_bg = 禁用按钮背景
 theme_colors_button_disabled_text = 禁用按钮文字
+
+theme_custom_themes = 自定义主题
+theme_custom_theme_name_hint = 新主题名称...
+theme_custom_theme_save = 保存当前颜色
+theme_custom_theme_delete = 删除主题
+theme_custom_theme_delete_title = 删除自定义主题
+theme_custom_theme_delete_confirm = 主题名称

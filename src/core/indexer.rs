@@ -1,5 +1,6 @@
 use crate::core::fs::{DateStyle, MY_PC_PATH};
 use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
+use eframe::egui::Color32;
 use crate::gui::utils::SortKey;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::containers::structs::{
@@ -82,6 +83,32 @@ pub struct RecentLocationsSnapshot {
 }
 
 fn default_recent_locations_version() -> u32 {
+    1
+}
+
+/// One user-created named theme - just a name plus the same accent +
+/// secondary pair a built-in `ThemePresetDef` carries (see `theme.rs`),
+/// deliberately not a full `ThemePalette` snapshot: applying one is meant to
+/// behave exactly like clicking a prebuilt preset (set `primary`/
+/// `secondary_accent` and re-derive everything else), not restore a whole
+/// saved configuration.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CustomThemeEntry {
+    pub id: u64,
+    pub name: String,
+    pub accent: Color32,
+    pub secondary: Color32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CustomThemesSnapshot {
+    #[serde(default = "default_next_custom_theme_id")]
+    pub next_id: u64,
+    #[serde(default)]
+    pub items: Vec<CustomThemeEntry>,
+}
+
+fn default_next_custom_theme_id() -> u64 {
     1
 }
 
@@ -408,6 +435,11 @@ fn recent_locations_cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("recent_locations.bin"))
 }
 
+fn custom_themes_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("custom_themes.bin"))
+}
+
 /// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
 /// Shared Network) are expanded, persisted across restarts.
 #[derive(Serialize, Deserialize)]
@@ -661,6 +693,22 @@ pub fn load_recent_locations() -> Option<RecentLocationsSnapshot> {
 
 pub fn save_recent_locations(snapshot: &RecentLocationsSnapshot) {
     let path = match recent_locations_cache_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_custom_themes() -> Option<CustomThemesSnapshot> {
+    let path = custom_themes_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path)
+}
+
+pub fn save_custom_themes(snapshot: &CustomThemesSnapshot) {
+    let path = match custom_themes_cache_path() {
         Some(path) => path,
         None => return,
     };

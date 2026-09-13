@@ -485,3 +485,10 @@ theme_colors_notification_status_info = 狀態：資訊
 theme_colors_primary_button_text = 主要按鈕文字
 theme_colors_button_disabled_bg = 停用按鈕背景
 theme_colors_button_disabled_text = 停用按鈕文字
+
+theme_custom_themes = 自訂主題
+theme_custom_theme_name_hint = 新主題名稱...
+theme_custom_theme_save = 儲存目前顏色
+theme_custom_theme_delete = 刪除主題
+theme_custom_theme_delete_title = 刪除自訂主題
+theme_custom_theme_delete_confirm = 主題名稱

@@ -22,15 +22,33 @@ pub struct ThemeCustomizer {
     /// theme-mode-specific value like the palettes above, but edited from
     /// the same Appearance page's new Layout section.
     pub sidebar_width: f32,
+    /// User-created named themes (name + accent + secondary, like a
+    /// built-in `ThemePresetDef`) - persisted in their own file via
+    /// `core::indexer::{load_custom_themes, save_custom_themes}`, not part
+    /// of either palette above.
+    pub custom_themes: Vec<crate::core::indexer::CustomThemeEntry>,
+    pub custom_themes_next_id: u64,
+    /// Draft text for the "save current colors as a new theme" input.
+    pub new_custom_theme_name: String,
+    /// Id of the custom theme pending a delete confirmation, if any.
+    pub custom_theme_delete_confirm: Option<u64>,
 }
 
 impl Default for ThemeCustomizer {
     fn default() -> Self {
+        let custom_themes_snapshot = crate::core::indexer::load_custom_themes();
         Self {
             selected_mode: ThemeMode::Dark,
             light_palette: crate::gui::theme::get_palette(ThemeMode::Light),
             dark_palette: crate::gui::theme::get_palette(ThemeMode::Dark),
             sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
+            custom_themes: custom_themes_snapshot
+                .as_ref()
+                .map(|s| s.items.clone())
+                .unwrap_or_default(),
+            custom_themes_next_id: custom_themes_snapshot.map(|s| s.next_id).unwrap_or(1),
+            new_custom_theme_name: String::new(),
+            custom_theme_delete_confirm: None,
         }
     }
 }

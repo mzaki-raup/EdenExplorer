@@ -481,3 +481,10 @@ theme_colors_notification_status_info = Status: Info
 theme_colors_primary_button_text = Primary Button Text
 theme_colors_button_disabled_bg = Disabled Button Background
 theme_colors_button_disabled_text = Disabled Button Text
+
+theme_custom_themes = Custom Themes
+theme_custom_theme_name_hint = New theme name...
+theme_custom_theme_save = Save Current Colors
+theme_custom_theme_delete = Delete theme
+theme_custom_theme_delete_title = Delete Custom Theme
+theme_custom_theme_delete_confirm = Theme name

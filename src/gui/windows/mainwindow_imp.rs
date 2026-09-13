@@ -5013,6 +5013,13 @@ impl MainWindow {
                 self.theme = mode;
                 self.theme_dirty = true;
             }
+            ThemeCustomizerAction::CustomThemesChanged => {
+                let snapshot = crate::core::indexer::CustomThemesSnapshot {
+                    next_id: theme_customizer.custom_themes_next_id,
+                    items: theme_customizer.custom_themes.clone(),
+                };
+                crate::core::indexer::save_custom_themes(&snapshot);
+            }
             ThemeCustomizerAction::SidebarWidthChanged(width) => {
                 self.sidebar_state.sidebar_default_width = width;
                 crate::core::indexer::save_sidebar_sections(

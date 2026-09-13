@@ -484,3 +484,10 @@ theme_colors_notification_status_info = Status: Info
 theme_colors_primary_button_text = Teks Tombol Utama
 theme_colors_button_disabled_bg = Latar Belakang Tombol Nonaktif
 theme_colors_button_disabled_text = Teks Tombol Nonaktif
+
+theme_custom_themes = Tema Kustom
+theme_custom_theme_name_hint = Nama tema baru...
+theme_custom_theme_save = Simpan Warna Saat Ini
+theme_custom_theme_delete = Hapus tema
+theme_custom_theme_delete_title = Hapus Tema Kustom
+theme_custom_theme_delete_confirm = Nama tema

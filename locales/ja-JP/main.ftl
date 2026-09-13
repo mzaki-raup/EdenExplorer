@@ -485,3 +485,10 @@ theme_colors_notification_status_info = ステータス：情報
 theme_colors_primary_button_text = 主要ボタンのテキスト
 theme_colors_button_disabled_bg = 無効ボタンの背景
 theme_colors_button_disabled_text = 無効ボタンのテキスト
+
+theme_custom_themes = カスタムテーマ
+theme_custom_theme_name_hint = 新しいテーマ名...
+theme_custom_theme_save = 現在の色を保存
+theme_custom_theme_delete = テーマを削除
+theme_custom_theme_delete_title = カスタムテーマの削除
+theme_custom_theme_delete_confirm = テーマ名

@@ -16,6 +16,13 @@ pub enum ThemeCustomizerAction {
     /// editor's mode toggle also become the live theme, so what's shown in
     /// the editor is always what's on screen.
     SetLiveMode(crate::gui::theme::ThemeMode),
+    /// The user-created custom-themes list changed (a theme was saved or
+    /// deleted) - persists `ThemeCustomizer::custom_themes`/
+    /// `custom_themes_next_id` as-is. Applying a saved custom theme reuses
+    /// the ordinary `ThemeUpdated` path instead (it's just a `primary`/
+    /// `secondary_accent` edit like any other), so this variant only ever
+    /// fires for the list itself changing.
+    CustomThemesChanged,
 }
 
 #[derive(Clone, Debug)]
