@@ -282,6 +282,7 @@ theme_colors_checkbox_bg_hover = 核取方塊懸停
 theme_colors_checkbox_bg_active = 核取方塊啟用
 theme_colors_button_background = 按鈕背景
 theme_colors_button_stroke = 按鈕邊框
+theme_colors_button_text = 按鈕文字
 theme_colors_button_favorite_fill = 收藏星號
 theme_colors_button_separator_handle = 分隔控點
 theme_colors_corner_radius = 圓角

@@ -995,6 +995,34 @@ PowerShell process) rather than the app's own code - if you're using the
   versioned migration path (see how `ThemeSettingsSnapshot`'s
   `THEME_VERSION` check and `LegacyAppSettingsSnapshot`'s `From` impl each
   handle *that* problem instead of relying on `#[serde(default)]` alone).
+- **Found the above finding's real-world consequence: `ThemePalette` itself
+  hits it, and several "zero visual change until touched" claims made for
+  past `ThemePalette` field additions in `CHECKLIST.md` were likely wrong.**
+  `load_theme_settings` (`core/indexer.rs`) calls
+  `load_or_migrate_bincode_to_postcard::<ThemeSettingsSnapshot>`, whose
+  postcard branch is a flat `postcard::from_bytes::<T>(&data)` - no
+  `take_from_bytes` + "rest is empty" check, no per-field rescue. Per the
+  entry above, this call fails outright (not gracefully) for **any** old
+  save missing a field that was appended to `ThemePalette` since it was
+  written - and the failure path is `load_theme_settings`'s own
+  `_ => { reset_theme_to_defaults(); None }` arm, which resets *every*
+  color in *both* palettes, not just the new field. Whether `THEME_VERSION`
+  gets bumped alongside the new field makes no difference here - the
+  version number is only ever checked *after* a successful decode, so a
+  byte-level shape mismatch resets the theme regardless of the version
+  check passing or failing. In other words: **every additive `ThemePalette`
+  field ever ships as a breaking change for anyone whose `theme.bin` predates
+  it**, full stop - there is currently no way to add one without resetting
+  existing users' saved colors on their next launch after the update, and
+  past CHECKLIST entries claiming otherwise were based on the field-level
+  reasoning in the entry above without tracing all the way through to this
+  specific load path. If this ever needs fixing for real (rather than just
+  accepting "a new Appearance feature resets your custom colors once"),
+  the fix has to happen in `load_theme_settings`/`load_or_migrate_bincode_to_postcard`
+  itself - e.g. decode into an explicitly-versioned enum of past
+  `ThemePalette` shapes and upgrade field-by-field - not by continuing to
+  add fields to `ThemePalette` and hoping `#[serde(default = ...)]` covers
+  it, which it demonstrably does not for this struct's actual load path.
 
 ## Operational Instructions
 

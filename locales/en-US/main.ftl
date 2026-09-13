@@ -318,6 +318,7 @@ theme_colors_checkbox_bg_hover = Checkbox Hover
 theme_colors_checkbox_bg_active = Checkbox Active
 theme_colors_button_background = Button Background
 theme_colors_button_stroke = Button Border
+theme_colors_button_text = Button Text
 theme_colors_button_favorite_fill = Favorite Star
 theme_colors_button_separator_handle = Separator Handle
 theme_colors_corner_radius = Corner Radius

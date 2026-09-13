@@ -1,4 +1,4 @@
-use crate::core::utils::colors::drive_usage_color;
+use crate::core::utils::colors::{drive_usage_color, hsl_to_color32, rgb_to_hsl};
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
@@ -17,17 +17,24 @@ pub fn clickable_active_icon(
         .painter()
         .layout_no_wrap(icon.to_string(), font_id.clone(), default_color);
 
-    let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
+    let padded_size = galley.size() + Vec2::splat(ICON_CLICK_PADDING * 2.0);
+    let (rect, resp) = ui.allocate_exact_size(padded_size, Sense::click());
 
     let color = if is_active {
         palette.primary
+    } else if resp.hovered() {
+        palette.primary
     } else {
-        if resp.hovered() {
-            palette.primary
-        } else {
-            default_color
-        }
+        default_color
     };
+
+    if (is_active || resp.hovered()) && ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(palette.small_radius),
+            palette.primary_hover.linear_multiply(if is_active { 0.7 } else { 0.4 }),
+        );
+    }
 
     ui.painter()
         .text(rect.center(), Align2::CENTER_CENTER, icon, font_id, color);
@@ -51,6 +58,14 @@ pub fn clickable_icon_sized(
 /// Same as [`clickable_icon_sized`] but with an explicit default (non-hover)
 /// color instead of the generic text color - e.g. the toolbar uses its own
 /// accent-tinted `palette.toolbar_icon_color`.
+/// Breathing room reserved around every icon glyph's own rendered size, on
+/// all four sides - without this, `allocate_exact_size` sized the clickable
+/// rect to *exactly* the glyph's ink, so adjacent icon buttons (the
+/// toolbar, breadcrumb icons, context-menu glyphs) had no gap of their own
+/// beyond whatever `item_spacing` a parent layout happened to add, and each
+/// one's click target was only as forgiving as its own thin glyph shape.
+const ICON_CLICK_PADDING: f32 = 4.0;
+
 pub fn clickable_icon_sized_with_base_color(
     ui: &mut Ui,
     icon: &str,
@@ -64,13 +79,22 @@ pub fn clickable_icon_sized_with_base_color(
         .painter()
         .layout_no_wrap(icon.to_string(), font_id.clone(), base_color);
 
-    let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
+    let padded_size = galley.size() + Vec2::splat(ICON_CLICK_PADDING * 2.0);
+    let (rect, resp) = ui.allocate_exact_size(padded_size, Sense::click());
 
     let color = if resp.hovered() {
         palette.primary
     } else {
         base_color
     };
+
+    if resp.hovered() && ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(
+            rect,
+            CornerRadius::same(palette.small_radius),
+            palette.primary_hover.linear_multiply(0.5),
+        );
+    }
 
     ui.painter()
         .text(rect.center(), Align2::CENTER_CENTER, icon, font_id, color);
@@ -106,20 +130,106 @@ pub fn clickable_windows_icon(
     resp
 }
 
+/// A color-swatch button that opens a popup combining egui's own visual
+/// picker (the saturation/value square + hue slider + RGB drag values it
+/// already provides) with a hex field and HSL drag values egui's own picker
+/// doesn't have - typing a hex code or an HSL triple is a much faster way to
+/// match a specific published color than dragging a 2D square, and egui's
+/// built-in picker offers no way to do either.
 pub fn rgba_color_edit_button(ui: &mut Ui, color: &mut Color32) -> Response {
-    let mut rgba = egui::Rgba::from(*color);
+    let desired_size = ui.spacing().interact_size;
+    let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::click());
 
-    let response = egui::widgets::color_picker::color_edit_button_rgba(
-        ui,
-        &mut rgba,
-        egui::widgets::color_picker::Alpha::OnlyBlend,
-    );
+    let popup_id = response.id.with("eden_color_popup");
+    let is_open = egui::containers::Popup::is_id_open(ui.ctx(), popup_id);
 
-    if response.changed() {
-        *color = rgba.into();
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact_selectable(&response, is_open);
+        let rect = rect.expand(visuals.expansion);
+        egui::widgets::color_picker::show_color_at(ui.painter(), *color, rect);
+        let rounding = visuals.corner_radius.at_most(2);
+        ui.painter()
+            .rect_stroke(rect, rounding, visuals.bg_stroke, egui::StrokeKind::Outside);
     }
+    response = response.on_hover_text("Click to edit color");
+
+    egui::containers::Popup::from_toggle_button_response(&response)
+        .id(popup_id)
+        .close_behavior(egui::containers::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.spacing_mut().slider_width = 220.0;
+            ui.set_width(240.0);
+
+            if egui::widgets::color_picker::color_picker_color32(
+                ui,
+                color,
+                egui::widgets::color_picker::Alpha::OnlyBlend,
+            ) {
+                response.mark_changed();
+            }
+
+            ui.add_space(6.0);
+            ui.separator();
+            ui.add_space(6.0);
+
+            // Hex - "RRGGBB", with or without a leading '#'; alpha untouched.
+            ui.horizontal(|ui| {
+                ui.label("Hex");
+                let mut hex = format!("{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+                let hex_resp = ui.add(TextEdit::singleline(&mut hex).desired_width(70.0));
+                if hex_resp.lost_focus() || hex_resp.changed() {
+                    if let Some(rgb) = parse_hex_rgb(&hex) {
+                        let parsed = Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], color.a());
+                        if parsed != *color {
+                            *color = parsed;
+                            response.mark_changed();
+                        }
+                    }
+                }
+            });
+
+            // HSL - recomputed from the color every frame (so it always
+            // reflects whatever the square/hue slider/RGB fields/hex field
+            // just did), only written back to `color` on an actual edit so
+            // idle frames can't drift from float rounding.
+            let (mut h, s01, l01) = rgb_to_hsl(*color);
+            let mut s_pct = s01 * 100.0;
+            let mut l_pct = l01 * 100.0;
+            ui.horizontal(|ui| {
+                ui.label("HSL");
+                let rh = ui.add(DragValue::new(&mut h).range(0.0..=360.0).suffix("°"));
+                let rs = ui.add(DragValue::new(&mut s_pct).range(0.0..=100.0).suffix("%"));
+                let rl = ui.add(DragValue::new(&mut l_pct).range(0.0..=100.0).suffix("%"));
+                if rh.changed() || rs.changed() || rl.changed() {
+                    let new_rgb = hsl_to_color32(h, s_pct / 100.0, l_pct / 100.0);
+                    *color = Color32::from_rgba_unmultiplied(
+                        new_rgb.r(),
+                        new_rgb.g(),
+                        new_rgb.b(),
+                        color.a(),
+                    );
+                    response.mark_changed();
+                }
+            });
+        });
 
     response
+}
+
+/// Parses a "RRGGBB" (optionally "#RRGGBB") hex string into `[r, g, b]`.
+/// Returns `None` for anything that isn't exactly 6 valid hex digits, so a
+/// still-being-typed value (e.g. "6E5") just doesn't update the color yet
+/// rather than erroring.
+fn parse_hex_rgb(input: &str) -> Option<[u8; 3]> {
+    let hex = input.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    Some([
+        u8::from_str_radix(&hex[0..2], 16).ok()?,
+        u8::from_str_radix(&hex[2..4], 16).ok()?,
+        u8::from_str_radix(&hex[4..6], 16).ok()?,
+    ])
 }
 
 pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette: &ThemePalette) {
@@ -394,7 +504,7 @@ pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egu
     apply_eden_visual_overrides(ui, palette);
     apply_eden_text_overrides(ui, palette);
     ui.add(
-        Button::new(RichText::new(text).color(palette.text_normal))
+        Button::new(RichText::new(text).color(palette.button_text_color))
             .fill(palette.button_background)
             .stroke(Stroke::new(1.0, palette.button_stroke))
             .corner_radius(CornerRadius::same(palette.medium_radius)),
@@ -521,4 +631,28 @@ pub fn eden_toggle_button(
         }))
         .selected(selected),
     )
+}
+
+#[cfg(test)]
+mod color_hex_tests {
+    use super::parse_hex_rgb;
+
+    #[test]
+    fn parses_with_and_without_leading_hash() {
+        assert_eq!(parse_hex_rgb("6E55A0"), Some([0x6E, 0x55, 0xA0]));
+        assert_eq!(parse_hex_rgb("#6E55A0"), Some([0x6E, 0x55, 0xA0]));
+    }
+
+    #[test]
+    fn parses_case_insensitively_and_trims_whitespace() {
+        assert_eq!(parse_hex_rgb(" #6e55a0 "), Some([0x6E, 0x55, 0xA0]));
+    }
+
+    #[test]
+    fn rejects_anything_that_isnt_exactly_six_hex_digits() {
+        assert_eq!(parse_hex_rgb("6E5"), None);
+        assert_eq!(parse_hex_rgb("6E55A0FF"), None);
+        assert_eq!(parse_hex_rgb("GGGGGG"), None);
+        assert_eq!(parse_hex_rgb(""), None);
+    }
 }

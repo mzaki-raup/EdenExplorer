@@ -861,6 +861,13 @@ pub fn draw_theme_customizer_content(
                                     ui,
                                     palette,
                                     i18n,
+                                    "theme_colors_button_text",
+                                    &mut editing_palette.button_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
                                     "theme_colors_button_favorite_fill",
                                     &mut editing_palette.button_favorite_fill,
                                 );

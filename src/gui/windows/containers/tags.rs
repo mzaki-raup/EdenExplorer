@@ -4,7 +4,7 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{
     clickable_icon, draw_object_drag_ghost, format_size, get_file_type_name,
-    rgba_color_edit_button,
+    ghost_dialog_button, primary_dialog_button, rgba_color_edit_button,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::sidebar::draw_sidebar_item;
@@ -976,13 +976,13 @@ pub fn draw_delete_confirmation_popup(
             );
 
             ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                if ui.button(i18n.tr("ok")).clicked() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if primary_dialog_button(ui, palette, &i18n.tr("ok")).clicked() {
                     confirmed = true;
                     close_requested = true;
                 }
-
-                if ui.button(i18n.tr("close")).clicked() {
+                ui.add_space(6.0);
+                if ghost_dialog_button(ui, palette, &i18n.tr("close")).clicked() {
                     close_requested = true;
                 }
             });
@@ -1149,13 +1149,11 @@ pub fn draw_tag_picker_popup(
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        !picker.new_group_name.trim().is_empty(),
-                        egui::Button::new(i18n.tr("tag_create_group")),
-                    )
-                    .clicked()
-                {
+                let can_create = !picker.new_group_name.trim().is_empty();
+                let create_resp = ui.add_enabled_ui(can_create, |ui| {
+                    primary_dialog_button(ui, palette, &i18n.tr("tag_create_group"))
+                });
+                if create_resp.inner.clicked() {
                     if tags_state.create_group_and_add(
                         picker.new_group_name.clone(),
                         picker.new_group_color,
@@ -1166,7 +1164,7 @@ pub fn draw_tag_picker_popup(
                     picker.new_group_name.clear();
                 }
 
-                if ui.button(i18n.tr("close")).clicked() {
+                if ghost_dialog_button(ui, palette, &i18n.tr("close")).clicked() {
                     close_requested = true;
                 }
             });

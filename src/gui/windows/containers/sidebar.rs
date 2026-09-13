@@ -7,7 +7,7 @@ use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
+use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, eden_button, truncate_item_text};
 use crate::gui::windows::containers::structs::{
     RecentLocationsState, SavedSearchRenameState, SavedSearchesState, SidebarAction, TagsState,
 };
@@ -622,7 +622,7 @@ pub fn draw_sidebar(
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
                                 apply_eden_text_overrides(ui, palette);
-                                if ui.button(&i18n.tr("clear_recent_locations")).clicked() {
+                                if eden_button(ui, palette, &i18n.tr("clear_recent_locations")).clicked() {
                                     action.clear_recent_locations = true;
                                     ui.close();
                                 }

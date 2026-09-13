@@ -282,6 +282,7 @@ theme_colors_checkbox_bg_hover = 复选框悬停
 theme_colors_checkbox_bg_active = 复选框激活
 theme_colors_button_background = 按钮背景
 theme_colors_button_stroke = 按钮边框
+theme_colors_button_text = 按钮文字
 theme_colors_button_favorite_fill = 收藏星标
 theme_colors_button_separator_handle = 分隔手柄
 theme_colors_corner_radius = 圆角

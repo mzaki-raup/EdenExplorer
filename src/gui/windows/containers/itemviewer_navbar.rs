@@ -6,7 +6,8 @@ use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{
-    clear_clipboard_files, clickable_icon_sized_with_base_color, expand_environment_variables,
+    clear_clipboard_files, clickable_active_icon, clickable_icon_sized_with_base_color,
+    expand_environment_variables,
 };
 use crate::gui::windows::containers::enums::ItemViewerNavAction;
 use crate::gui::windows::containers::structs::{
@@ -302,17 +303,36 @@ fn draw_search_box_contents(
         crate::gui::windows::settings::info_icon(ui, &i18n.tr("search_filter_syntax_hint"), palette);
         ui.add_space(8.0);
 
+        // Fixed-size icon toggles rather than text-label buttons: a
+        // translated "This folder"/"Everywhere" label's width varies a lot
+        // by language, and this row already has to fit inside a
+        // fixed-height toolbar budget (see `TOOLBAR_ROW_VERTICAL_PADDING`).
+        // A locale-dependent width was exactly what pushed this row onto a
+        // second line in a narrow split pane or a longer language, which -
+        // since the row's height isn't allowed to grow to match - clipped
+        // or visibly resized the surrounding layout. Icons have a constant
+        // width regardless of language; the meaning is still discoverable
+        // via the same translated string as a tooltip.
         let is_everywhere = matches!(tab.search_box_scope, crate::core::everything::SearchScope::Everywhere);
-        if ui
-            .selectable_label(!is_everywhere, i18n.tr("search_scope_current_folder"))
-            .clicked()
+        if clickable_active_icon(
+            ui,
+            regular::FOLDER_SIMPLE,
+            palette.icon_color,
+            !is_everywhere,
+            palette,
+        )
+        .on_hover_text(i18n.tr("search_scope_current_folder"))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
             && is_everywhere
         {
             tab.search_box_scope =
                 crate::core::everything::SearchScope::CurrentFolder(tab.nav.current.clone());
         }
-        if ui
-            .selectable_label(is_everywhere, i18n.tr("search_scope_everywhere"))
+        ui.add_space(2.0);
+        if clickable_active_icon(ui, regular::GLOBE, palette.icon_color, is_everywhere, palette)
+            .on_hover_text(i18n.tr("search_scope_everywhere"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
             && !is_everywhere
         {
@@ -408,15 +428,29 @@ fn draw_breadcrumb_row_contents(
             let time_since_error = ui.input(|i| i.time) - tab.breadcrumb_path_error_animation_time;
             let error_strength = (1.0 - time_since_error * 2.0).clamp(0.0, 1.0);
 
-            let stroke_color = if tab.breadcrumb_path_error {
-                egui::Color32::from_rgba_premultiplied(255, 80, 80, (255.0 * error_strength) as u8)
+            // Only the error state draws its own border here - the address
+            // bar's own pill border (`draw_bordered_breadcrumb`) already
+            // outlines this whole row at rest, so a second, differently
+            // radiused border drawn only while editing was exactly the
+            // "the border changes when you click in" inconsistency: normal
+            // browsing shows one pill border, but typing a path used to add
+            // a nested second box in a hardcoded radius that didn't match
+            // the outer one. Matching `palette.small_radius` here keeps the
+            // error indicator's corners consistent with the pill around it
+            // on the rare occasion it's actually shown.
+            let frame = if tab.breadcrumb_path_error {
+                let stroke_color = egui::Color32::from_rgba_premultiplied(
+                    255,
+                    80,
+                    80,
+                    (255.0 * error_strength) as u8,
+                );
+                egui::Frame::NONE
+                    .stroke(egui::Stroke::new(1.5, stroke_color))
+                    .corner_radius(egui::CornerRadius::same(palette.small_radius))
             } else {
-                ui.visuals().widgets.inactive.bg_stroke.color
+                egui::Frame::NONE
             };
-
-            let frame = egui::Frame::NONE
-                .stroke(egui::Stroke::new(1.5, stroke_color))
-                .corner_radius(egui::CornerRadius::same(4));
 
             let mut resp = frame
                 .show(ui, |ui| {

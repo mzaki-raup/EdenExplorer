@@ -81,6 +81,10 @@ fn default_secondary_accent() -> Color32 {
     Color32::from_rgb(242, 201, 76)
 }
 
+fn default_button_text_color() -> Color32 {
+    Color32::from_rgb(220, 226, 232)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -219,6 +223,14 @@ pub struct ThemePalette {
     /// consistently in one step.
     #[serde(default = "default_secondary_accent")]
     pub secondary_accent: Color32,
+
+    /// Text color for `eden_button` (the app's general-purpose button, used
+    /// throughout Settings, dialogs, and confirmation popups) - a light
+    /// secondary-accent tint, mirroring how `icon_color` is a light
+    /// primary-accent tint, so button text picks up the theme's second
+    /// color too without sacrificing legibility.
+    #[serde(default = "default_button_text_color")]
+    pub button_text_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -325,6 +337,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         widget_text_active: Color32::from_rgb(255, 250, 255),
         selection_text_color: Color32::from_rgb(255, 255, 255),
         secondary_accent: default_secondary_accent(),
+        button_text_color: default_button_text_color(),
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -429,6 +442,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         widget_text_active: Color32::from_rgb(15, 18, 22),
         selection_text_color: Color32::from_rgb(15, 18, 22),
         secondary_accent: default_secondary_accent(),
+        button_text_color: Color32::from_rgb(35, 41, 47),
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -636,9 +650,14 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         palette.icon_color = tint(Color32::WHITE, base, 0.15);
         palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.55);
 
+        // Buttons tint from `secondary_accent`, not the primary accent -
+        // this is the same "30% tier" as the toolbar icons, so a theme's
+        // second color has real, constant presence (every plain button in
+        // the app) rather than showing up only in a couple of rare spots.
         let neutral = Color32::from_rgb(160, 170, 180);
-        palette.button_background = tint_alpha(neutral, base, 0.16, 20);
-        palette.button_stroke = tint_alpha(neutral, base, 0.28, 70);
+        palette.button_background = tint_alpha(neutral, palette.secondary_accent, 0.16, 20);
+        palette.button_stroke = tint_alpha(neutral, palette.secondary_accent, 0.30, 90);
+        palette.button_text_color = tint(Color32::WHITE, palette.secondary_accent, 0.12);
     } else {
         // Light theme calculations
         palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
@@ -659,8 +678,9 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.55);
 
         let neutral = Color32::from_rgb(160, 170, 180);
-        palette.button_background = tint_alpha(neutral, base, 0.16, 95);
-        palette.button_stroke = tint_alpha(neutral, base, 0.28, 70);
+        palette.button_background = tint_alpha(neutral, palette.secondary_accent, 0.16, 95);
+        palette.button_stroke = tint_alpha(neutral, palette.secondary_accent, 0.30, 90);
+        palette.button_text_color = tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.12);
     }
 
     // Common to both themes

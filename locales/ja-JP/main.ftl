@@ -282,6 +282,7 @@ theme_colors_checkbox_bg_hover = チェックボックスのホバー
 theme_colors_checkbox_bg_active = チェックボックスのアクティブ
 theme_colors_button_background = ボタンの背景
 theme_colors_button_stroke = ボタンの枠線
+theme_colors_button_text = ボタンの文字
 theme_colors_button_favorite_fill = お気に入りの星
 theme_colors_button_separator_handle = 区切りハンドル
 theme_colors_corner_radius = 角の丸み

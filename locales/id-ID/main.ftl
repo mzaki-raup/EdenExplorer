@@ -284,6 +284,7 @@ theme_colors_checkbox_bg_hover = Hover Kotak Centang
 theme_colors_checkbox_bg_active = Kotak Centang Aktif
 theme_colors_button_background = Latar Tombol
 theme_colors_button_stroke = Garis Tombol
+theme_colors_button_text = Teks Tombol
 theme_colors_button_favorite_fill = Bintang Favorit
 theme_colors_button_separator_handle = Gagang Pemisah
 theme_colors_corner_radius = Radius Sudut

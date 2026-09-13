@@ -53,7 +53,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Tabbed browsing with pinned tabs, independent loading states, and full navigation history (back/forward/up)
 - Real-time fuzzy search/filtering with cached indices
 - Sidebar with favorites (drag-and-drop reorderable) and quick access
-- Dark/light themes with a full custom color palette editor, layout options (row density, sidebar width), and twelve prebuilt two-color presets (an accent plus a color-theory-contrasted secondary that drives the toolbar icon row, buttons, and dialog accents); consistently-styled dialogs (Checksums, Paste Conflict, Bulk Rename) and a themed Tags settings page
+- Dark/light themes with a full custom color palette editor (hex/RGB/HSL input), layout options (row density, sidebar width), and twelve prebuilt two-color presets (an accent plus a color-theory-contrasted secondary that drives the toolbar icon row, all buttons, and dialog accents); consistently-styled dialogs (Checksums, Paste Conflict, Bulk Rename) and a themed Tags settings page; consistent address-bar/search-box borders and padded icon click targets throughout
 - Tagging system for files/folders with tag-colored views, plus custom folder colors
 - Gallery/thumbnail view (small to extra-large) for media
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
