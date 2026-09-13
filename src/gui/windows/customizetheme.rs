@@ -527,6 +527,15 @@ pub fn draw_theme_customizer_content(
                                         customizer.selected_mode == ThemeMode::Dark,
                                     );
                                     changed = true;
+                                    // Pre-fill the save controls with this
+                                    // theme's own name/secondary, so tweaking
+                                    // the Secondary swatch below and clicking
+                                    // the button (now reading "Update Theme")
+                                    // saves back into this same entry instead
+                                    // of requiring the name to be retyped
+                                    // from scratch.
+                                    customizer.new_custom_theme_name = entry.name.clone();
+                                    customizer.new_custom_theme_secondary = entry.secondary;
                                 }
 
                                 let trash_resp = ui.interact(
