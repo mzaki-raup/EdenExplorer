@@ -1483,6 +1483,19 @@ pub fn handle_global_actions(
                 top: 6,
                 bottom: 6,
             })
+            // Space *outside* the box's own border - between the box and
+            // whatever's around it (the item viewer's edge above/left, the
+            // file list below) - as opposed to `inner_margin`, which is the
+            // padding between the border and the text inside it. Right is
+            // deliberately left at 0 - the box already reads as anchored to
+            // the top-left corner of the view, and adding space on its own
+            // open side would just look like an unexplained gap.
+            .outer_margin(egui::Margin {
+                left: 6,
+                right: 0,
+                top: 6,
+                bottom: 8,
+            })
             .show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut filter_state.query)
