@@ -31,6 +31,19 @@ const BREADCRUMB_ICON_SIZE: f32 = 15.0;
 /// row - the caller must reserve this much extra height per row (see
 /// `tabbar_height` in `explorer.rs`) or the rows get clipped/cramped.
 pub const TOOLBAR_ROW_VERTICAL_PADDING: f32 = 4.0;
+/// The address bar's *content* height (inside its own border/margin),
+/// forced via `ui.set_min_height` - without this, the bordered frame just
+/// auto-sizes to whatever its current content naturally needs, and the
+/// plain breadcrumb (a single line of text/icons) and the search box (its
+/// own padded icon buttons, taller since click-target padding was added)
+/// don't need the same amount of room. That meant the address bar's own
+/// border visibly changed height depending on whether search was active,
+/// even though the outer toolbar row around it stayed one fixed size the
+/// whole time. Forcing both to the same content height is what actually
+/// keeps the border a constant size - reserving enough total row height
+/// for it (`tabbar_height` in `explorer.rs`) is a separate, additional
+/// requirement and doesn't by itself make the two modes match each other.
+const ADDRESS_BAR_CONTENT_HEIGHT: f32 = 28.0;
 
 pub fn draw_itemviewer_navigation_bar(
     ui: &mut egui::Ui,
@@ -235,24 +248,34 @@ fn draw_bordered_breadcrumb(
         })
         .show(ui, |ui| {
             let target_width = (full_width - right_gap).max(0.0);
-            ui.set_min_width((target_width - side_margin * 2.0).max(0.0));
-            let breadcrumb_width = ui.available_width();
-            draw_breadcrumb_row_contents(
-                ui,
-                i18n,
-                icon_cache,
-                tab,
-                tab_id,
-                palette,
-                drag_active,
-                hovered_target_ref,
-                pointer_pos,
-                pointer_released,
-                breadcrumb_drop_target,
-                action,
-                breadcrumb_width,
-                tags,
-                saved_search_count,
+            let content_width = (target_width - side_margin * 2.0).max(0.0);
+            // Fixed-size allocation (not just `set_min_width`/relying on
+            // content to size the frame) is what actually forces the plain
+            // breadcrumb and the search box to the same height - handing
+            // the content a rect of an exact, predetermined size rather
+            // than letting it claim however much room it naturally wants.
+            ui.allocate_ui_with_layout(
+                egui::vec2(content_width, ADDRESS_BAR_CONTENT_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    draw_breadcrumb_row_contents(
+                        ui,
+                        i18n,
+                        icon_cache,
+                        tab,
+                        tab_id,
+                        palette,
+                        drag_active,
+                        hovered_target_ref,
+                        pointer_pos,
+                        pointer_released,
+                        breadcrumb_drop_target,
+                        action,
+                        content_width,
+                        tags,
+                        saved_search_count,
+                    );
+                },
             );
         });
 }
@@ -270,28 +293,37 @@ fn draw_search_box_contents(
     action: &mut ItemViewerNavBarAction,
     saved_search_count: usize,
 ) {
-    // `horizontal_wrapped` rather than a plain `horizontal`: the scope
-    // buttons' width varies with the current language's translation and
-    // this row's available width shrinks in a split pane, so a fixed
-    // pixel budget for them can't be guaranteed to fit - wrapping to a
-    // second line keeps them inside the frame's own border instead of
-    // spilling past it (which a plain `horizontal` would just clip/overflow).
-    ui.horizontal_wrapped(|ui| {
+    // Plain `horizontal`, not `horizontal_wrapped`: the scope toggle used
+    // to be locale-width-dependent text buttons, where wrapping to a
+    // second line was the only way to keep them inside the frame's border
+    // in a narrow split pane or a longer language. Now that it's two
+    // fixed-size icons (see below), the row's content width no longer
+    // varies, so it always fits on one line - and staying on a guaranteed
+    // single line matters here for a second reason: `allocate_ui_with_layout`
+    // (in `draw_bordered_breadcrumb`) can only hold the address bar to a
+    // constant height if content never actually *needs* more room than
+    // that fixed height allows. A wrap to a second line would silently
+    // grow past it regardless of any fixed size requested, since egui
+    // grows a Ui to fit oversized content rather than clipping it.
+    ui.horizontal(|ui| {
         // The query field gets its own bordered box (distinct from the
         // plain toolbar row it lives in) so it visually reads as "the
         // thing you type into", set apart from the This-folder/Everywhere
         // toggle buttons beside it rather than blending into the same bare
-        // row. This whole row is already nested inside the breadcrumb's own
-        // outer bordered frame (`draw_bordered_breadcrumb`) with a height
-        // budget sized for un-boxed content - giving this inner frame its
-        // own non-zero top/bottom margin on top of that stacks two frames'
-        // worth of vertical padding and overflows past the row's bottom
-        // border. Horizontal-only margin keeps this box's height identical
-        // to the plain icon+text it replaces.
+        // row. `draw_bordered_breadcrumb` now forces the whole address bar
+        // to one fixed content height regardless of what's inside it, so
+        // this box no longer needs a zero top/bottom margin to avoid
+        // overflowing that budget - real padding here just centers within
+        // the space that's already reserved.
         egui::Frame::NONE
             .stroke(egui::Stroke::new(1.0, palette.borders_default))
             .corner_radius(egui::CornerRadius::same(palette.small_radius))
-            .inner_margin(egui::Margin::symmetric(8, 0))
+            .inner_margin(egui::Margin {
+                left: 8,
+                right: 8,
+                top: 4,
+                bottom: 4,
+            })
             .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(regular::MAGNIFYING_GLASS)

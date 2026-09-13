@@ -1116,7 +1116,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        2.0,
+                                                                        4.0,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );
@@ -1210,7 +1210,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        2.0,
+                                                                        4.0,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );
