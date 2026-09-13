@@ -220,6 +220,7 @@ theme_preset_magenta = 洋紅
 theme_preset_violet = 紫羅蘭
 theme_preset_indigo = 靛藍
 theme_preset_skyline = 天藍
+theme_preset_horizon = 地平線
 theme_color_scheme = 配色方案
 theme_scheme_blue = 藍色
 theme_scheme_teal = 青藍色

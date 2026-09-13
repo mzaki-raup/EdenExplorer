@@ -722,6 +722,12 @@ pub static PALETTE_PRESETS: &[ThemePresetDef] = &[
         pinned_tab_color: Color32::from_rgb(255, 214, 64),
         button_favorite_fill: Color32::from_rgb(255, 214, 64),
     },
+    ThemePresetDef {
+        name_key: "theme_preset_horizon",
+        accent: Color32::from_rgb(55, 120, 185),
+        pinned_tab_color: Color32::from_rgb(235, 150, 60),
+        button_favorite_fill: Color32::from_rgb(235, 150, 60),
+    },
 ];
 
 /// Applies a named preset's accent + curated colors to `palette`, then

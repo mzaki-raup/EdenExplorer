@@ -256,6 +256,7 @@ theme_preset_magenta = Magenta
 theme_preset_violet = Violet
 theme_preset_indigo = Indigo
 theme_preset_skyline = Skyline
+theme_preset_horizon = Horizon
 theme_color_scheme = Color Scheme
 theme_scheme_blue = Blue
 theme_scheme_teal = Teal

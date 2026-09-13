@@ -220,6 +220,7 @@ theme_preset_magenta = マゼンタ
 theme_preset_violet = バイオレット
 theme_preset_indigo = インディゴ
 theme_preset_skyline = スカイライン
+theme_preset_horizon = ホライズン
 theme_color_scheme = カラースキーム
 theme_scheme_blue = 青
 theme_scheme_teal = ティール
