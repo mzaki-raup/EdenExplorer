@@ -556,6 +556,15 @@ pub fn apply_checkbox_colors(ui: &mut egui::Ui, palette: &ThemePalette, checked:
     visuals.active.fg_stroke.color = palette.checkbox_checkmark_color;
 }
 
+/// Like `tint`, but for a translucent neutral (e.g. `button_background`'s
+/// low-alpha gray) rather than an opaque surface color - tints the RGB the
+/// same way, then reapplies `alpha` rather than the fully-opaque result
+/// `tint` itself would produce.
+fn tint_alpha(base_rgb: Color32, accent: Color32, t: f32, alpha: u8) -> Color32 {
+    let tinted = tint(base_rgb, accent, t);
+    Color32::from_rgba_unmultiplied(tinted.r(), tinted.g(), tinted.b(), alpha)
+}
+
 /// Blend `base` toward `accent` by `t` (0 = pure `base`, 1 = pure `accent`).
 /// Used to give neutral surfaces/icons a subtle hint of the accent color
 /// without losing contrast, rather than painting them the raw accent.
@@ -599,6 +608,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         // more so the toolbar reads as "branded" at a glance.
         palette.icon_color = tint(Color32::WHITE, base, 0.15);
         palette.toolbar_icon_color = tint(Color32::WHITE, base, 0.30);
+
+        let neutral = Color32::from_rgb(160, 170, 180);
+        palette.button_background = tint_alpha(neutral, base, 0.16, 20);
+        palette.button_stroke = tint_alpha(neutral, base, 0.28, 70);
     } else {
         // Light theme calculations
         palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
@@ -616,6 +629,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
 
         palette.icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.15);
         palette.toolbar_icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.30);
+
+        let neutral = Color32::from_rgb(160, 170, 180);
+        palette.button_background = tint_alpha(neutral, base, 0.16, 95);
+        palette.button_stroke = tint_alpha(neutral, base, 0.28, 70);
     }
 
     // Common to both themes
@@ -674,6 +691,36 @@ pub static PALETTE_PRESETS: &[ThemePresetDef] = &[
         accent: Color32::from_rgb(90, 98, 110),
         pinned_tab_color: Color32::from_rgb(176, 182, 190),
         button_favorite_fill: Color32::from_rgb(176, 182, 190),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_crimson",
+        accent: Color32::from_rgb(196, 43, 60),
+        pinned_tab_color: Color32::from_rgb(255, 158, 122),
+        button_favorite_fill: Color32::from_rgb(255, 158, 122),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_magenta",
+        accent: Color32::from_rgb(191, 0, 119),
+        pinned_tab_color: Color32::from_rgb(255, 158, 204),
+        button_favorite_fill: Color32::from_rgb(255, 158, 204),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_violet",
+        accent: Color32::from_rgb(139, 58, 201),
+        pinned_tab_color: Color32::from_rgb(216, 180, 254),
+        button_favorite_fill: Color32::from_rgb(216, 180, 254),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_indigo",
+        accent: Color32::from_rgb(63, 81, 181),
+        pinned_tab_color: Color32::from_rgb(165, 175, 224),
+        button_favorite_fill: Color32::from_rgb(165, 175, 224),
+    },
+    ThemePresetDef {
+        name_key: "theme_preset_skyline",
+        accent: Color32::from_rgb(0, 120, 215),
+        pinned_tab_color: Color32::from_rgb(255, 214, 64),
+        button_favorite_fill: Color32::from_rgb(255, 214, 64),
     },
 ];
 

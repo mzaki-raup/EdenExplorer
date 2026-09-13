@@ -84,9 +84,10 @@ pub fn draw_tags(
                         let group = &mut tags_state.groups[group_index];
 
                         let group_frame = egui::Frame::NONE
-                            .stroke(egui::Stroke::NONE)
-                            .fill(egui::Color32::TRANSPARENT)
-                            .inner_margin(egui::Margin::symmetric(10, 10));
+                            .fill(palette.faint_bg_color)
+                            .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.35)))
+                            .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+                            .inner_margin(egui::Margin::symmetric(12, 10));
 
                         group_frame.show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -100,6 +101,13 @@ pub fn draw_tags(
                                 );
 
                             let header_response = header_state.show_header(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(regular::TAG)
+                                        .size(palette.text_size + 3.0)
+                                        .color(group_color),
+                                );
+                                ui.add_space(4.0);
+
                                 if editing_this_group {
                                     if let Some(rename) = rename_state
                                         .as_mut()
@@ -153,11 +161,21 @@ pub fn draw_tags(
                                         if rgba_color_edit_button(ui, &mut group.color).changed() {
                                             changed = true;
                                         }
-                                        ui.label(
-                                            egui::RichText::new(format!("({})", group_items.len()))
-                                                .size(palette.text_size)
-                                                .color(palette.tooltip_text_color),
-                                        );
+                                        egui::Frame::NONE
+                                            .fill(group_color.linear_multiply(0.18))
+                                            .corner_radius(egui::CornerRadius::same(
+                                                palette.small_radius,
+                                            ))
+                                            .inner_margin(egui::Margin::symmetric(7, 2))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        group_items.len().to_string(),
+                                                    )
+                                                    .size(palette.text_size - 1.0)
+                                                    .color(group_color),
+                                                );
+                                            });
                                         if clickable_icon(ui, regular::TRASH, palette)
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -188,10 +206,12 @@ pub fn draw_tags(
                             });
 
                             let _ = header_response.body(|ui| {
+                                ui.add_space(6.0);
+                                ui.add(egui::Separator::default().horizontal().spacing(0.0));
+                                ui.add_space(6.0);
+
                                 let collapsible_body_frame = egui::Frame::NONE
-                                    .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.8)))
-                                    .fill(palette.row_bg.linear_multiply(0.18))
-                                    .inner_margin(egui::Margin::symmetric(10, 10));
+                                    .inner_margin(egui::Margin::symmetric(4, 0));
 
                                 collapsible_body_frame.show(ui, |ui| {
                                     if group_items.is_empty() {

@@ -380,10 +380,25 @@ pub fn eden_text_label(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) ->
     )
 }
 
+/// The app's general-purpose button (Export/Import/Reset theme, and every
+/// other plain action button that isn't a dialog's primary/secondary/ghost
+/// choice). Explicitly filled/stroked from `palette.button_background`/
+/// `button_stroke` rather than left to the ambient style - those two fields
+/// are editable in the Appearance page's "Checkboxes & Buttons" section and
+/// a prebuilt theme preset, but previously had no call site actually reading
+/// them, so editing them (or switching presets) had no visible effect at
+/// all. `regenerate_base_derived_colors` accent-tints both from a preset's
+/// `primary`, so this button's resting color now genuinely follows the
+/// active accent/preset instead of only reacting to it on hover.
 pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egui::Response {
     apply_eden_visual_overrides(ui, palette);
     apply_eden_text_overrides(ui, palette);
-    ui.button(egui::RichText::new(text).color(palette.text_normal))
+    ui.add(
+        Button::new(RichText::new(text).color(palette.text_normal))
+            .fill(palette.button_background)
+            .stroke(Stroke::new(1.0, palette.button_stroke))
+            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    )
 }
 
 /// A dialog's single highlighted/recommended action - filled with the
@@ -419,6 +434,75 @@ pub fn ghost_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> R
             .stroke(Stroke::NONE)
             .corner_radius(CornerRadius::same(palette.medium_radius)),
     )
+}
+
+/// The consistent chrome every `egui::Area`+`Frame::popup` modal in this app
+/// uses (Checksums, Paste Conflict, Bulk Rename) - rounded corners, a soft
+/// drop shadow, and an accent-tinted border so a modal visibly belongs to
+/// the app's current theme/preset rather than reading as a flat gray box.
+/// `ctx.style_of(ctx.theme())` still has to be read at the call site (it
+/// needs a live `&egui::Context`, not just a palette), so this only factors
+/// out the part that's identical everywhere.
+pub fn modal_frame(style: &Style, palette: &ThemePalette) -> Frame {
+    Frame::popup(style)
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(18))
+        .stroke(Stroke::new(1.5, palette.borders_active.gamma_multiply(0.55)))
+        .shadow(epaint::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(90),
+        })
+}
+
+/// A modal's title row: a tinted icon badge (a soft-filled circle behind a
+/// glyph) followed by a bold title and an optional muted subtitle - the
+/// exact shape the Checksums and Paste Conflict modals already hand-wrote
+/// independently, pulled out so every modal gets it for free and stays
+/// visually consistent with the others.
+pub fn modal_icon_header(
+    ui: &mut Ui,
+    palette: &ThemePalette,
+    icon: &str,
+    icon_color: Color32,
+    title: &str,
+    subtitle: Option<&str>,
+) {
+    ui.horizontal(|ui| {
+        let icon_diameter = 34.0;
+        let (icon_rect, _) =
+            ui.allocate_exact_size(vec2(icon_diameter, icon_diameter), Sense::hover());
+        ui.painter().circle_filled(
+            icon_rect.center(),
+            icon_diameter / 2.0,
+            icon_color.linear_multiply(0.18),
+        );
+        ui.painter().text(
+            icon_rect.center(),
+            Align2::CENTER_CENTER,
+            icon,
+            FontId::proportional(18.0),
+            icon_color,
+        );
+        ui.add_space(10.0);
+        ui.vertical(|ui| {
+            ui.label(
+                RichText::new(title)
+                    .strong()
+                    .size(palette.text_size + 2.0)
+                    .color(ui.visuals().text_color()),
+            );
+            if let Some(subtitle) = subtitle {
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(subtitle)
+                        .size(palette.text_size)
+                        .color(palette.text_normal.gamma_multiply(0.75)),
+                );
+            }
+        });
+    });
 }
 
 pub fn eden_toggle_button(

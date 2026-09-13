@@ -455,69 +455,111 @@ fn draw_waveform(ui: &mut egui::Ui, size: egui::Vec2, waveform: &crate::core::au
 fn draw_find_bar(
     ui: &mut egui::Ui,
     i18n: &I18n,
+    palette: &ThemePalette,
     find_in_preview: &mut FindInPreviewState,
     haystack: &str,
 ) {
-    ui.horizontal(|ui| {
-        let icon = if find_in_preview.active {
-            regular::X
-        } else {
-            regular::MAGNIFYING_GLASS
-        };
-        if ui
-            .add(egui::Button::new(egui::RichText::new(icon).size(14.0)))
-            .on_hover_text(i18n.tr("preview_find_toggle"))
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            find_in_preview.active = !find_in_preview.active;
-            if find_in_preview.active {
-                find_in_preview.recompute(haystack);
-            }
-        }
+    let toggle_icon = if find_in_preview.active {
+        regular::X
+    } else {
+        regular::MAGNIFYING_GLASS
+    };
 
-        if !find_in_preview.active {
-            return;
-        }
+    // The toggle itself is a plain icon button (not inside the frame below)
+    // so it reads as "open the find bar" rather than as a field inside one -
+    // matches the collapsed/expanded pattern the sidebar search box already
+    // uses (a bare icon until activated, then a real input area appears).
+    let toggle_resp = ui
+        .add(
+            egui::Button::new(
+                egui::RichText::new(toggle_icon)
+                    .size(14.0)
+                    .color(if find_in_preview.active {
+                        palette.primary
+                    } else {
+                        palette.icon_color
+                    }),
+            )
+            .fill(egui::Color32::TRANSPARENT)
+            .stroke(egui::Stroke::NONE),
+        )
+        .on_hover_text(i18n.tr("preview_find_toggle"))
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut find_in_preview.query)
-                .desired_width(160.0)
-                .hint_text(i18n.tr("preview_find_hint")),
-        );
-        if resp.changed() {
+    if toggle_resp.clicked() {
+        find_in_preview.active = !find_in_preview.active;
+        if find_in_preview.active {
             find_in_preview.recompute(haystack);
         }
+    }
 
-        if find_in_preview.query.is_empty() {
-            return;
-        }
+    if !find_in_preview.active {
+        return;
+    }
 
-        if find_in_preview.match_count() == 0 {
-            ui.weak(i18n.tr("preview_find_no_matches"));
-            return;
-        }
+    ui.add_space(6.0);
 
-        ui.label(format!(
-            "{}/{}",
-            find_in_preview.current_match_number(),
-            find_in_preview.match_count()
-        ));
-        if ui
-            .add(egui::Button::new(regular::CARET_UP))
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            find_in_preview.prev_match();
-        }
-        if ui
-            .add(egui::Button::new(regular::CARET_DOWN))
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            find_in_preview.next_match();
-        }
-    });
+    egui::Frame::NONE
+        .fill(palette.input_field_bg)
+        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut find_in_preview.query)
+                        .desired_width(180.0)
+                        .frame(egui::Frame::NONE)
+                        .hint_text(i18n.tr("preview_find_hint"))
+                        .font(egui::FontId::proportional(palette.text_size)),
+                );
+                if resp.changed() {
+                    find_in_preview.recompute(haystack);
+                }
+
+                if find_in_preview.query.is_empty() {
+                    return;
+                }
+
+                ui.add_space(4.0);
+                ui.add(egui::Separator::default().vertical().spacing(4.0));
+                ui.add_space(4.0);
+
+                if find_in_preview.match_count() == 0 {
+                    ui.label(
+                        egui::RichText::new(i18n.tr("preview_find_no_matches"))
+                            .size(palette.text_size)
+                            .color(palette.drive_usage_critical),
+                    );
+                    return;
+                }
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}/{}",
+                        find_in_preview.current_match_number(),
+                        find_in_preview.match_count()
+                    ))
+                    .size(palette.text_size)
+                    .color(palette.text_normal),
+                );
+                ui.add_space(2.0);
+                if ui
+                    .add(egui::Button::new(regular::CARET_UP).frame(false))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    find_in_preview.prev_match();
+                }
+                if ui
+                    .add(egui::Button::new(regular::CARET_DOWN).frame(false))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    find_in_preview.next_match();
+                }
+            });
+        });
 }
 
 /// Renders `text` as a selectable-but-read-only block, backed by a real
@@ -960,7 +1002,7 @@ fn draw_preview_content(
                 .and_then(|e| e.to_str())
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            draw_find_bar(ui, i18n, find_in_preview, &text);
+            draw_find_bar(ui, i18n, palette, find_in_preview, &text);
             ui.add_space(6.0);
             let highlight_range = find_in_preview.current_match_range();
             let jump_to = find_in_preview.take_jump_target();
@@ -979,7 +1021,7 @@ fn draw_preview_content(
                 });
         }
         Some(PreviewPayload::Markdown(markdown)) => {
-            draw_find_bar(ui, i18n, find_in_preview, &markdown);
+            draw_find_bar(ui, i18n, palette, find_in_preview, &markdown);
             ui.add_space(6.0);
             let highlight_range = find_in_preview.current_match_range();
             let jump_to_byte = find_in_preview.take_jump_target().map(|(start, _)| start);

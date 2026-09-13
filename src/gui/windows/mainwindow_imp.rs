@@ -1788,7 +1788,8 @@ impl MainWindow {
     /// there's nothing pending. Called once per frame from the update loop.
     pub fn draw_paste_conflict_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
         use crate::core::utils::widgets::{
-            ghost_dialog_button, primary_dialog_button, secondary_dialog_button,
+            ghost_dialog_button, modal_frame, modal_icon_header, primary_dialog_button,
+            secondary_dialog_button,
         };
         use egui_phosphor::regular;
 
@@ -1851,57 +1852,23 @@ impl MainWindow {
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                    .corner_radius(egui::CornerRadius::same(10))
-                    .inner_margin(egui::Margin::same(18))
-                    .shadow(egui::epaint::Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: egui::Color32::from_black_alpha(90),
-                    })
+                modal_frame(&ctx.style_of(ctx.theme()), palette)
                     .show(ui, |ui| {
                         ui.set_width(popup_width);
                         ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                let icon_diameter = 34.0;
-                                let (icon_rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(icon_diameter, icon_diameter),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().circle_filled(
-                                    icon_rect.center(),
-                                    icon_diameter / 2.0,
-                                    palette.drive_usage_warning.linear_multiply(0.18),
-                                );
-                                ui.painter().text(
-                                    icon_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    regular::WARNING_CIRCLE,
-                                    egui::FontId::proportional(18.0),
-                                    palette.drive_usage_warning,
-                                );
-                                ui.add_space(10.0);
-                                ui.vertical(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(self.i18n.tr("paste_conflict_title"))
-                                            .strong()
-                                            .size(palette.text_size + 2.0)
-                                            .color(ui.visuals().text_color()),
-                                    );
-                                    ui.add_space(2.0);
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} {}",
-                                            count,
-                                            self.i18n.tr("paste_conflict_message")
-                                        ))
-                                        .size(palette.text_size)
-                                        .color(palette.text_normal.gamma_multiply(0.75)),
-                                    );
-                                });
-                            });
+                            let subtitle =
+                                format!("{} {}", count, self.i18n.tr("paste_conflict_message"));
+                            modal_icon_header(
+                                ui,
+                                palette,
+                                regular::WARNING_CIRCLE,
+                                palette.drive_usage_warning,
+                                &self.i18n.tr("paste_conflict_title"),
+                                Some(&subtitle),
+                            );
 
+                            ui.add_space(14.0);
+                            ui.separator();
                             ui.add_space(14.0);
 
                             egui::Frame::NONE
@@ -2031,7 +1998,7 @@ impl MainWindow {
     /// `egui::Window`, which has a remembered-size bug this app already hit
     /// once).
     pub fn draw_checksum_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
-        use crate::core::utils::widgets::ghost_dialog_button;
+        use crate::core::utils::widgets::{ghost_dialog_button, modal_frame, modal_icon_header};
         use egui_phosphor::regular;
 
         if self.pending_checksum.is_none() {
@@ -2060,15 +2027,7 @@ impl MainWindow {
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                    .corner_radius(egui::CornerRadius::same(10))
-                    .inner_margin(egui::Margin::same(18))
-                    .shadow(egui::epaint::Shadow {
-                        offset: [0, 8],
-                        blur: 24,
-                        spread: 0,
-                        color: egui::Color32::from_black_alpha(90),
-                    })
+                modal_frame(&ctx.style_of(ctx.theme()), palette)
                     .show(ui, |ui| {
                         ui.set_width(popup_width);
                         ui.vertical(|ui| {
@@ -2076,46 +2035,22 @@ impl MainWindow {
                                 return;
                             };
 
-                            ui.horizontal(|ui| {
-                                let icon_diameter = 34.0;
-                                let (icon_rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(icon_diameter, icon_diameter),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().circle_filled(
-                                    icon_rect.center(),
-                                    icon_diameter / 2.0,
-                                    palette.icon_color.linear_multiply(0.18),
-                                );
-                                ui.painter().text(
-                                    icon_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    regular::HASH,
-                                    egui::FontId::proportional(18.0),
-                                    palette.icon_color,
-                                );
-                                ui.add_space(10.0);
-                                ui.vertical(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(self.i18n.tr("checksum_title"))
-                                            .strong()
-                                            .size(palette.text_size + 2.0)
-                                            .color(ui.visuals().text_color()),
-                                    );
-                                    ui.add_space(2.0);
-                                    let subtitle = if state.size_label.is_empty() {
-                                        state.file_name.clone()
-                                    } else {
-                                        format!("{} · {}", state.file_name, state.size_label)
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(subtitle)
-                                            .size(palette.text_size)
-                                            .color(palette.text_normal.gamma_multiply(0.75)),
-                                    );
-                                });
-                            });
+                            let subtitle = if state.size_label.is_empty() {
+                                state.file_name.clone()
+                            } else {
+                                format!("{} · {}", state.file_name, state.size_label)
+                            };
+                            modal_icon_header(
+                                ui,
+                                palette,
+                                regular::HASH,
+                                palette.primary,
+                                &self.i18n.tr("checksum_title"),
+                                Some(&subtitle),
+                            );
 
+                            ui.add_space(14.0);
+                            ui.separator();
                             ui.add_space(14.0);
 
                             if let Some(error) = &state.error {
@@ -2128,35 +2063,45 @@ impl MainWindow {
                                     ("SHA-256", &results.sha256),
                                 ];
 
-                                egui::Grid::new("checksum_results_grid")
-                                    .num_columns(3)
-                                    .spacing([10.0, 6.0])
+                                egui::Frame::NONE
+                                    .fill(palette.row_bg)
+                                    .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+                                    .stroke(egui::Stroke::new(1.0, palette.borders_default))
+                                    .inner_margin(egui::Margin::symmetric(12, 10))
                                     .show(ui, |ui| {
-                                        for (label, hash) in rows {
-                                            ui.label(
-                                                egui::RichText::new(label)
-                                                    .strong()
-                                                    .size(palette.text_size)
-                                                    .color(palette.text_normal),
-                                            );
-                                            ui.add(
-                                                egui::Label::new(
-                                                    egui::RichText::new(hash)
-                                                        .monospace()
-                                                        .size(palette.text_size)
-                                                        .color(palette.text_normal),
-                                                )
-                                                .selectable(true),
-                                            );
-                                            if ui
-                                                .add(egui::Button::new(regular::COPY).frame(false))
-                                                .on_hover_text(self.i18n.tr("tooltip_checksum_copy"))
-                                                .clicked()
-                                            {
-                                                crate::gui::utils::copy_text_to_clipboard(hash);
-                                            }
-                                            ui.end_row();
-                                        }
+                                        ui.set_width(ui.available_width());
+                                        egui::Grid::new("checksum_results_grid")
+                                            .num_columns(3)
+                                            .spacing([10.0, 8.0])
+                                            .show(ui, |ui| {
+                                                for (label, hash) in rows {
+                                                    ui.label(
+                                                        egui::RichText::new(label)
+                                                            .strong()
+                                                            .size(palette.text_size)
+                                                            .color(palette.primary),
+                                                    );
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(hash)
+                                                                .monospace()
+                                                                .size(palette.text_size)
+                                                                .color(palette.text_normal),
+                                                        )
+                                                        .selectable(true),
+                                                    );
+                                                    if ui
+                                                        .add(egui::Button::new(regular::COPY).frame(false))
+                                                        .on_hover_text(
+                                                            self.i18n.tr("tooltip_checksum_copy"),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        crate::gui::utils::copy_text_to_clipboard(hash);
+                                                    }
+                                                    ui.end_row();
+                                                }
+                                            });
                                     });
 
                                 ui.add_space(12.0);
@@ -2177,24 +2122,38 @@ impl MainWindow {
                                     let matched = rows
                                         .iter()
                                         .find(|(_, hash)| hash.eq_ignore_ascii_case(trimmed));
-                                    ui.add_space(4.0);
-                                    match matched {
-                                        Some((label, _)) => {
-                                            ui.colored_label(
-                                                palette.drive_usage_normal,
-                                                format!(
-                                                    "{} ({label})",
-                                                    self.i18n.tr("checksum_compare_match")
-                                                ),
-                                            );
-                                        }
-                                        None => {
-                                            ui.colored_label(
-                                                palette.drive_usage_critical,
-                                                self.i18n.tr("checksum_compare_no_match"),
-                                            );
-                                        }
-                                    }
+                                    ui.add_space(6.0);
+                                    let (color, icon, text) = match matched {
+                                        Some((label, _)) => (
+                                            palette.drive_usage_normal,
+                                            regular::CHECK_CIRCLE,
+                                            format!(
+                                                "{} ({label})",
+                                                self.i18n.tr("checksum_compare_match")
+                                            ),
+                                        ),
+                                        None => (
+                                            palette.drive_usage_critical,
+                                            regular::X_CIRCLE,
+                                            self.i18n.tr("checksum_compare_no_match"),
+                                        ),
+                                    };
+                                    egui::Frame::NONE
+                                        .fill(color.linear_multiply(0.15))
+                                        .corner_radius(egui::CornerRadius::same(
+                                            palette.medium_radius,
+                                        ))
+                                        .inner_margin(egui::Margin::symmetric(10, 6))
+                                        .show(ui, |ui| {
+                                            ui.horizontal(|ui| {
+                                                ui.label(egui::RichText::new(icon).color(color));
+                                                ui.label(
+                                                    egui::RichText::new(text)
+                                                        .size(palette.text_size)
+                                                        .color(color),
+                                                );
+                                            });
+                                        });
                                 }
                             } else {
                                 ui.horizontal(|ui| {

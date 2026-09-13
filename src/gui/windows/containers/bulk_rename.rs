@@ -384,7 +384,9 @@ pub fn draw_bulk_rename_modal(
     palette: &ThemePalette,
     state: &mut BulkRenameState,
 ) -> BulkRenameModalAction {
-    use crate::core::utils::widgets::{ghost_dialog_button, primary_dialog_button};
+    use crate::core::utils::widgets::{
+        ghost_dialog_button, modal_frame, modal_icon_header, primary_dialog_button,
+    };
 
     let mut action = BulkRenameModalAction::None;
     let mut changed = false;
@@ -409,24 +411,25 @@ pub fn draw_bulk_rename_modal(
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .show(ctx, |ui| {
-            egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(10))
-                .inner_margin(egui::Margin::same(18))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 8],
-                    blur: 24,
-                    spread: 0,
-                    color: egui::Color32::from_black_alpha(90),
-                })
+            modal_frame(&ctx.style_of(ctx.theme()), palette)
                 .show(ui, |ui| {
                     ui.set_width(popup_width);
                     ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(i18n.tr("bulk_rename_title"))
-                                .strong()
-                                .size(palette.text_size + 2.0)
-                                .color(ui.visuals().text_color()),
+                        let subtitle = format!(
+                            "{} {}",
+                            state.items.len(),
+                            i18n.tr("bulk_rename_items_selected")
                         );
+                        modal_icon_header(
+                            ui,
+                            palette,
+                            regular::PENCIL_SIMPLE_LINE,
+                            palette.primary,
+                            &i18n.tr("bulk_rename_title"),
+                            Some(&subtitle),
+                        );
+                        ui.add_space(14.0);
+                        ui.separator();
                         ui.add_space(10.0);
 
                         ui.horizontal(|ui| {
