@@ -6,7 +6,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::itemviewer_navbar::{
-    TOOLBAR_ROW_VERTICAL_PADDING, draw_itemviewer_navigation_bar,
+    ADDRESS_BAR_TOTAL_HEIGHT, TOOLBAR_ROW_VERTICAL_PADDING, draw_itemviewer_navigation_bar,
 };
 use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerDisplayMode, ItemViewerNavBarAction, RenameState, TabView, TagsState,
@@ -83,17 +83,28 @@ pub fn draw_tab_content(
     // approximate height of your breadcrumb/tabbar - a split pane stacks the
     // address bar above the toolbar as its own row, so it needs roughly
     // double (each row also reserves `TOOLBAR_ROW_VERTICAL_PADDING` above
-    // and below itself). The "+8.0" covers the search box's scope-toggle
-    // icons, which are 8px taller than a plain breadcrumb row now that
-    // `clickable_active_icon` reserves padding around its glyph for a
-    // bigger click target - without it, switching a pane into search mode
-    // needed more height than this fixed budget allowed, and the address
-    // bar's own bottom border got clipped by the file list starting right
-    // where the (too-short) budget said this row should end.
+    // and below itself).
+    //
+    // The row containing the address bar must be at least
+    // `ADDRESS_BAR_TOTAL_HEIGHT` tall or its own bottom border gets clipped
+    // by the file list starting right where this budget says the row
+    // should end - previously this was a separately-hardcoded "+8.0" fudge
+    // factor that turned out to leave only ~2px of slack once the address
+    // bar's real height was accounted for precisely, an amount easily lost
+    // to rounding (exactly what happened: the bottom border kept vanishing
+    // no matter how the address bar's own code was fixed, because the
+    // *budget* around it was still cutting it off by a couple of pixels).
+    // Computing this from the address bar's own real constant, with a
+    // deliberate `ADDRESS_BAR_SLACK` on top, means the two can't drift out
+    // of sync with each other again the way two independent guessed
+    // numbers already did once.
+    const ADDRESS_BAR_SLACK: f32 = 10.0;
+    let address_bar_row_height = ADDRESS_BAR_TOTAL_HEIGHT + ADDRESS_BAR_SLACK;
+    let toolbar_row_height = 30.0;
     let tabbar_height = if is_split_pane {
-        58.0 + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING + 8.0
+        address_bar_row_height + toolbar_row_height + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING
     } else {
-        30.0 + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING + 8.0
+        address_bar_row_height.max(toolbar_row_height) + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING
     };
 
     let old_spacing = ui.spacing().item_spacing.y;

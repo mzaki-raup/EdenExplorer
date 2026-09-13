@@ -1476,12 +1476,12 @@ pub fn handle_global_actions(
         let response = egui::Frame::NONE
             .fill(palette.input_field_bg)
             .stroke(egui::Stroke::new(1.0, palette.borders_default))
-            .corner_radius(egui::CornerRadius::same(palette.small_radius))
+            .corner_radius(egui::CornerRadius::same(palette.medium_radius))
             .inner_margin(egui::Margin {
-                left: 8,
-                right: 8,
-                top: 4,
-                bottom: 4,
+                left: 10,
+                right: 10,
+                top: 6,
+                bottom: 6,
             })
             .show(ui, |ui| {
                 ui.add(

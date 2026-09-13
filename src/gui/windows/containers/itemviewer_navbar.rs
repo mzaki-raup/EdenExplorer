@@ -44,6 +44,19 @@ pub const TOOLBAR_ROW_VERTICAL_PADDING: f32 = 4.0;
 /// for it (`tabbar_height` in `explorer.rs`) is a separate, additional
 /// requirement and doesn't by itself make the two modes match each other.
 const ADDRESS_BAR_CONTENT_HEIGHT: f32 = 28.0;
+const ADDRESS_BAR_TOP_MARGIN: f32 = 3.0;
+const ADDRESS_BAR_BOTTOM_MARGIN: f32 = 5.0;
+/// The address bar pill's total height (content + its own top/bottom
+/// margin) - `explorer.rs`'s `tabbar_height` must reserve at least this
+/// much for the row it lives in, or the pill's own bottom border gets
+/// clipped by the file list starting right where that budget says the row
+/// should end. Exported so that budget can be computed *from* this value
+/// instead of as an independent guessed constant that silently drifts out
+/// of sync with it (which is exactly what happened last time - `explorer.rs`
+/// had its own hardcoded "+8.0" fudge factor that turned out to leave only
+/// ~2px of slack, an easy amount to lose entirely to rounding).
+pub const ADDRESS_BAR_TOTAL_HEIGHT: f32 =
+    ADDRESS_BAR_CONTENT_HEIGHT + ADDRESS_BAR_TOP_MARGIN + ADDRESS_BAR_BOTTOM_MARGIN;
 
 pub fn draw_itemviewer_navigation_bar(
     ui: &mut egui::Ui,
@@ -250,9 +263,9 @@ fn draw_bordered_breadcrumb(
     // use for a real, non-negotiable size), paint the border ourselves,
     // and hand the content a `new_child` ui that's clipped to fit inside -
     // so overflow is invisible instead of growing the row.
-    let top_margin = 3.0;
-    let bottom_margin = 5.0;
-    let frame_height = ADDRESS_BAR_CONTENT_HEIGHT + top_margin + bottom_margin;
+    let top_margin = ADDRESS_BAR_TOP_MARGIN;
+    let bottom_margin = ADDRESS_BAR_BOTTOM_MARGIN;
+    let frame_height = ADDRESS_BAR_TOTAL_HEIGHT;
     let target_width = (full_width - right_gap).max(0.0);
 
     let (pill_rect, _resp) =
