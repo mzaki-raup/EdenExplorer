@@ -923,6 +923,131 @@ pub fn draw_theme_customizer_content(
                                     ui.end_row();
                                 }
                             });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_sidebar"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_sidebar")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_sidebar_text",
+                                    &mut editing_palette.sidebar_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_settings_nav_inactive",
+                                    &mut editing_palette.settings_nav_inactive_color,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_status_bar"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_status_bar")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_status_bar_bg",
+                                    &mut editing_palette.status_bar_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_status_bar_text",
+                                    &mut editing_palette.status_bar_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_status_bar_icon",
+                                    &mut editing_palette.status_bar_icon_color,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_address_search"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_address_search")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_address_bar_bg",
+                                    &mut editing_palette.address_bar_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_search_active_icon_bg",
+                                    &mut editing_palette.search_active_icon_bg,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_toolbar"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_toolbar")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_bg",
+                                    &mut editing_palette.toolbar_bg_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_icon_disabled",
+                                    &mut editing_palette.toolbar_icon_disabled_color,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_preview_pane"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_preview_pane")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_preview_pane_bg",
+                                    &mut editing_palette.preview_pane_bg_color,
+                                );
+                            });
                     });
                 });
 

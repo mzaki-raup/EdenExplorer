@@ -439,7 +439,7 @@ pub fn draw_settings_page(
                         let color = if is_selected {
                             palette.primary
                         } else {
-                            ui.visuals().text_color()
+                            palette.settings_nav_inactive_color
                         };
 
                         let (rect, resp) = ui.allocate_exact_size(

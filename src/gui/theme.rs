@@ -96,6 +96,24 @@ fn default_separator_color() -> Color32 {
     egui::Visuals::dark().widgets.noninteractive.bg_stroke.color
 }
 
+// Fallbacks for a batch of surfaces/text that were previously either
+// ambient `ui.visuals().text_color()` lookups or simply undrawn
+// (transparent) - matches the dark theme's own equivalent value/lack of a
+// fill, so these are all true no-ops for an existing user until touched.
+fn default_ambient_text_color() -> Color32 {
+    Color32::from_rgb(160, 170, 180)
+}
+
+fn default_transparent() -> Color32 {
+    Color32::TRANSPARENT
+}
+
+// Matches the dark theme's own default `primary_hover` (the value this
+// field replaces as a direct read) for the default accent color.
+fn default_search_active_icon_bg() -> Color32 {
+    Color32::from_rgba_unmultiplied(110, 85, 160, 128)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -249,6 +267,38 @@ pub struct ThemePalette {
     /// egui's own stock gray regardless of theme).
     #[serde(default = "default_separator_color")]
     pub separator_color: Color32,
+
+    // Sidebar / status bar / address bar / search / settings-nav / toolbar /
+    // preview-pane - surfaces that were either ambient `ui.visuals().
+    // text_color()` lookups or simply never filled at all, promoted to real
+    // fields so the whole app is genuinely palette-driven.
+    #[serde(default = "default_ambient_text_color")]
+    pub sidebar_text_color: Color32,
+    #[serde(default = "default_transparent")]
+    pub status_bar_bg_color: Color32,
+    #[serde(default = "default_ambient_text_color")]
+    pub status_bar_text_color: Color32,
+    #[serde(default = "default_ambient_text_color")]
+    pub status_bar_icon_color: Color32,
+    #[serde(default = "default_transparent")]
+    pub address_bar_bg_color: Color32,
+    /// Background behind an active/hovered `clickable_active_icon` (the
+    /// search box's This-folder/Everywhere scope toggle, the topbar's
+    /// active-state icons) - previously just read `primary_hover` directly
+    /// with no dedicated field of its own. Still re-derived from the accent
+    /// by `regenerate_base_derived_colors` (matching `primary_hover`'s own
+    /// default), so a preset/accent change still updates it automatically,
+    /// exactly like before - it's just independently editable now too.
+    #[serde(default = "default_search_active_icon_bg")]
+    pub search_active_icon_bg: Color32,
+    #[serde(default = "default_ambient_text_color")]
+    pub settings_nav_inactive_color: Color32,
+    #[serde(default = "default_transparent")]
+    pub toolbar_bg_color: Color32,
+    #[serde(default = "default_ambient_text_color")]
+    pub toolbar_icon_disabled_color: Color32,
+    #[serde(default = "default_transparent")]
+    pub preview_pane_bg_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -356,6 +406,16 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         secondary_accent: default_secondary_accent(),
         button_text_color: default_button_text_color(),
         separator_color: egui::Visuals::dark().widgets.noninteractive.bg_stroke.color,
+        sidebar_text_color: Color32::from_rgb(160, 170, 180),
+        status_bar_bg_color: Color32::TRANSPARENT,
+        status_bar_text_color: Color32::from_rgb(160, 170, 180),
+        status_bar_icon_color: Color32::from_rgb(160, 170, 180),
+        address_bar_bg_color: Color32::TRANSPARENT,
+        search_active_icon_bg: default_search_active_icon_bg(),
+        settings_nav_inactive_color: Color32::from_rgb(160, 170, 180),
+        toolbar_bg_color: Color32::TRANSPARENT,
+        toolbar_icon_disabled_color: Color32::from_rgb(160, 170, 180),
+        preview_pane_bg_color: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -461,6 +521,16 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         secondary_accent: default_secondary_accent(),
         button_text_color: Color32::from_rgb(35, 41, 47),
         separator_color: egui::Visuals::light().widgets.noninteractive.bg_stroke.color,
+        sidebar_text_color: Color32::from_rgb(70, 78, 86),
+        status_bar_bg_color: Color32::TRANSPARENT,
+        status_bar_text_color: Color32::from_rgb(70, 78, 86),
+        status_bar_icon_color: Color32::from_rgb(70, 78, 86),
+        address_bar_bg_color: Color32::TRANSPARENT,
+        search_active_icon_bg: Color32::from_rgba_unmultiplied(110, 85, 160, 90),
+        settings_nav_inactive_color: Color32::from_rgb(70, 78, 86),
+        toolbar_bg_color: Color32::TRANSPARENT,
+        toolbar_icon_disabled_color: Color32::from_rgb(70, 78, 86),
+        preview_pane_bg_color: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -706,6 +776,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     palette.borders_active = base;
     palette.checkbox_bg_hover = base;
     palette.checkbox_bg_active = base;
+    // Kept in sync with `primary_hover` (the field this one now stands in
+    // for, so an accent/preset change still updates it automatically) while
+    // still being directly editable on its own, like every other field here.
+    palette.search_active_icon_bg = palette.primary_hover;
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to

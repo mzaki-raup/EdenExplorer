@@ -258,6 +258,7 @@ pub fn draw_preview_pane(
 ) {
     let Some(path) = selection else {
         egui::Frame::NONE
+            .fill(palette.preview_pane_bg_color)
             .inner_margin(egui::Margin::same(8))
             .show(ui, |ui| {
                 ui.centered_and_justified(|ui| {
@@ -273,6 +274,7 @@ pub fn draw_preview_pane(
         .data_mut(|d| *d.get_temp_mut_or(tab_id, PreviewPaneTab::Preview));
 
     egui::Frame::NONE
+        .fill(palette.preview_pane_bg_color)
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
             let file_name = path

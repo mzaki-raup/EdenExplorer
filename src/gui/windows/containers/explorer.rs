@@ -282,7 +282,8 @@ pub fn draw_tab_content(
                         status_counts_for_view(view, folder_sizes)
                     };
 
-                    let text_color = ui.visuals().text_color();
+                    let text_color = palette.status_bar_text_color;
+                    let icon_color = palette.status_bar_icon_color;
                     let font_id = egui::FontId::proportional(palette.text_size);
                     let folder_scanning_enabled =
                         settings_window.current_settings.folder_scanning_enabled;
@@ -299,6 +300,7 @@ pub fn draw_tab_content(
                     // (less on top, more on bottom) compensates for that and
                     // was tuned by pixel-sampling a live screenshot.
                     egui::Frame::NONE
+                        .fill(palette.status_bar_bg_color)
                         .inner_margin(egui::Margin {
                             left: 0,
                             right: 0,
@@ -315,6 +317,7 @@ pub fn draw_tab_content(
                             counts.file_count,
                             &font_id,
                             text_color,
+                            icon_color,
                             &i18n.tr("status_files_tooltip"),
                         );
                         ui.add_space(COLUMN_SPACING);
@@ -324,6 +327,7 @@ pub fn draw_tab_content(
                             counts.dir_count,
                             &font_id,
                             text_color,
+                            icon_color,
                             &i18n.tr("status_folders_tooltip"),
                         );
                         ui.add_space(COLUMN_SPACING);
@@ -333,6 +337,7 @@ pub fn draw_tab_content(
                             counts.dir_count + counts.file_count,
                             &font_id,
                             text_color,
+                            icon_color,
                             &i18n.tr("status_total_items_tooltip"),
                         );
                         ui.add_space(COLUMN_SPACING);
@@ -342,6 +347,7 @@ pub fn draw_tab_content(
                             counts.total_size,
                             &font_id,
                             text_color,
+                            icon_color,
                             &i18n.tr(if folder_scanning_enabled {
                                 "status_total_size_tooltip"
                             } else {
@@ -484,15 +490,16 @@ fn status_counter(
     icon: &str,
     count: usize,
     font_id: &egui::FontId,
-    color: egui::Color32,
+    text_color: egui::Color32,
+    icon_color: egui::Color32,
     tooltip: &str,
 ) {
     // Added in right-to-left order (icon first) so the icon ends up on the
     // right and the number to its left, matching how this status bar has
     // always read: "12 🗎" rather than "🗎 12".
-    ui.label(RichText::new(icon).font(font_id.clone()).color(color))
+    ui.label(RichText::new(icon).font(font_id.clone()).color(icon_color))
         .on_hover_text(tooltip);
-    ui.label(RichText::new(count.to_string()).font(font_id.clone()).color(color))
+    ui.label(RichText::new(count.to_string()).font(font_id.clone()).color(text_color))
         .on_hover_text(tooltip);
 }
 
@@ -501,13 +508,14 @@ fn status_size(
     icon: &str,
     total_size: u64,
     font_id: &egui::FontId,
-    color: egui::Color32,
+    text_color: egui::Color32,
+    icon_color: egui::Color32,
     tooltip: &str,
 ) {
     // Reverse order from `status_counter`: a byte-size reads more naturally
     // as "💾 1.2 GB" (icon first) than trailing the icon after the number.
-    ui.label(RichText::new(format_size(total_size)).font(font_id.clone()).color(color))
+    ui.label(RichText::new(format_size(total_size)).font(font_id.clone()).color(text_color))
         .on_hover_text(tooltip);
-    ui.label(RichText::new(icon).font(font_id.clone()).color(color))
+    ui.label(RichText::new(icon).font(font_id.clone()).color(icon_color))
         .on_hover_text(tooltip);
 }

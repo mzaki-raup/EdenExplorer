@@ -75,6 +75,10 @@ pub fn draw_itemviewer_navigation_bar(
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
     ui.set_clip_rect(tabbar_rect);
+    // Defaults to transparent, so this is a no-op for existing users until
+    // they actually pick a toolbar background color.
+    ui.painter()
+        .rect_filled(tabbar_rect, egui::CornerRadius::ZERO, palette.toolbar_bg_color);
 
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
     let pointer_released =
@@ -302,6 +306,11 @@ fn draw_bordered_breadcrumb(
         ui.allocate_exact_size(egui::vec2(target_width, frame_height), egui::Sense::hover());
 
     if ui.is_rect_visible(pill_rect) {
+        ui.painter().rect_filled(
+            pill_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            palette.address_bar_bg_color,
+        );
         ui.painter().rect_stroke(
             pill_rect,
             egui::CornerRadius::same(palette.small_radius),
@@ -877,7 +886,7 @@ fn nav_icon_button_active(
     } else if enabled {
         palette.toolbar_icon_color
     } else {
-        ui.visuals().text_color()
+        palette.toolbar_icon_disabled_color
     };
     let resp = ui.add_enabled(
         enabled,

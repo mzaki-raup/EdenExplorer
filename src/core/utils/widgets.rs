@@ -32,7 +32,9 @@ pub fn clickable_active_icon(
         ui.painter().rect_filled(
             rect,
             CornerRadius::same(palette.small_radius),
-            palette.primary_hover.linear_multiply(if is_active { 0.7 } else { 0.4 }),
+            palette
+                .search_active_icon_bg
+                .linear_multiply(if is_active { 0.7 } else { 0.4 }),
         );
     }
 
