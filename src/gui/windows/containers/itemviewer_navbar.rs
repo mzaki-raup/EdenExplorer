@@ -206,6 +206,30 @@ pub fn draw_itemviewer_navigation_bar(
     action
 }
 
+/// `borders_default` is a deliberately faint, *translucent* accent tint
+/// everywhere else it's used (a subtle divider/outline) - a thin translucent
+/// stroke turned out to be genuinely fragile to anti-aliasing/blending
+/// artifacts (isolated via a `rect_filled` diagnostic: the underlying `Rect`
+/// was always correct, but a translucent `rect_stroke` could still render one
+/// edge as nearly/fully invisible, while an otherwise-identical opaque stroke
+/// never did). Any border drawn against the address bar/toolbar area's own
+/// background should go through this helper - which pre-blends the
+/// translucent accent against `input_field_bg` into one fully opaque color
+/// once - rather than passing `borders_default` straight to `rect_stroke`/
+/// `Frame::stroke` and depending on alpha compositing to hold up at render
+/// time.
+pub(crate) fn opaque_border_color(palette: &ThemePalette) -> egui::Color32 {
+    let accent = palette.borders_default;
+    let bg = palette.input_field_bg;
+    let t = accent.a() as f32 / 255.0;
+    let blend = |a: u8, b: u8| (b as f32 + (a as f32 - b as f32) * t).round() as u8;
+    egui::Color32::from_rgb(
+        blend(accent.r(), bg.r()),
+        blend(accent.g(), bg.g()),
+        blend(accent.b(), bg.b()),
+    )
+}
+
 /// Wraps `draw_breadcrumb_row_contents` in a bordered frame, so the address
 /// bar always reads as its own distinct field - previously it only gained a
 /// border once you clicked in to type a path.
@@ -254,17 +278,7 @@ fn draw_bordered_breadcrumb(
     // ahead of time, against the address bar's own background
     // (`input_field_bg`) rather than left to alpha-composite against
     // whatever's underneath at paint time.
-    let pill_border = {
-        let accent = palette.borders_default;
-        let bg = palette.input_field_bg;
-        let t = accent.a() as f32 / 255.0;
-        let blend = |a: u8, b: u8| (b as f32 + (a as f32 - b as f32) * t).round() as u8;
-        egui::Color32::from_rgb(
-            blend(accent.r(), bg.r()),
-            blend(accent.g(), bg.g()),
-            blend(accent.b(), bg.b()),
-        )
-    };
+    let pill_border = opaque_border_color(palette);
 
     // Every previous attempt at forcing a fixed height here (`set_min_height`,
     // `allocate_ui_with_layout` with a fixed size, a zero-width invisible
@@ -307,7 +321,19 @@ fn draw_bordered_breadcrumb(
             .max_rect(content_rect)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    content_ui.set_clip_rect(content_rect);
+    // Expanded by a few px rather than clipped exactly to `content_rect`:
+    // any child content whose own border sits flush against this clip
+    // boundary (the search box's query field, whose frame is only 1-2px
+    // inset from the row's own edges) gets that edge of its stroke silently
+    // discarded - confirmed by a pixel-level diagnostic showing the exact
+    // edges touching the tight clip rect rendering as plain background with
+    // no anti-aliased border pixel at all, while the same stroke's other
+    // edges (with a few more px of slack before the clip boundary) rendered
+    // correctly. This is still tight enough to invisibly clip genuine
+    // overflow (the whole reason this is a clipped child in the first
+    // place - see `draw_bordered_breadcrumb`'s doc comment), just not so
+    // tight that a border drawn right at its own edge gets eaten too.
+    content_ui.set_clip_rect(content_rect.expand(3.0));
     draw_breadcrumb_row_contents(
         &mut content_ui,
         i18n,
@@ -362,8 +388,21 @@ fn draw_search_box_contents(
         // this box no longer needs a zero top/bottom margin to avoid
         // overflowing that budget - real padding here just centers within
         // the space that's already reserved.
-        egui::Frame::NONE
-            .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        // The border is painted manually (via `ui.painter()`, after the
+        // frame's real rect is known) rather than through `Frame::stroke` -
+        // matching `draw_bordered_breadcrumb`'s own pill border, for the
+        // same underlying reason documented on `content_ui`'s
+        // `set_clip_rect` call above: this box's frame sits close enough to
+        // that clip rect's own edges that a tightly-fitted clip silently ate
+        // whichever edge(s) of the stroke happened to land flush against
+        // it (confirmed by a pixel diagnostic - not a color/alpha or
+        // `Frame`-specific issue, since a manually painted stroke at the
+        // same rect showed exactly the same missing edges until the clip
+        // was given a little slack). Kept as a manual paint rather than
+        // reverting to `Frame::stroke` now that the clip has slack, since
+        // it's already verified working and there's no reason to prefer one
+        // over the other here.
+        let frame_response = egui::Frame::NONE
             .corner_radius(egui::CornerRadius::same(palette.small_radius))
             .inner_margin(egui::Margin {
                 left: 8,
@@ -393,6 +432,14 @@ fn draw_search_box_contents(
                 );
                 resp.request_focus();
             });
+        if ui.is_rect_visible(frame_response.response.rect) {
+            ui.painter().rect_stroke(
+                frame_response.response.rect,
+                egui::CornerRadius::same(palette.small_radius),
+                egui::Stroke::new(1.5, opaque_border_color(palette)),
+                egui::StrokeKind::Outside,
+            );
+        }
 
         ui.add_space(8.0);
         crate::gui::windows::settings::info_icon(ui, &i18n.tr("search_filter_syntax_hint"), palette);

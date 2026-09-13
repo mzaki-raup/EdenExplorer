@@ -1475,7 +1475,10 @@ pub fn handle_global_actions(
 
         let response = egui::Frame::NONE
             .fill(palette.input_field_bg)
-            .stroke(egui::Stroke::new(1.0, palette.borders_default))
+            .stroke(egui::Stroke::new(
+                1.5,
+                crate::gui::windows::containers::itemviewer_navbar::opaque_border_color(palette),
+            ))
             .corner_radius(egui::CornerRadius::same(palette.medium_radius))
             .inner_margin(egui::Margin {
                 left: 10,

@@ -1051,6 +1051,39 @@ PowerShell process) rather than the app's own code - if you're using the
   sizing again - vary one stroke parameter (color/alpha, width, corner
   radius, `StrokeKind`) at a time against a hardcoded test value to find
   which one is actually responsible, rather than guessing architecturally.
+- **Follow-up/correction to the entry above: the opaque-color fix solved the
+  outer pill border, but the exact same "one edge silently missing" symptom
+  came back almost immediately on the search box's own inner query-field
+  border, and the real cause there turned out to be something the previous
+  diagnosis never considered - a clip rect cutting off a border drawn flush
+  against its own boundary.** `draw_bordered_breadcrumb` hands the address
+  bar's content to a child `ui` created via `ui.new_child(...)` with
+  `set_clip_rect(content_rect)` set to *exactly* the available interior
+  rect (deliberately, so real overflow clips invisibly instead of growing
+  the row - see that function's own doc comment). The search box's query
+  field draws its own border only 1-2px inset from that same content_rect,
+  meaning its stroke sits right at (or past) the clip boundary. Verified
+  with the same pixel-level methodology as the entry above (a solid
+  `rect_filled` test fill to find the frame's exact bounds, then sampling
+  individual pixels at each of its four edges): the color/opacity fix from
+  above did **not** help here - even a fully opaque `rect_stroke` at that
+  exact rect still rendered with whichever edge(s) touched the clip
+  boundary completely absent (not faint - pixel-identical to plain
+  background), while the edges with a few more px of slack before the clip
+  rendered correctly. Confirmed by then giving `content_ui`'s clip rect a
+  few extra px of slack (`content_rect.expand(3.0)`) - not enough to let
+  real overflow escape visibly, but enough that a border drawn at the
+  content's own edge no longer coincides with the clip boundary - after
+  which every edge rendered. **The real lesson: a `Ui`'s `clip_rect` set
+  exactly to the space you intend content to fill will also silently eat
+  part of a border/stroke that a child draws flush against that same
+  boundary - clipping and stroke rendering aren't just "does the rect fit",
+  a border drawn *at* the clip edge is itself right on the failure
+  boundary.** If a border is missing on the specific edge(s) closest to a
+  known clip rect (not just "one edge is always wrong" the way the entry
+  above was), suspect the clip rect's own bounds before re-blending stroke
+  colors again - give the clip a few px of slack past where content is
+  expected to actually reach, rather than sizing it to the exact pixel.
 
 ## Operational Instructions
 
