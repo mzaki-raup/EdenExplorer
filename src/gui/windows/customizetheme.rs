@@ -1618,6 +1618,47 @@ fn preview_caption(ui: &mut egui::Ui, p: &ThemePalette, text: &str) {
     ui.add_space(3.0);
 }
 
+/// A genuinely interactive toolbar-icon-button mockup - unlike
+/// `preview_swatch` (a static painted rect), this actually responds to the
+/// mouse, so hovering it in the Live Preview panel shows the real
+/// `toolbar_icon_hover_color`/`toolbar_icon_hover_bg_color` the moment
+/// they're edited, without needing to go find the real toolbar to check.
+/// Mirrors `nav_icon_button_active` (`itemviewer_navbar.rs`) - kept as its
+/// own small copy here rather than sharing code across modules, matching
+/// how every other cluster in this preview is already a self-contained
+/// mockup rather than the real widget.
+fn preview_toolbar_icon(ui: &mut egui::Ui, p: &ThemePalette, icon: &str, is_active: bool) {
+    let font_id = egui::FontId::proportional(15.0);
+    let color = if is_active {
+        p.toolbar_icon_active_color
+    } else {
+        p.toolbar_icon_color
+    };
+    let galley = ui.painter().layout_no_wrap(icon.to_string(), font_id.clone(), color);
+    let padded = galley.size() + egui::Vec2::splat(6.0);
+    let (rect, resp) = ui.allocate_exact_size(padded, egui::Sense::hover());
+
+    if resp.hovered() {
+        if p.toolbar_icon_hover_bg_color != egui::Color32::TRANSPARENT {
+            ui.painter().rect_filled(
+                rect,
+                egui::CornerRadius::same(p.small_radius),
+                p.toolbar_icon_hover_bg_color,
+            );
+        }
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            font_id,
+            p.toolbar_icon_hover_color,
+        );
+    } else {
+        ui.painter()
+            .text(rect.center(), egui::Align2::CENTER_CENTER, icon, font_id, color);
+    }
+}
+
 /// Live mockup of the app's major themed surfaces, redrawn every frame
 /// straight from `p`'s current field values - so any color edit below shows
 /// up here instantly, without depending on whether the mode being edited is
@@ -1778,6 +1819,33 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n) {
                         p.text_normal,
                     );
                 });
+            });
+
+            ui.add_space(12.0);
+
+            // --- View Layout: hover this row to preview the real
+            // toolbar_icon_hover_color/toolbar_icon_hover_bg_color live.
+            ui.vertical(|ui| {
+                preview_caption(ui, p, "View Layout (hover me)");
+                egui::Frame::NONE
+                    .fill(p.toolbar_bg_color)
+                    .corner_radius(egui::CornerRadius::same(p.small_radius))
+                    .inner_margin(egui::Margin::symmetric(6, 4))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            preview_toolbar_icon(ui, p, regular::ROWS, true);
+                            ui.add_space(4.0);
+                            preview_toolbar_icon(ui, p, regular::IMAGES_SQUARE, false);
+                            ui.add_space(4.0);
+                            preview_toolbar_icon(ui, p, regular::COLUMNS, false);
+                            ui.add_space(4.0);
+                            preview_toolbar_icon(ui, p, regular::COLUMNS_PLUS_RIGHT, false);
+                            ui.add_space(4.0);
+                            preview_toolbar_icon(ui, p, regular::EYE, false);
+                            ui.add_space(4.0);
+                            preview_toolbar_icon(ui, p, regular::SIDEBAR, false);
+                        });
+                    });
             });
 
             ui.add_space(12.0);

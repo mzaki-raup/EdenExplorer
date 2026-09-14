@@ -1186,30 +1186,25 @@ fn draw_navigation_bar_buttons(
             "view_detail_preview",
         ),
     ] {
-        let color = if display_mode == mode {
-            palette.primary
-        } else {
-            ui.visuals().text_color()
-        };
-
-        if ui
-            .add_enabled(
-                display_mode_enabled,
-                egui::Label::new(
-                    egui::RichText::new(icon)
-                        .size(TOOLBAR_ICON_SIZE)
-                        .color(color),
-                )
-                .selectable(false)
-                .sense(egui::Sense::click()),
-            )
-            .on_hover_text(
-                egui::RichText::new(i18n.tr(tooltip_key))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
+        // Previously a raw `egui::Label` (no hover feedback at all - the
+        // icon didn't change on hover the way every other toolbar button
+        // does) using `ui.visuals().text_color()` for its inactive color
+        // (ambient egui text color, not `palette.toolbar_icon_color` -
+        // didn't even match the rest of the toolbar's own default icon
+        // color). Unified onto the same `nav_icon_button_active` helper
+        // Refresh and the search toggle already use, so these six icons
+        // get real hover feedback (`toolbar_icon_hover_color`/
+        // `toolbar_icon_hover_bg_color`) and a consistent normal/active
+        // look with the rest of the toolbar for free.
+        if nav_icon_button_active(
+            ui,
+            icon,
+            palette,
+            display_mode_enabled,
+            display_mode == mode,
+            &i18n.tr(tooltip_key),
+        )
+        .clicked()
             && display_mode_enabled
         {
             action.set_display_mode = Some(mode);
