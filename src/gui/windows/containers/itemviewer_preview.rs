@@ -486,36 +486,30 @@ fn draw_find_bar(
     find_in_preview: &mut FindInPreviewState,
     haystack: &str,
 ) {
-    let toggle_icon = if find_in_preview.active {
-        regular::X
-    } else {
-        regular::MAGNIFYING_GLASS
-    };
-
     // The toggle itself is a plain icon button (not inside the frame below)
     // so it reads as "open the find bar" rather than as a field inside one -
     // matches the collapsed/expanded pattern the sidebar search box already
     // uses (a bare icon until activated, then a real input area appears).
-    let toggle_resp = ui
-        .add(
-            egui::Button::new(
-                egui::RichText::new(toggle_icon)
-                    .size(14.0)
-                    .color(if find_in_preview.active {
-                        palette.primary
-                    } else {
-                        palette.icon_color
-                    }),
+    // Only shown when the bar is closed: once active, the field's own inline
+    // close (X) button (inside the bordered frame below) is the only close
+    // control - having both this row's own X *and* the inline one read as
+    // two redundant close buttons stacked on top of each other.
+    if !find_in_preview.active {
+        let toggle_resp = ui
+            .add(
+                egui::Button::new(
+                    egui::RichText::new(regular::MAGNIFYING_GLASS)
+                        .size(14.0)
+                        .color(palette.icon_color),
+                )
+                .fill(egui::Color32::TRANSPARENT)
+                .stroke(egui::Stroke::NONE),
             )
-            .fill(egui::Color32::TRANSPARENT)
-            .stroke(egui::Stroke::NONE),
-        )
-        .on_hover_text(i18n.tr("preview_find_toggle"))
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+            .on_hover_text(i18n.tr("preview_find_toggle"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    if toggle_resp.clicked() {
-        find_in_preview.active = !find_in_preview.active;
-        if find_in_preview.active {
+        if toggle_resp.clicked() {
+            find_in_preview.active = true;
             find_in_preview.recompute(haystack);
         }
     }
