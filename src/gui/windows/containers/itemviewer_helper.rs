@@ -1421,6 +1421,7 @@ pub fn handle_global_actions(
     is_cut_mode: bool,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
+    find_in_preview_active: bool,
     _settings_windows: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
@@ -1430,7 +1431,21 @@ pub fn handle_global_actions(
         .as_ref()
         .is_some_and(|t| t.is_breadcrumb_path_edit_active);
 
-    if rename_state.is_some() || is_text_edit_active {
+    // The preview pane's own Find bar (`itemviewer_preview.rs`) is drawn
+    // *after* this function each frame (this one runs first, at the top of
+    // `draw_item_viewer`), and it requests keyboard focus for its query
+    // field the same frame it opens - but `egui::Context::memory().focused()`
+    // is a snapshot from whatever last claimed it (typically the *previous*
+    // frame's draw), so relying on `ctx.egui_wants_keyboard_input()` alone
+    // to gate the type-to-filter capture below raced against exactly that:
+    // the very first keystroke after opening the Find bar could still land
+    // here instead, since this function's read of "is anything focused"
+    // happens before the Find bar has had a chance to (re)claim focus this
+    // frame. Checking the caller-supplied `find_in_preview_active` flag
+    // directly - true for the Find bar's entire active lifetime, not just
+    // a focus snapshot - closes that race outright rather than depending on
+    // frame-ordering being lucky.
+    if rename_state.is_some() || is_text_edit_active || find_in_preview_active {
         return None;
     }
 

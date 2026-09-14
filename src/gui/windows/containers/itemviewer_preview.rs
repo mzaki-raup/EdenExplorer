@@ -539,8 +539,17 @@ fn draw_find_bar(
                         .color(palette.icon_color),
                 );
                 ui.add_space(4.0);
+                // An explicit, stable id (rather than relying on the
+                // default auto-id, which is derived from this widget's
+                // position in the draw order) so `request_focus()` below
+                // reliably reclaims the same widget frame over frame -
+                // matches the item viewer's own type-to-filter box, which
+                // uses the same `ui.id().with(...)` pattern for the same
+                // reason.
+                let text_edit_id = ui.id().with("preview_find_query");
                 let resp = ui.add(
                     egui::TextEdit::singleline(&mut find_in_preview.query)
+                        .id(text_edit_id)
                         .desired_width(180.0)
                         .frame(egui::Frame::NONE)
                         .hint_text(i18n.tr("preview_find_hint"))

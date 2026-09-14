@@ -1180,6 +1180,32 @@ PowerShell process) rather than the app's own code - if you're using the
   `core/indexer.rs`). Don't just add `#[serde(default)]` and assume it's
   covered - that annotation does nothing for postcard's whole-struct decode
   failure mode; write (and keep) a small `*Legacy` shadow struct instead.
+- **`Response::request_focus()` alone doesn't stop an *earlier-running*
+  global keyboard handler from intercepting the very first keystroke typed
+  right after a text field opens.** The preview pane's Find bar
+  (`itemviewer_preview.rs`) called `request_focus()` on its query field the
+  frame it opened, which looked correct in isolation and was reported fixed
+  - but the user immediately reported it "still not working," with typed
+  characters landing in the item viewer's own type-to-filter box instead.
+  Root cause: `handle_global_actions` (`itemviewer_helper.rs`, home of that
+  type-to-filter capture) runs at the very top of `draw_item_viewer`, before
+  the Find bar even renders that same frame - it gated its "start filtering
+  on any typed character" logic on `ctx.egui_wants_keyboard_input()`
+  (`memory().focused().is_some()`), which is a snapshot of whatever *last*
+  held focus, not a guarantee that the widget about to render this frame
+  will hold it before this check runs. `request_focus()` genuinely does
+  update that state - just not early enough in *this* frame's draw order to
+  be seen by code that already ran earlier in the same frame. The fix
+  wasn't a timing tweak - it was structural: pass an explicit `bool` (`find_
+  in_preview_active`) into `handle_global_actions` so it returns immediately
+  whenever the Find bar is open, the same way it already does for an active
+  rename, instead of inferring "something else has focus" from a
+  focus-snapshot race. If a newly-opened/focused widget's very first
+  keystroke is getting stolen by an unrelated global key handler elsewhere
+  in the same frame, check whether that handler runs *before* the widget in
+  draw order and is gating on a focus snapshot rather than an explicit
+  "this specific UI is open" flag - `request_focus()` is not a synchronization
+  primitive other code run earlier in the frame can see.
 
 ## Operational Instructions
 

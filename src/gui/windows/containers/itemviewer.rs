@@ -191,6 +191,7 @@ pub fn draw_item_viewer(
             is_cut_mode,
             is_drive_view,
             is_recycle_bin_view,
+            find_in_preview.active,
             settings_window,
         ) {
             action = Some(global_action);
