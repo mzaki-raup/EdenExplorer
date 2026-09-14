@@ -197,6 +197,7 @@
 <h3>User Interface & Navigation</h3>
 <ul>
   <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
   <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
   <li><b>Responsive design</b> across window sizes</li>
   <li><b>Modern toolbar</b> with file and folder actions</li>
@@ -330,6 +331,12 @@
 - [x] **Full disabled-button and primary-button-text theming** - a dialog's highlighted "primary" button text color and a real disabled-button color pair are now themeable, instead of a hardcoded white/faded-only look
 - [x] **Custom Context Menu: export/import** - back up or share just your custom right-click commands as their own file, separate from a full settings export (which already includes them)
 - [x] **Custom Context Menu: unquoted-path placeholder (`%L`)** - alongside the existing always-quoted `%1`/`%V`, `%L` substitutes the raw selected path with no quotes added, for commands (`clip`, custom scripts, etc.) that want to add their own quoting or none at all
+- [x] **Tab Groups** - save the currently-open tabs (or hand-pick any set of folders) as a named group in Settings, then reopen the whole set at once from the "+" new-tab button's menu, either added alongside your current tabs or replacing them entirely. The same folder can appear in a group more than once on purpose (opens that many separate tabs)
+- [x] **More Behavior settings** - double-click on empty space in a folder view navigates up a level; an optional selection-checkbox column for multi-select without holding Ctrl; middle-click a folder to open it in a new tab; choose whether tabs from your last session restore on launch; set the default view layout (Details/Gallery/Columns/...) and default search scope (This folder/Everywhere) new tabs and searches start with
+- [x] **Toolbar hover feedback, unified across every toolbar icon** - back/forward/up/refresh/new-folder/favorite-star/search-toggle *and* the six view-layout icons (Details/Gallery/Columns/Column+Preview/Preview/Detail+Preview, previously the one part of the toolbar with no hover feedback at all) now share the same themeable hover color and hover background, plus dedicated Appearance fields for the Settings sidebar's selected-category text/icon and the navigation completion toast's border/background (previously either hardcoded or borrowed from an unrelated field)
+- [x] **Live Preview panel in Settings → Appearance** - a mockup of every major themed surface (sidebar, toolbar, address bar, preview pane, buttons, notifications, status bar) that updates instantly as you edit a color, including a genuinely interactive "View Layout" row you can hover over to see the real configured hover color live, without leaving the settings page to go check
+- [x] **Custom themes now save everything, not just the accent pair** - saving or updating a custom theme captures your *entire* current palette, so reselecting it later (including after restarting the app) restores every color you'd customized instead of only the two-color accent/secondary pair and re-deriving the rest from scratch
+- [x] **Clearer borders and search affordances on every type-to-filter/find box** - the item viewer's type-to-filter box and the preview pane's Find bar both gained a real, clearly visible border, a leading magnifying-glass icon, and an inline close (✕) button next to the input; the preview pane's Find bar and the navbar's search box both now auto-focus the moment they open, ready to type into immediately
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view

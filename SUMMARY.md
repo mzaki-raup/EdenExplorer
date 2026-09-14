@@ -21,10 +21,15 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - **`main.rs` / `build.rs`** — entry point and Windows resource/icon build script (`winres`)
 - **`core/`** — non-UI logic:
   - `drives.rs` — drive enumeration/detection (including raw/unmounted drives)
-  - `fs.rs` — filesystem operations
-  - `indexer.rs` — directory scanning/indexing
-  - `launch.rs` — launching files/programs
+  - `fs.rs` — filesystem operations, tag/search sentinel-path encoding
+  - `indexer.rs` — settings/tags/favorites/tab-groups/custom-themes persistence
+  - `launch.rs` — launching files/programs, `shell:`/CLSID resolution
   - `portable.rs` — portable device support (iPhone, Android, etc.)
+  - `network.rs` / `network_mdns.rs` / `network_wsd.rs` — SMB share browsing, mDNS and WS-Discovery device discovery
+  - `everything.rs` — voidtools Everything + built-in filesystem search engines
+  - `preview.rs` / `video.rs` / `audio.rs` / `mermaid.rs` / `syntax_highlight.rs` — preview-pane content rendering
+  - `checksum.rs` / `compress.rs` / `robocopy.rs` — checksums, zip compression, paste/move copy engine
+  - `context_menu_settings.rs` / `tab_groups.rs` — user-defined custom context-menu commands and saved tab groups
   - `utils/` — clipboard, colors, dialogs, file helpers, fonts, sorting, tabs, text, thumbnails, widgets
 - **`gui/`** — UI layer:
   - `mod.rs`, `theme.rs`, `icons.rs`, `i18n.rs`, `utils.rs`, `dragdrop.rs`
@@ -53,7 +58,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Tabbed browsing with pinned tabs, independent loading states, and full navigation history (back/forward/up)
 - Real-time fuzzy search/filtering with cached indices
 - Sidebar with favorites (drag-and-drop reorderable) and quick access
-- Dark/light themes with a full custom color palette editor (hex/RGB/HSL input), layout options (row density, sidebar width), and twelve prebuilt two-color presets (an accent plus a color-theory-contrasted secondary that drives the toolbar icon row, all buttons, and dialog accents); user-created custom themes (save/apply/edit/delete your own accent + secondary pair); nearly every UI surface is genuinely palette-driven and editable - sidebar, status bar, address bar, search box, toolbar, preview pane, and notifications (including semantic green/yellow/red status colors), plus primary-button text and a real disabled-button color pair; consistently-styled dialogs (Checksums, Paste Conflict, Bulk Rename) and a themed Tags settings page; consistent address-bar/search-box borders and padded icon click targets throughout
+- Dark/light themes with a full custom color palette editor (hex/RGB/HSL input), layout options (row density, sidebar width), and twelve prebuilt two-color presets (an accent plus a color-theory-contrasted secondary that drives the toolbar icon row, all buttons, and dialog accents); user-created custom themes now save/restore your *entire* edited palette (not just the accent/secondary pair), so reselecting one - even after restarting - brings back every color you'd customized; nearly every UI surface is genuinely palette-driven and editable - sidebar, status bar, address bar, search box, toolbar (including a unified hover color/background across every toolbar icon, view-layout icons included), preview pane, Settings sidebar selected-item text/icon, the navigation toast, and notifications (including semantic green/yellow/red status colors), plus primary-button text and a real disabled-button color pair; a live "Live Preview" panel in Settings → Appearance mocks up every themed surface as you edit, including an interactive row you can hover to see the real hover colors; consistently-styled dialogs (Checksums, Paste Conflict, Bulk Rename) and a themed Tags settings page; clearly visible borders, leading search icons, inline close buttons, and auto-focus on the item-viewer filter box, the navbar search box, and the preview pane's Find bar
 - Tagging system for files/folders with tag-colored views, plus custom folder colors
 - Gallery/thumbnail view (small to extra-large) for media
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
@@ -81,6 +86,8 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Multi-tagging: an item can belong to more than one tag group at once (the picker is a multi-select toggle list, staying open across picks); a Tags column shows every tag on a row as a colored chip (own smaller font, truncated with an ellipsis if a name doesn't fit) with "+N" overflow; removing a tag from within one specific tag's own view removes it from that tag only, not every tag the item has
 - "Open File Location" context menu entry in the Tag view and Search results (both show items from many different real folders) - opens the item's containing folder in a new tab
 - Custom Context Menu: export/import just your custom right-click commands as a standalone file (a full settings export already includes them too), and an unquoted-path placeholder (`%L`, alongside the existing always-quoted `%1`/`%V`) for commands that want to add their own quoting or none at all
+- Tab Groups: save the currently-open tabs (or any hand-picked set of folders) as a named group in Settings, then reopen the whole set at once - added alongside current tabs or replacing them - from the "+" new-tab button's menu; the same folder can appear more than once in a group on purpose
+- Behavior settings: double-click-empty-space-to-navigate-up, an optional per-row selection-checkbox column, middle-click-to-open-in-new-tab, whether last session's tabs restore on launch, and defaults for new tabs' view layout and search scope
 
 ## Roadmap (from README)
 Upcoming alpha features: multi-tag AND/OR filtering in the tag view. Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
