@@ -474,6 +474,8 @@ theme_colors_toolbar = 工具栏
 theme_colors_toolbar_bg = 工具栏背景
 theme_colors_toolbar_icon_disabled = 工具栏图标（禁用）
 theme_colors_toolbar_icon_active = 工具栏图标（激活）
+theme_colors_toolbar_icon_hover = 工具栏图标（悬停）
+theme_colors_toolbar_icon_hover_bg = 工具栏图标悬停背景
 theme_colors_preview_pane = 预览面板
 theme_colors_preview_pane_bg = 预览面板背景
 

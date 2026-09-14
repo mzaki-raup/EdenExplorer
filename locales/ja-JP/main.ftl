@@ -474,6 +474,8 @@ theme_colors_toolbar = ツールバー
 theme_colors_toolbar_bg = ツールバー背景
 theme_colors_toolbar_icon_disabled = ツールバーアイコン（無効）
 theme_colors_toolbar_icon_active = ツールバーアイコン（アクティブ）
+theme_colors_toolbar_icon_hover = ツールバーアイコン（ホバー）
+theme_colors_toolbar_icon_hover_bg = ツールバーアイコンホバー背景
 theme_colors_preview_pane = プレビューパネル
 theme_colors_preview_pane_bg = プレビューパネル背景
 

@@ -473,6 +473,8 @@ theme_colors_toolbar = Bilah Alat
 theme_colors_toolbar_bg = Latar Belakang Bilah Alat
 theme_colors_toolbar_icon_disabled = Ikon Bilah Alat (Nonaktif)
 theme_colors_toolbar_icon_active = Ikon Bilah Alat (Aktif)
+theme_colors_toolbar_icon_hover = Ikon Bilah Alat (Sorot)
+theme_colors_toolbar_icon_hover_bg = Latar Belakang Sorot Ikon Bilah Alat
 theme_colors_preview_pane = Panel Pratinjau
 theme_colors_preview_pane_bg = Latar Belakang Panel Pratinjau
 

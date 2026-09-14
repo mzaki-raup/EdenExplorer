@@ -510,6 +510,7 @@ fn draw_find_bar(
 
         if toggle_resp.clicked() {
             find_in_preview.active = true;
+            find_in_preview.focus_requested = false;
             find_in_preview.recompute(haystack);
         }
     }
@@ -545,6 +546,15 @@ fn draw_find_bar(
                         .hint_text(i18n.tr("preview_find_hint"))
                         .font(egui::FontId::proportional(palette.text_size)),
                 );
+                // Auto-focus the query field the first frame the bar is
+                // open, so clicking the magnifying-glass toggle drops the
+                // user straight into typing instead of requiring a second
+                // click into the field - matches the item viewer's
+                // type-to-filter box's own `focus_requested` pattern.
+                if !find_in_preview.focus_requested {
+                    resp.request_focus();
+                    find_in_preview.focus_requested = true;
+                }
                 if resp.changed() {
                     find_in_preview.recompute(haystack);
                 }
@@ -570,6 +580,7 @@ fn draw_find_bar(
                     .clicked()
                 {
                     find_in_preview.active = false;
+                    find_in_preview.focus_requested = false;
                     return;
                 }
 

@@ -970,6 +970,12 @@ pub struct RenameState {
 pub struct FindInPreviewState {
     pub active: bool,
     pub query: String,
+    /// Set the frame the bar is opened (by the toggle icon), cleared once
+    /// `draw_find_bar` has actually requested focus for the query field -
+    /// matches the same one-shot "focus once, not every frame" pattern the
+    /// item viewer's type-to-filter box (`FilterState::focus_requested`)
+    /// already uses.
+    pub focus_requested: bool,
     current_path: Option<PathBuf>,
     matches: Vec<(usize, usize)>,
     current: usize,
@@ -992,6 +998,7 @@ impl FindInPreviewState {
             self.matches.clear();
             self.current = 0;
             self.jump_requested = false;
+            self.focus_requested = false;
         }
     }
 

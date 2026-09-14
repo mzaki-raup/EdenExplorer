@@ -5,10 +5,7 @@ use crate::core::portable;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{
-    clear_clipboard_files, clickable_active_icon, clickable_icon_sized_with_base_color,
-    expand_environment_variables,
-};
+use crate::gui::utils::{clear_clipboard_files, clickable_active_icon, expand_environment_variables};
 use crate::gui::windows::containers::enums::ItemViewerNavAction;
 use crate::gui::windows::containers::structs::{
     Breadcrumb, ItemViewerDisplayMode, ItemViewerNavBarAction, RenderedBreadcrumb, TabView,
@@ -943,12 +940,25 @@ fn nav_icon_button_active(
     );
 
     if enabled && resp.hovered() {
+        // Background fill, then the icon repainted in the hover color on
+        // top - both independently themeable (`toolbar_icon_hover_bg_color`
+        // defaults to transparent, so a button with no background edit
+        // looks exactly like it always has). Padded a few px past the
+        // glyph's own tight rect, the same breathing room `ICON_CLICK_
+        // PADDING` gives other icon buttons elsewhere in the app.
+        if palette.toolbar_icon_hover_bg_color != egui::Color32::TRANSPARENT {
+            ui.painter().rect_filled(
+                resp.rect.expand(4.0),
+                egui::CornerRadius::same(palette.small_radius),
+                palette.toolbar_icon_hover_bg_color,
+            );
+        }
         ui.painter().text(
             resp.rect.center(),
             egui::Align2::CENTER_CENTER,
             icon,
             font_id.clone(),
-            palette.primary,
+            palette.toolbar_icon_hover_color,
         );
     }
 
@@ -1022,20 +1032,22 @@ fn draw_navigation_bar_buttons(
         action.nav = Some(ItemViewerNavAction::Up);
     }
 
-    if clickable_icon_sized_with_base_color(
+    // Previously routed through `clickable_icon_sized_with_base_color` (a
+    // general-purpose helper also used by notifications/tags/topbar icon
+    // buttons) instead of the same `nav_icon_button` every other toolbar
+    // button uses - the one toolbar icon with a different hover look
+    // (a background fill, via that helper's own hardcoded `primary_hover`)
+    // than the rest (icon-color-only). Unified onto `nav_icon_button` so
+    // Refresh's hover now follows the same `toolbar_icon_hover_color`/
+    // `toolbar_icon_hover_bg_color` fields as the rest of the toolbar.
+    if nav_icon_button(
         ui,
         regular::ARROWS_CLOCKWISE,
         palette,
-        TOOLBAR_ICON_SIZE,
-        palette.toolbar_icon_color,
+        true,
+        &i18n.tr("tooltip_refresh"),
     )
-        .on_hover_text(
-            egui::RichText::new(i18n.tr("tooltip_refresh"))
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    .clicked()
     {
         action.refresh_current_directory = true;
         clear_clipboard_files();

@@ -1352,6 +1352,20 @@ pub fn draw_theme_customizer_content(
                                     "theme_colors_toolbar_icon_active",
                                     &mut editing_palette.toolbar_icon_active_color,
                                 );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_icon_hover",
+                                    &mut editing_palette.toolbar_icon_hover_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_icon_hover_bg",
+                                    &mut editing_palette.toolbar_icon_hover_bg_color,
+                                );
                             });
 
                         ui.add_space(10.0);

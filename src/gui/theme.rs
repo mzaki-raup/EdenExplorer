@@ -412,6 +412,22 @@ pub struct ThemePalette {
     pub navigation_toast_bg_color: Color32,
     #[serde(default = "default_accent_derived_color")]
     pub toolbar_icon_active_color: Color32,
+
+    // Hover state for every plain toolbar icon button (back/forward/up/
+    // refresh/new-folder/favorite-star/display-mode) - previously each
+    // button's hover color was hardcoded to `palette.primary` with no
+    // background at all, *except* Refresh, which alone used a different
+    // shared helper that also painted a hardcoded `primary_hover`-derived
+    // background - an inconsistency between otherwise-identical toolbar
+    // buttons. Refresh now goes through the same `nav_icon_button` helper
+    // as the rest instead of its own, so these two fields cover the whole
+    // toolbar row uniformly. Background default is transparent (matching
+    // every button *except* Refresh's prior look) rather than Refresh's old
+    // background, since that was the minority behavior.
+    #[serde(default = "default_accent_derived_color")]
+    pub toolbar_icon_hover_color: Color32,
+    #[serde(default = "default_transparent")]
+    pub toolbar_icon_hover_bg_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -549,6 +565,8 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         navigation_toast_border_color: default_notification_border_color(),
         navigation_toast_bg_color: default_notification_bg_color(),
         toolbar_icon_active_color: base,
+        toolbar_icon_hover_color: base,
+        toolbar_icon_hover_bg_color: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -679,6 +697,8 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         navigation_toast_border_color: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
         navigation_toast_bg_color: Color32::from_rgb(247, 248, 250),
         toolbar_icon_active_color: base,
+        toolbar_icon_hover_color: base,
+        toolbar_icon_hover_bg_color: Color32::TRANSPARENT,
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -940,6 +960,7 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     palette.settings_nav_selected_text_color = base;
     palette.settings_nav_selected_icon_color = base;
     palette.toolbar_icon_active_color = base;
+    palette.toolbar_icon_hover_color = base;
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to

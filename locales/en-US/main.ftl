@@ -470,6 +470,8 @@ theme_colors_toolbar = Toolbar
 theme_colors_toolbar_bg = Toolbar Background
 theme_colors_toolbar_icon_disabled = Toolbar Icon (Disabled)
 theme_colors_toolbar_icon_active = Toolbar Icon (Active)
+theme_colors_toolbar_icon_hover = Toolbar Icon (Hover)
+theme_colors_toolbar_icon_hover_bg = Toolbar Icon Hover Background
 theme_colors_preview_pane = Preview Pane
 theme_colors_preview_pane_bg = Preview Pane Background
 
