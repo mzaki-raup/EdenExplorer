@@ -109,63 +109,145 @@ sessions.
   automatic file-list refresh afterward.
 
 ### 5.4 Preview system
-`core/preview.rs` produces typed payloads rendered by
+`core/preview.rs` (plus `video.rs`, `audio.rs`, `mermaid.rs`,
+`syntax_highlight.rs`) produces typed payloads rendered by
 `containers/itemviewer_preview.rs`:
-- Plain text (with encoding sniffing), including text extracted from **PDF**
-  and **Word (.docx)** documents.
+- Plain text (with encoding sniffing), including text extracted from **PDF**,
+  **Word (.docx)**, and **EPUB** (reads the actual chapters in reading order,
+  not the raw internal zip tree).
+- **Syntax highlighting** (via `syntect`) for code files, and for fenced code
+  blocks inside rendered Markdown, using the fence's own language tag.
 - **Markdown**, rendered (headings, emphasis, lists, code blocks, block
-  quotes, rules, task lists, simple tables) rather than shown as source.
-- Images, plus **animated GIF** playback.
-- **Video** playback with play/pause and a seek slider (Media Foundation).
-- **Archive** (zip-format) listing with nesting and per-entry sizes.
+  quotes, rules, task lists, simple tables), including fenced ` ```mermaid `
+  blocks rendered as real flowcharts/sequence diagrams natively (no browser
+  runtime), falling back to plain code for anything unsupported/malformed.
+- Images, **animated GIF** playback, and **SVG** (rasterized, including
+  gzip-compressed `.svgz`).
+- **Video** playback (Media Foundation) with play/pause, seek slider, and
+  current/total time; never auto-starts or loops.
+- **Audio** playback (mp3/wav/flac/aac/m4a/wma/ogg/opus/aiff/alac) with a
+  hand-drawn waveform, the same transport controls as video; never
+  auto-starts or loops.
+- **Archive** listing for zip *and* **7z**, with nesting and per-entry sizes.
+- **Find-in-preview** — a find bar (auto-focused on open, with its own
+  visible border and inline close) over Text/Markdown payloads: highlights
+  every case-insensitive match and jumps to it, Next/Prev, match count.
 - Text and Markdown previews are selectable, with **right-click to copy**
   the selection.
 
 ### 5.5 Search, filter & sorting
-- Type-to-filter in the current directory with fuzzy matching and cached
-  indices.
+- **Type-to-filter** in the current directory (fuzzy, cached indices) — a
+  visibly-bordered box with a leading search icon, auto-focused as soon as
+  typing starts.
+- **Global search** (search icon / Ctrl+F in the navigation bar of any pane)
+  with a "This folder" (recursive) / "Everywhere" scope toggle. Powered by
+  [voidtools Everything](https://www.voidtools.com/) when installed/running
+  (near-instant, index-backed) with automatic fallback to a built-in
+  filesystem search otherwise — the engine, default scope, and default view
+  layout for new search tabs are all user-selectable in Settings → Behavior.
+  Both engines understand `*`/`?` wildcards, plain keywords, and
+  `key:value` filters (`ext:pdf`, `size:>10mb`, `modified:today`,
+  `content:<word>` for in-file text search) combinable with free text.
+  Results open as a normal tab compatible with every view mode, showing each
+  match's actual folder; right-click a result for "Open File Location".
+- **Saved Searches** — a dedicated sidebar section for one-click-saved
+  queries + scope (capped at 50), reopened the same way a live search opens.
 - Multi-column sort with persisted per-directory sort keys.
 
 ### 5.6 Organization
 - **Favorites** — reorderable by drag, with custom icons (Phosphor icon
   picker with 1,500+ searchable glyphs, or a user-supplied image file copied
   into app data), and a dedicated management page in Settings.
-- **Tags** — colored tags on files/folders; tagged items are tinted in the
-  file list; a sidebar section lists tags; clicking one opens a dedicated
-  tab listing every tagged item with Name/Type/Location/Size/Modified
-  columns (fully sortable/reorderable/fit-to-content like other tables).
+- **Tags, including multi-tagging** — an item can belong to more than one
+  tag group at once (a multi-select toggle picker, staying open across
+  picks); tagged items are tinted in the file list and show every tag as a
+  colored chip (with "+N" overflow) in a dedicated Tags column; a sidebar
+  section lists tags; clicking one opens a dedicated tab listing every
+  tagged item, fully sortable/reorderable/fit-to-content like other tables;
+  removing a tag from within that tag's own view only removes that one tag.
+- **Recent locations** — a sidebar section tracking the most-recently-
+  visited real folders (capped at 20, excludes anything already favorited).
 - Custom folder colors.
 
 ### 5.7 Theming & appearance
-- Dark/light modes with instant toggle.
-- Full palette editor (`ThemePalette`): typography sizes, font family
-  selection from system-installed fonts, brand/primary colors, surfaces,
-  icon colors, row colors, borders.
-- **Accent-driven retinting** — choosing an accent restyles sidebar,
-  explorer, file list, tabs, toolbar icons, and borders together.
-- Both light and dark palettes are exported/imported together.
+- Dark/light modes, instant toggle, each with its own fully independent
+  palette.
+- **Twelve prebuilt two-color presets** (accent + a color-theory-chosen
+  contrasting secondary) applied in one click, and **user-created custom
+  themes** — save your current colors under a name, apply/edit/delete them
+  like a preset; saving now captures your *entire* edited palette (not just
+  the two-color pair), so reselecting one restores everything, including
+  after restarting the app.
+- **Granular, per-surface color overrides** covering nearly every visible
+  surface: core brand colors, rows/text, panels/icons, tabs, drive-usage
+  bars, checkboxes/buttons (including a real disabled-state pair and
+  primary-button text), corner radii, sidebar, status bar, address bar,
+  search box, toolbar (background, icon, active-icon, and a *unified* hover
+  color/background shared by every toolbar icon including the six
+  view-layout icons), preview pane, the Settings sidebar's selected-item
+  text/icon, the navigation completion toast, and notifications (including
+  semantic green/yellow/red status colors) — a full hex/RGB/HSL color
+  picker throughout.
+- **Live Preview panel** in Settings → Appearance — a mockup of every major
+  themed surface that updates instantly as a color is edited, including a
+  genuinely interactive row for previewing real hover colors without
+  leaving the page.
+- **Layout options** — row density presets (Compact/Comfortable/Spacious)
+  and a persisted sidebar width.
+- Both light and dark palettes (plus custom themes) are exported/imported
+  together as one JSON file, separate from a scoped custom-themes-only or
+  custom-context-menu-only export.
 
-### 5.8 System integration
+### 5.8 File operation safety & productivity
+- **Undo/Redo** (Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z) for Rename, Bulk Rename, Move,
+  and Copy — in-memory, capped at 50 entries. A Replace-resolved conflict is
+  non-destructive (the overwritten item is recycled, not destroyed) and
+  fully undoable/redoable.
+- **Paste/drag-and-drop conflict resolution** — a themed Replace / Skip
+  Existing / Rename dialog (both flows share one conflict-check + robocopy
+  pipeline); Rename safely auto-numbers the new copy without ever
+  overwriting the original mid-operation.
+- **Bulk Rename** — multi-selecting and choosing Rename (or F2) opens a
+  live-preview dialog: plain find/replace or full regex with capture
+  groups, plus `{name}`/`{ext}`/`{n}`/`{n:03}` placeholders, cross-item and
+  existing-file collision detection blocking the commit, applied as one
+  batched, undoable native operation.
+- **Checksums** — a context-menu entry computing CRC32/MD5/SHA-1/SHA-256 in
+  one background pass, with per-hash copy buttons and a paste-to-verify
+  Compare field.
+- **Compress to zip** — a context-menu entry that archives the selection in
+  the background, named after the item or shared parent folder.
+
+### 5.9 System integration
 - Network: `\\SERVER` / `\\SERVER\Share` address entry, a **Network**
   sidebar entry, and a **Shared Network** section that auto-discovers hosts
-  advertising SMB shares via NetBIOS browsing.
+  advertising SMB shares via legacy NetBIOS browsing, an active subnet
+  sweep, **mDNS** (`_smb._tcp` service discovery), and **WS-Discovery** —
+  every candidate is still verified over SMB before it's shown.
 - Portable devices (iPhone/Android/MTP) and raw/unmounted drive detection
-  (ISO sticks, Linux partitions).
+  (ISO sticks, Linux partitions, with a widened filesystem allowlist
+  covering exFAT/ReFS alongside NTFS/FAT32).
 - CLI accepts real paths plus `::MY_PC::`, `::RECYCLE_BIN::`,
-  `shell:MyComputerFolder`, `shell:RecycleBinFolder`.
+  `shell:MyComputerFolder`, `shell:RecycleBinFolder`, and general
+  `shell:`/`::{GUID}` resolution through the real Windows shell namespace.
 - Real Windows "This PC" shell icon; special icons for Desktop, Downloads,
   User Home, Music, Videos, Documents.
 - Terminal launch in the current directory.
 
-### 5.9 Persistence & settings
+### 5.10 Persistence & settings
 Each concern is stored as its own small binary/JSON file under
 `%LOCALAPPDATA%\ExplorerEden\` (settings, favorites, tags, tab groups,
-custom context menu, session tabs, theme, sidebar sections, window
-position). Settings UI is organized as General, Behavior, Startup & Window,
-Appearance, Favorites, Custom Context Menu, Tab Groups, Tags, Advanced —
-plus **Export/Import Settings** to move everything as one JSON file.
+custom context menu, custom themes, session tabs, theme, sidebar sections,
+window position). Settings UI is organized as General, Behavior, Startup &
+Window, Appearance, Favorites, Custom Context Menu, Tab Groups, Tags,
+Advanced. Behavior also covers double-click-navigates-up, an optional
+selection-checkbox column, middle-click-opens-new-tab, whether last
+session's tabs restore on launch, and default view layout/search scope for
+new tabs. **Export/Import Settings** moves everything as one JSON file; the
+custom context menu and custom themes each also have their own standalone,
+scoped export/import.
 
-### 5.10 Internationalization
+### 5.11 Internationalization
 Fluent (`.ftl`) bundles for `en-US`, `id-ID`, `ja-JP`, `zh-CN`, `zh-HK`,
 `zh-TW`, embedded via `rust-embed`, with OS-locale detection at startup.
 
@@ -195,12 +277,22 @@ These are real, verified issues in the current build, not speculation:
    button press before the widget reacts. Documented and accepted; a clean
    fix needs either a custom rich-text widget or upstream egui changes.
 3. **No automated test coverage for UI/behavior.** Unit tests exist for a
-   few `core/` modules only; every UI-facing regression is currently caught
-   by hand.
-4. **Documentation drift** — the README claims a "built-in performance
-   benchmarking system" (twice) but no such code exists in `src/`. Either
-   the feature was removed or it was never shipped; the README should be
-   corrected.
+   growing set of `core/`/pure-logic modules (100 tests as of this writing —
+   pattern matching, search-query parsing, tag/recent-locations/saved-
+   searches state, notification status mapping, syntax highlighting,
+   archive listing, persistence round-trips) but nothing exercises the
+   actual egui widget tree; every UI-facing regression is still caught by
+   hand via the `eden-explorer-ui-test` skill.
+4. **`postcard`-persisted structs have no per-field migration path.**
+   Confirmed directly: appending a field to a struct like `ThemePalette` or
+   `CustomThemeEntry` isn't safely additive the way `#[serde(default)]`
+   implies — postcard's whole-struct decode has no per-field rescue, so an
+   old save either fails outright (resetting to defaults) or, for anything
+   without an explicit legacy-shape fallback, is silently lost. A one-off
+   legacy-shadow-struct fallback now exists for `CustomThemeEntry`
+   specifically (see `CLAUDE.md`); `ThemePalette` itself still has no such
+   protection, so any future field added to it still resets a pre-existing
+   `theme.bin` to defaults once on next load.
 5. **i18n completeness is unenforced** — a key missing from a non-English
    locale fails silently. A checker script now exists
    (`.claude/skills/i18n-sync-check/`) but isn't wired into CI.
@@ -208,11 +300,9 @@ These are real, verified issues in the current build, not speculation:
 ## 8. Planned enhancements **[Planned]**
 
 From the README's own roadmap:
-- Multi-tagging of objects (an item belonging to more than one tag).
-- Enhanced theme customization: custom layouts, mix-and-match UI elements
-  and styles.
-- Additional network discovery protocols (mDNS / WS-Discovery) for devices
-  that don't announce over legacy NetBIOS browsing.
+- Multi-tag **AND/OR filtering** in the tag view (multi-tagging itself has
+  shipped — see §5.6 — this is specifically about filtering across more
+  than one tag at once).
 
 ## 9. Proposed enhancements **[Proposed]**
 
@@ -233,41 +323,44 @@ Ideas for discussion, roughly ordered by value-to-effort within each theme.
   app data with a "copy diagnostics" button, no network involved.
 
 ### 9.2 Search
-- **Recursive / whole-drive search.** The current filter is
-  current-directory only. This is the single biggest functional gap versus
-  Explorer (and versus Everything, which many power users run alongside).
-  Could start as an on-demand recursive walk with streaming results before
-  considering a persistent index.
-- **Content search** for text files, and filter-by-attribute syntax
-  (`size:>100mb`, `ext:png`, `modified:today`).
-- **Saved searches** surfaced in the sidebar next to tags.
+Recursive/whole-drive search, content search, saved searches, and
+attribute-filter syntax have all shipped (§5.5) — the remaining open idea:
+- **A persistent index for the built-in engine.** The built-in fallback
+  (used when Everything isn't installed/running) still does an on-demand
+  walk per search; a small local index would close most of the remaining
+  speed gap versus Everything for users who don't want a second app
+  installed, at the cost of a background indexing process this project's
+  "no background services" principle would need to explicitly accept.
 
 ### 9.3 Organization & workflow
-- **Bulk rename** with pattern/regex preview — a standard power-user tool
-  with no current equivalent in the app.
-- **Workspaces/sessions** — extend tab groups into named sessions that also
-  capture split-pane state, view mode, and sort order.
+Bulk rename, multi-tag filtering (now tracked in §8 as Planned), and
+recent locations have all shipped (§5.6, §5.8) — still open:
+- **Workspaces/sessions** — extend tab groups (§5.1) into named sessions
+  that also capture split-pane state, view mode, and sort order, not just
+  which folders are open.
 - **Dual-pane sync** — synchronized scrolling and a folder-compare mode for
   the existing split view.
-- **Multi-tag filtering** — once multi-tagging lands, allow AND/OR filtering
-  across tags in the tag view.
-- **Recent locations** / frequently-visited list in the sidebar.
 
 ### 9.4 File operations
+Undo/Redo, conflict-resolution UI, and a checksum panel have all shipped
+(§5.8) — still open:
 - **Operation queue with pause/resume** for long copies, plus an aggregate
   progress surface (the native dialogs are per-operation today).
-- **Undo stack beyond the Recycle Bin** for moves and renames.
-- **Conflict resolution UI** for same-name collisions with side-by-side
-  metadata, rather than deferring entirely to the shell dialog.
-- **Checksum / hash panel** in the properties or preview pane.
+- **RAR archive listing.** Deliberately skipped so far — the only practical
+  Rust crate wraps the non-free-licensed official UnRAR library, which
+  doesn't fit this project's open-source positioning; would need either a
+  license exception decision or a from-scratch reader.
 
 ### 9.5 Preview
-- **Syntax highlighting for code files** — the plumbing exists (a
-  `TextEdit` with a custom `layouter` produces a styled galley over a single
-  buffer), so this is mostly a tokenizer decision.
-- **More formats:** SVG (a renderer is already a dependency), EPUB, 7z/rar
-  archive listing, audio waveform + playback.
-- **Preview-pane search** (find-in-preview) for long text documents.
+Syntax highlighting, SVG/EPUB/7z/audio support, and find-in-preview have
+all shipped (§5.4) — still open:
+- **A match strictly inside a fenced code block or table cell in the
+  Markdown preview** is neither highlighted nor scrolled to by
+  find-in-preview today (both render via a `Frame`/`Grid`, not the tracked
+  `Label` path find-in-preview's highlighter walks) - a known, documented
+  simplification from when that feature shipped.
+- **Rich/rendered `.docx` preview** — currently text-extraction only (no
+  formatting/images), same treatment as PDF.
 
 ### 9.6 Accessibility & input
 - **AccessKit / screen-reader support** — egui has AccessKit integration
@@ -292,8 +385,10 @@ locally:
 - **Performance (measured locally, per release):** cold-start to first
   interactive frame; time to list a 10k-entry directory; memory footprint at
   idle with 5 tabs open. A small reproducible benchmark script would make
-  these comparable release-over-release — and would give the README's
-  benchmarking claim something real to point at.
+  these comparable release-over-release — no such tooling exists in `src/`
+  today (an earlier PRD draft's note about a stale README claim to this
+  effect has since been corrected; this is now a forward-looking proposal,
+  not a documentation-drift issue).
 - **Quality:** open bug count and median time-to-close; number of releases
   requiring a same-week hotfix.
 - **Reach:** locale coverage (currently 6) and share of untranslated keys
