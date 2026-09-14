@@ -1475,10 +1475,17 @@ pub fn handle_global_actions(
 
         let response = egui::Frame::NONE
             .fill(palette.input_field_bg)
-            .stroke(egui::Stroke::new(
-                1.5,
-                crate::gui::windows::containers::itemviewer_navbar::opaque_border_color(palette),
-            ))
+            // Full-strength, opaque `borders_active` rather than the
+            // low-alpha `borders_default` blend most other bordered
+            // surfaces use: this box's fill is `input_field_bg`, and a
+            // translucent accent blended over its own fill color reads as
+            // barely-there regardless of stroke width - confirmed by
+            // pixel-sampling a live screenshot, where even a 2.5px stroke
+            // at a doubled blend alpha was indistinguishable from the fill
+            // except right at the anti-aliased edge. An opaque, undiluted
+            // accent color plus a genuinely thicker stroke is what actually
+            // reads as a real border here.
+            .stroke(egui::Stroke::new(2.0, palette.borders_active))
             .corner_radius(egui::CornerRadius::same(palette.medium_radius))
             .inner_margin(egui::Margin {
                 left: 10,
@@ -1500,16 +1507,25 @@ pub fn handle_global_actions(
                 bottom: 8,
             })
             .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut filter_state.query)
-                        .id(text_edit_id)
-                        .frame(egui::Frame::NONE)
-                        .desired_width(200.0)
-                        .font(FontId::new(
-                            palette.text_size,
-                            egui::FontFamily::Proportional,
-                        )),
-                )
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(regular::MAGNIFYING_GLASS)
+                            .size(palette.text_size + 1.0)
+                            .color(palette.icon_color),
+                    );
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut filter_state.query)
+                            .id(text_edit_id)
+                            .frame(egui::Frame::NONE)
+                            .desired_width(200.0)
+                            .font(FontId::new(
+                                palette.text_size,
+                                egui::FontFamily::Proportional,
+                            )),
+                    )
+                })
+                .inner
             })
             .inner;
 

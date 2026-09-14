@@ -528,11 +528,22 @@ fn draw_find_bar(
 
     egui::Frame::NONE
         .fill(palette.input_field_bg)
-        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        // Thicker and fully opaque (`borders_active`) rather than a
+        // translucent `borders_default` blended over this box's own fill -
+        // the same low-contrast-against-itself issue diagnosed for the
+        // item viewer's type-to-filter box (`itemviewer_helper.rs`), and
+        // the same fix.
+        .stroke(egui::Stroke::new(2.0, palette.borders_active))
         .corner_radius(egui::CornerRadius::same(palette.medium_radius))
         .inner_margin(egui::Margin::symmetric(8, 4))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(regular::MAGNIFYING_GLASS)
+                        .size(palette.text_size + 1.0)
+                        .color(palette.icon_color),
+                );
+                ui.add_space(4.0);
                 let resp = ui.add(
                     egui::TextEdit::singleline(&mut find_in_preview.query)
                         .desired_width(180.0)
@@ -542,6 +553,30 @@ fn draw_find_bar(
                 );
                 if resp.changed() {
                     find_in_preview.recompute(haystack);
+                }
+
+                // Inline close, to the right of the field itself - matches
+                // the navbar search box's own inline close button, rather
+                // than only being reachable via the toggle icon back on the
+                // opposite side of the bar. Placed before the query-empty/
+                // no-matches early returns below so it always renders
+                // regardless of match state.
+                ui.add_space(6.0);
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new(regular::X)
+                                .size(palette.text_size)
+                                .color(palette.icon_color),
+                        )
+                        .frame(false),
+                    )
+                    .on_hover_text(i18n.tr("preview_find_toggle"))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    find_in_preview.active = false;
+                    return;
                 }
 
                 if find_in_preview.query.is_empty() {

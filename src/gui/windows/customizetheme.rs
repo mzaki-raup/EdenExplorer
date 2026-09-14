@@ -98,6 +98,16 @@ pub fn draw_theme_customizer_content(
                 ThemeMode::Light => &mut customizer.light_palette,
             };
 
+            // Live mockup of every major surface, built directly from
+            // `editing_palette`'s own field values rather than the live
+            // `ui.visuals()` - so it reflects a color edit the instant it's
+            // made, regardless of whether the mode being edited is also the
+            // one currently live/rendered elsewhere in the app. Pinned above
+            // the scrollable grid of pickers so it stays visible while
+            // scrolling through sections.
+            draw_theme_preview(ui, editing_palette, i18n);
+            ui.add_space(10.0);
+
             let mut changed = false;
             let mut sidebar_width_changed = false;
             let mut custom_themes_changed = false;
@@ -1205,6 +1215,20 @@ pub fn draw_theme_customizer_content(
                                     "theme_colors_settings_nav_inactive",
                                     &mut editing_palette.settings_nav_inactive_color,
                                 );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_settings_nav_selected_text",
+                                    &mut editing_palette.settings_nav_selected_text_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_settings_nav_selected_icon",
+                                    &mut editing_palette.settings_nav_selected_icon_color,
+                                );
                             });
 
                         ui.add_space(10.0);
@@ -1287,6 +1311,13 @@ pub fn draw_theme_customizer_content(
                                     "theme_colors_toolbar_icon_disabled",
                                     &mut editing_palette.toolbar_icon_disabled_color,
                                 );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_toolbar_icon_active",
+                                    &mut editing_palette.toolbar_icon_active_color,
+                                );
                             });
 
                         ui.add_space(10.0);
@@ -1364,6 +1395,31 @@ pub fn draw_theme_customizer_content(
                                     i18n,
                                     "theme_colors_notification_status_info",
                                     &mut editing_palette.notification_status_info,
+                                );
+                            });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        eden_text_label(ui, palette, &i18n.tr("theme_colors_navigation_toast"));
+                        ui.add_space(6.0);
+                        egui::Grid::new("theme_navigation_toast")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_navigation_toast_border",
+                                    &mut editing_palette.navigation_toast_border_color,
+                                );
+                                changed |= color_row(
+                                    ui,
+                                    palette,
+                                    i18n,
+                                    "theme_colors_navigation_toast_bg",
+                                    &mut editing_palette.navigation_toast_bg_color,
                                 );
                             });
                     });
@@ -1461,6 +1517,278 @@ pub fn draw_theme_customizer_content(
 
 fn color_picker_control(ui: &mut egui::Ui, color: &mut egui::Color32) -> bool {
     rgba_color_edit_button(ui, color).changed()
+}
+
+/// Small rounded rect with centered text, painted directly with the given
+/// fill/border/text colors - the one repeated shape the live preview below
+/// is built out of, standing in for a themed surface (a button, a chip, a
+/// panel) without needing the real widget behind it.
+fn preview_swatch(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    fill: egui::Color32,
+    stroke: egui::Stroke,
+    radius: u8,
+    label: &str,
+    text_color: egui::Color32,
+) -> egui::Rect {
+    let (rect, _resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(radius), fill);
+        if stroke.width > 0.0 {
+            ui.painter().rect_stroke(
+                rect,
+                egui::CornerRadius::same(radius),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        if !label.is_empty() {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(11.0),
+                text_color,
+            );
+        }
+    }
+    rect
+}
+
+/// Live mockup of the app's major themed surfaces, redrawn every frame
+/// straight from `p`'s current field values - so any color edit below shows
+/// up here instantly, without depending on whether the mode being edited is
+/// also the one currently applied to the rest of the running app (see the
+/// `ThemeCustomizerAction::SetLiveMode` doc comment for why those two can
+/// otherwise disagree).
+fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n) {
+    egui::Frame::NONE
+        .fill(p.application_bg_color)
+        .stroke(egui::Stroke::new(1.0, p.borders_default))
+        .corner_radius(egui::CornerRadius::same(p.medium_radius))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            eden_text_label(ui, p, &i18n.tr("theme_preview_title"));
+            ui.add_space(6.0);
+
+            ui.horizontal(|ui| {
+                // Sidebar: an inactive item, and a selected/nav-highlighted
+                // item using the settings-nav selected text/icon colors.
+                egui::Frame::NONE
+                    .fill(p.sidebar_bg_color)
+                    .corner_radius(egui::CornerRadius::same(p.small_radius))
+                    .inner_margin(egui::Margin::same(6))
+                    .show(ui, |ui| {
+                        ui.set_width(110.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(regular::FOLDER)
+                                    .color(p.sidebar_text_color)
+                                    .size(13.0),
+                            );
+                            ui.label(
+                                egui::RichText::new("Downloads")
+                                    .color(p.sidebar_text_color)
+                                    .size(11.0),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 20.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::CornerRadius::same(p.small_radius),
+                            p.primary_hover,
+                        );
+                        let icon_pos = rect.left_center() + egui::vec2(4.0, 0.0);
+                        let icon_galley = ui.painter().layout_no_wrap(
+                            format!("{}  ", regular::TAG),
+                            egui::FontId::proportional(11.0),
+                            p.settings_nav_selected_icon_color,
+                        );
+                        ui.painter().galley(
+                            egui::pos2(icon_pos.x, rect.center().y - icon_galley.size().y / 2.0),
+                            icon_galley.clone(),
+                            p.settings_nav_selected_icon_color,
+                        );
+                        ui.painter().text(
+                            icon_pos + egui::vec2(icon_galley.size().x, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            "Tags",
+                            egui::FontId::proportional(11.0),
+                            p.settings_nav_selected_text_color,
+                        );
+                    });
+
+                ui.add_space(6.0);
+
+                ui.vertical(|ui| {
+                    // Toolbar: normal / disabled / active icon states.
+                    egui::Frame::NONE
+                        .fill(p.toolbar_bg_color)
+                        .corner_radius(egui::CornerRadius::same(p.small_radius))
+                        .inner_margin(egui::Margin::symmetric(6, 4))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(regular::ARROW_LEFT)
+                                        .color(p.toolbar_icon_color)
+                                        .size(13.0),
+                                );
+                                ui.label(
+                                    egui::RichText::new(regular::ARROW_RIGHT)
+                                        .color(p.toolbar_icon_disabled_color)
+                                        .size(13.0),
+                                );
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(22.0, 18.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    rect,
+                                    egui::CornerRadius::same(p.small_radius),
+                                    p.search_active_icon_bg,
+                                );
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    regular::MAGNIFYING_GLASS,
+                                    egui::FontId::proportional(13.0),
+                                    p.toolbar_icon_active_color,
+                                );
+                            });
+                        });
+                    ui.add_space(4.0);
+                    // Address bar pill.
+                    preview_swatch(
+                        ui,
+                        egui::vec2(ui.available_width().min(180.0), 22.0),
+                        p.address_bar_bg_color,
+                        egui::Stroke::new(1.0, p.borders_default),
+                        p.medium_radius,
+                        "D:\\Downloads",
+                        p.text_normal,
+                    );
+                });
+
+                ui.add_space(6.0);
+
+                // Preview pane patch.
+                preview_swatch(
+                    ui,
+                    egui::vec2(70.0, 56.0),
+                    p.preview_pane_bg_color,
+                    egui::Stroke::new(1.0, p.borders_default),
+                    p.medium_radius,
+                    "Aa",
+                    p.text_normal,
+                );
+            });
+
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                // Buttons: normal, primary, disabled.
+                preview_swatch(
+                    ui,
+                    egui::vec2(64.0, 24.0),
+                    p.button_background,
+                    egui::Stroke::new(1.0, p.button_stroke),
+                    p.medium_radius,
+                    "Button",
+                    p.button_text_color,
+                );
+                ui.add_space(6.0);
+                preview_swatch(
+                    ui,
+                    egui::vec2(64.0, 24.0),
+                    p.primary,
+                    egui::Stroke::NONE,
+                    p.medium_radius,
+                    "Primary",
+                    p.primary_button_text_color,
+                );
+                ui.add_space(6.0);
+                preview_swatch(
+                    ui,
+                    egui::vec2(64.0, 24.0),
+                    p.button_disabled_bg,
+                    egui::Stroke::NONE,
+                    p.medium_radius,
+                    "Disabled",
+                    p.button_disabled_text,
+                );
+
+                ui.add_space(12.0);
+
+                // Notification panel + navigation toast.
+                preview_swatch(
+                    ui,
+                    egui::vec2(96.0, 24.0),
+                    p.notification_bg_color,
+                    egui::Stroke::new(1.0, p.notification_border_color),
+                    p.medium_radius,
+                    "Notification",
+                    p.notification_header_text_color,
+                );
+                ui.add_space(6.0);
+                preview_swatch(
+                    ui,
+                    egui::vec2(80.0, 24.0),
+                    p.navigation_toast_bg_color,
+                    egui::Stroke::new(1.0, p.navigation_toast_border_color),
+                    p.medium_radius,
+                    "Toast",
+                    p.text_normal,
+                );
+
+                ui.add_space(6.0);
+                for (color, label) in [
+                    (p.notification_status_success, "OK"),
+                    (p.notification_status_warning, "..."),
+                    (p.notification_status_error, "!"),
+                    (p.notification_status_info, "i"),
+                ] {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 8.0, color);
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        label,
+                        egui::FontId::proportional(8.0),
+                        p.icon_color,
+                    );
+                }
+            });
+
+            ui.add_space(8.0);
+
+            // Status bar strip.
+            egui::Frame::NONE
+                .fill(p.status_bar_bg_color)
+                .corner_radius(egui::CornerRadius::same(p.small_radius))
+                .inner_margin(egui::Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(regular::HARD_DRIVES)
+                                .color(p.status_bar_icon_color)
+                                .size(12.0),
+                        );
+                        ui.label(
+                            egui::RichText::new("12 items, 3.4 GB")
+                                .color(p.status_bar_text_color)
+                                .size(11.0),
+                        );
+                    });
+                });
+        });
 }
 
 /// One label + right-aligned color-picker row inside an `egui::Grid`,

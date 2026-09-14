@@ -666,6 +666,8 @@ fn handle_draw_tab_new_allocated(
             .map(|g| g.color)
             .unwrap_or(icon_color);
         TabIconPaint::ColoredGlyph(fill::TAG, color)
+    } else if crate::core::fs::parse_search_view_path(&tab.full_path).is_some() {
+        TabIconPaint::Glyph(regular::MAGNIFYING_GLASS)
     } else if let Some(glyph) = icon_cache.get_custom_folder_icon(&tab.full_path, true) {
         TabIconPaint::Glyph(glyph)
     } else if let Some(texture) = icon_cache.get(&tab.full_path, true) {
@@ -722,11 +724,21 @@ fn handle_draw_tab_new_allocated(
             );
         }
         TabIconPaint::ColoredGlyph(glyph, color) => {
+            // `regular::TAG` and `fill::TAG` are the exact same Unicode
+            // codepoint (see `sidebar.rs`'s own note on this) - which glyph
+            // weight actually renders depends on the *font family* painted
+            // with, not which Rust constant is referenced. `icon_font_id`
+            // (shared with the other two paint variants above) requests the
+            // default `Proportional` family, which only has the Regular
+            // Phosphor font merged into its fallback chain - painting
+            // `fill::TAG` with it silently rendered as the outline glyph.
+            let fill_font_id =
+                FontId::new(palette.tab_icon_size, FontFamily::Name("phosphor_fill".into()));
             painter.text(
                 icon_rect.left_center(),
                 egui::Align2::LEFT_CENTER,
                 glyph,
-                icon_font_id,
+                fill_font_id,
                 color,
             );
         }

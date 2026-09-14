@@ -457,9 +457,12 @@ settings_category_context_menu = 自定义右键菜单
 settings_category_tab_groups = 标签组
 settings_category_advanced = 高级
 
+theme_preview_title = 实时预览
 theme_colors_sidebar = 侧边栏与导航
 theme_colors_sidebar_text = 侧边栏文字
 theme_colors_settings_nav_inactive = 设置导航（未选中）
+theme_colors_settings_nav_selected_text = 设置导航（已选中）文字
+theme_colors_settings_nav_selected_icon = 设置导航（已选中）图标
 theme_colors_status_bar = 状态栏
 theme_colors_status_bar_bg = 状态栏背景
 theme_colors_status_bar_text = 状态栏文字
@@ -470,6 +473,7 @@ theme_colors_search_active_icon_bg = 搜索激活图标背景
 theme_colors_toolbar = 工具栏
 theme_colors_toolbar_bg = 工具栏背景
 theme_colors_toolbar_icon_disabled = 工具栏图标（禁用）
+theme_colors_toolbar_icon_active = 工具栏图标（激活）
 theme_colors_preview_pane = 预览面板
 theme_colors_preview_pane_bg = 预览面板背景
 
@@ -481,6 +485,10 @@ theme_colors_notification_status_success = 状态：成功
 theme_colors_notification_status_warning = 状态：警告
 theme_colors_notification_status_error = 状态：错误
 theme_colors_notification_status_info = 状态：信息
+
+theme_colors_navigation_toast = 导航提示
+theme_colors_navigation_toast_border = 提示边框
+theme_colors_navigation_toast_bg = 提示背景
 
 theme_colors_primary_button_text = 主按钮文字
 theme_colors_button_disabled_bg = 禁用按钮背景

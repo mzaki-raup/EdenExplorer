@@ -1123,6 +1123,35 @@ PowerShell process) rather than the app's own code - if you're using the
   "looks complete." Fixed by repointing the real call site to the
   correctly-named field and deleting the dead one outright, rather than
   leaving two fields for one control.
+- **A translucent border color blended over a box's own fill color can read
+  as fully invisible on every edge, not just clipped/anti-aliased edges -
+  and this is a genuinely different bug from the two border-visibility
+  gotchas already documented above.** The item viewer's type-to-filter box
+  and the preview pane's Find bar both used the established pattern -
+  `Frame::NONE.fill(palette.input_field_bg).stroke(Stroke::new(1.0-1.5,
+  low_alpha_blend))` - and both were reported as having no visible border at
+  all. Pixel-sampling a live screenshot (scanning a full row/column through
+  the box, not just one spot) found *zero* border-colored pixels anywhere,
+  at any width up to 2.5px and any blend alpha up to ~75% - ruling out both
+  previously-diagnosed causes (a missing-edge alpha-blend artifact, a clip
+  rect eating a flush-drawn edge) before reaching for a third theory. The
+  actual cause: `borders_default` blended toward `input_field_bg` produces
+  a color that's still very close to `input_field_bg` itself when the box's
+  own *fill* is also `input_field_bg` - low contrast against its own
+  background, not literal invisibility, but visually indistinguishable at
+  normal viewing distance regardless of stroke width. Confirmed by swapping
+  in a diagnostic solid `Color32::RED` stroke first (which rendered
+  perfectly), isolating the problem to contrast/color choice rather than
+  the paint call itself. Fixed by using a fully **opaque** accent color
+  (`palette.borders_active`, already used elsewhere for "this is active/
+  focused" state) instead of a translucent blend, plus a genuinely thicker
+  stroke (2.0px). If a border is reported invisible and pixel-sampling
+  shows literally no border-colored pixels anywhere (not just at one edge),
+  suspect low contrast between the blended border color and the box's own
+  fill before re-diagnosing as a clip/anti-aliasing issue - and verify a
+  color-only fix with a loud diagnostic color (solid red) before spending
+  time tuning blend ratios, since that immediately tells you whether the
+  stroke is rendering at all.
 
 ## Operational Instructions
 

@@ -456,9 +456,12 @@ settings_category_context_menu = Menu Klik Kanan Kustom
 settings_category_tab_groups = Grup Tab
 settings_category_advanced = Lanjutan
 
+theme_preview_title = Pratinjau Langsung
 theme_colors_sidebar = Bilah Sisi & Navigasi
 theme_colors_sidebar_text = Teks Bilah Sisi
 theme_colors_settings_nav_inactive = Navigasi Pengaturan (Tidak Aktif)
+theme_colors_settings_nav_selected_text = Navigasi Pengaturan (Dipilih) Teks
+theme_colors_settings_nav_selected_icon = Navigasi Pengaturan (Dipilih) Ikon
 theme_colors_status_bar = Bilah Status
 theme_colors_status_bar_bg = Latar Belakang Bilah Status
 theme_colors_status_bar_text = Teks Bilah Status
@@ -469,6 +472,7 @@ theme_colors_search_active_icon_bg = Latar Belakang Ikon Aktif Pencarian
 theme_colors_toolbar = Bilah Alat
 theme_colors_toolbar_bg = Latar Belakang Bilah Alat
 theme_colors_toolbar_icon_disabled = Ikon Bilah Alat (Nonaktif)
+theme_colors_toolbar_icon_active = Ikon Bilah Alat (Aktif)
 theme_colors_preview_pane = Panel Pratinjau
 theme_colors_preview_pane_bg = Latar Belakang Panel Pratinjau
 
@@ -480,6 +484,10 @@ theme_colors_notification_status_success = Status: Berhasil
 theme_colors_notification_status_warning = Status: Peringatan
 theme_colors_notification_status_error = Status: Kesalahan
 theme_colors_notification_status_info = Status: Info
+
+theme_colors_navigation_toast = Notifikasi Sembulan Navigasi
+theme_colors_navigation_toast_border = Batas Notifikasi Sembulan
+theme_colors_navigation_toast_bg = Latar Belakang Notifikasi Sembulan
 
 theme_colors_primary_button_text = Teks Tombol Utama
 theme_colors_button_disabled_bg = Latar Belakang Tombol Nonaktif

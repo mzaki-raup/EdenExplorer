@@ -683,8 +683,8 @@ pub fn draw_toast(
         .show(ctx, |ui| {
             ui.set_width(toast_width);
             let frame = egui::Frame::popup(ui.style())
-                .fill(palette.notification_bg_color.gamma_multiply(alpha.max(0.05)))
-                .stroke(Stroke::new(1.0, palette.notification_border_color.gamma_multiply(alpha)))
+                .fill(palette.navigation_toast_bg_color.gamma_multiply(alpha.max(0.05)))
+                .stroke(Stroke::new(1.0, palette.navigation_toast_border_color.gamma_multiply(alpha)))
                 .corner_radius(CornerRadius::same(palette.medium_radius));
             frame.show(ui, |ui| {
                 ui.horizontal(|ui| {

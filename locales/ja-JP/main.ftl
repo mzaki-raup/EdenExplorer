@@ -457,9 +457,12 @@ settings_category_context_menu = カスタム右クリックメニュー
 settings_category_tab_groups = タブグループ
 settings_category_advanced = 詳細設定
 
+theme_preview_title = ライブプレビュー
 theme_colors_sidebar = サイドバーとナビゲーション
 theme_colors_sidebar_text = サイドバーのテキスト
 theme_colors_settings_nav_inactive = 設定ナビゲーション（非アクティブ）
+theme_colors_settings_nav_selected_text = 設定ナビゲーション（選択時）テキスト
+theme_colors_settings_nav_selected_icon = 設定ナビゲーション（選択時）アイコン
 theme_colors_status_bar = ステータスバー
 theme_colors_status_bar_bg = ステータスバー背景
 theme_colors_status_bar_text = ステータスバーのテキスト
@@ -470,6 +473,7 @@ theme_colors_search_active_icon_bg = 検索アクティブアイコンの背景
 theme_colors_toolbar = ツールバー
 theme_colors_toolbar_bg = ツールバー背景
 theme_colors_toolbar_icon_disabled = ツールバーアイコン（無効）
+theme_colors_toolbar_icon_active = ツールバーアイコン（アクティブ）
 theme_colors_preview_pane = プレビューパネル
 theme_colors_preview_pane_bg = プレビューパネル背景
 
@@ -481,6 +485,10 @@ theme_colors_notification_status_success = ステータス：成功
 theme_colors_notification_status_warning = ステータス：警告
 theme_colors_notification_status_error = ステータス：エラー
 theme_colors_notification_status_info = ステータス：情報
+
+theme_colors_navigation_toast = ナビゲーショントースト
+theme_colors_navigation_toast_border = トースト枠線
+theme_colors_navigation_toast_bg = トースト背景
 
 theme_colors_primary_button_text = 主要ボタンのテキスト
 theme_colors_button_disabled_bg = 無効ボタンの背景

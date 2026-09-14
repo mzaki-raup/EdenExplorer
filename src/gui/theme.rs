@@ -156,6 +156,13 @@ fn default_primary_button_text_color() -> Color32 {
     Color32::WHITE
 }
 
+// Matches `base_color()` - the accent shade `palette.primary` starts as
+// before any preset/custom accent is applied, since these fields replace
+// what used to be direct `palette.primary` reads.
+fn default_accent_derived_color() -> Color32 {
+    Color32::from_rgb(110, 85, 160)
+}
+
 // `eden_button` previously had no disabled/enabled distinction at all - it
 // always drew with `button_background`/`button_text_color`, and relied
 // purely on egui's automatic disabled-opacity fade to look "disabled".
@@ -389,6 +396,22 @@ pub struct ThemePalette {
     pub button_disabled_bg: Color32,
     #[serde(default = "default_button_disabled_text")]
     pub button_disabled_text: Color32,
+
+    // Settings nav selected-item text/icon, the navigation toast's own
+    // border/background (previously sharing the notification-panel fields
+    // rather than having its own), and the toolbar/address-bar active-icon
+    // color - all previously hardcoded to `palette.primary` or the shared
+    // notification fields, not independently themeable.
+    #[serde(default = "default_accent_derived_color")]
+    pub settings_nav_selected_text_color: Color32,
+    #[serde(default = "default_accent_derived_color")]
+    pub settings_nav_selected_icon_color: Color32,
+    #[serde(default = "default_notification_border_color")]
+    pub navigation_toast_border_color: Color32,
+    #[serde(default = "default_notification_bg_color")]
+    pub navigation_toast_bg_color: Color32,
+    #[serde(default = "default_accent_derived_color")]
+    pub toolbar_icon_active_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -519,6 +542,13 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // is never actually observed.
         button_disabled_bg: Color32::TRANSPARENT,
         button_disabled_text: Color32::TRANSPARENT,
+        // Overwritten below by `regenerate_base_derived_colors` (tracks
+        // `primary`, matching what these fields replaced).
+        settings_nav_selected_text_color: base,
+        settings_nav_selected_icon_color: base,
+        navigation_toast_border_color: default_notification_border_color(),
+        navigation_toast_bg_color: default_notification_bg_color(),
+        toolbar_icon_active_color: base,
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -644,6 +674,11 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         primary_button_text_color: Color32::WHITE,
         button_disabled_bg: Color32::TRANSPARENT,
         button_disabled_text: Color32::TRANSPARENT,
+        settings_nav_selected_text_color: base,
+        settings_nav_selected_icon_color: base,
+        navigation_toast_border_color: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        navigation_toast_bg_color: Color32::from_rgb(247, 248, 250),
+        toolbar_icon_active_color: base,
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette
@@ -899,6 +934,12 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     // exactly, tracking the accent/preset the same way those two do.
     palette.button_disabled_bg = palette.button_background;
     palette.button_disabled_text = palette.button_text_color;
+    // These three previously just read `palette.primary` directly at their
+    // call sites, so default to tracking it the same way, staying in sync
+    // with an accent/preset change while still being directly editable.
+    palette.settings_nav_selected_text_color = base;
+    palette.settings_nav_selected_icon_color = base;
+    palette.toolbar_icon_active_color = base;
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to

@@ -453,9 +453,12 @@ favorite_icon = Icon
 favorite_icon_default = Use the folder's real icon
 favorite_icon_browse = Browse for icon file...
 favorite_icon_clear = Clear icon
+theme_preview_title = Live Preview
 theme_colors_sidebar = Sidebar & Navigation
 theme_colors_sidebar_text = Sidebar Text
 theme_colors_settings_nav_inactive = Settings Nav (Inactive)
+theme_colors_settings_nav_selected_text = Settings Nav (Selected) Text
+theme_colors_settings_nav_selected_icon = Settings Nav (Selected) Icon
 theme_colors_status_bar = Status Bar
 theme_colors_status_bar_bg = Status Bar Background
 theme_colors_status_bar_text = Status Bar Text
@@ -466,6 +469,7 @@ theme_colors_search_active_icon_bg = Search Active Icon Background
 theme_colors_toolbar = Toolbar
 theme_colors_toolbar_bg = Toolbar Background
 theme_colors_toolbar_icon_disabled = Toolbar Icon (Disabled)
+theme_colors_toolbar_icon_active = Toolbar Icon (Active)
 theme_colors_preview_pane = Preview Pane
 theme_colors_preview_pane_bg = Preview Pane Background
 
@@ -477,6 +481,10 @@ theme_colors_notification_status_success = Status: Success
 theme_colors_notification_status_warning = Status: Warning
 theme_colors_notification_status_error = Status: Error
 theme_colors_notification_status_info = Status: Info
+
+theme_colors_navigation_toast = Navigation Toast
+theme_colors_navigation_toast_border = Toast Border
+theme_colors_navigation_toast_bg = Toast Background
 
 theme_colors_primary_button_text = Primary Button Text
 theme_colors_button_disabled_bg = Disabled Button Background

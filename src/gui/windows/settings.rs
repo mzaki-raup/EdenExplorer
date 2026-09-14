@@ -436,10 +436,16 @@ pub fn draw_settings_page(
                 |ui| {
                     for category in SettingsCategory::ALL {
                         let is_selected = settings.selected_category == category;
-                        let color = if is_selected {
-                            palette.primary
+                        let (icon_color, text_color) = if is_selected {
+                            (
+                                palette.settings_nav_selected_icon_color,
+                                palette.settings_nav_selected_text_color,
+                            )
                         } else {
-                            palette.settings_nav_inactive_color
+                            (
+                                palette.settings_nav_inactive_color,
+                                palette.settings_nav_inactive_color,
+                            )
                         };
 
                         let (rect, resp) = ui.allocate_exact_size(
@@ -461,12 +467,32 @@ pub fn draw_settings_page(
                             );
                         }
 
+                        // Icon and label are drawn as two separate text runs
+                        // (instead of one combined string) so their colors -
+                        // `settings_nav_selected_icon_color`/
+                        // `_text_color` - can be independently themed. `text`
+                        // (used for the label) centers its `pos` argument
+                        // vertically per its `Align2`, but `galley` always
+                        // draws from a literal top-left origin - so the
+                        // icon's own vertical centering has to be computed
+                        // by hand from its galley's measured height.
+                        let font_id = egui::FontId::proportional(palette.text_size);
+                        let icon_galley = ui.painter().layout_no_wrap(
+                            format!("{}  ", category.icon()),
+                            font_id.clone(),
+                            icon_color,
+                        );
+                        let icon_top_left = egui::pos2(
+                            rect.left() + 10.0,
+                            rect.center().y - icon_galley.size().y / 2.0,
+                        );
+                        ui.painter().galley(icon_top_left, icon_galley.clone(), icon_color);
                         ui.painter().text(
-                            rect.left_center() + egui::vec2(10.0, 0.0),
+                            rect.left_center() + egui::vec2(10.0 + icon_galley.size().x, 0.0),
                             egui::Align2::LEFT_CENTER,
-                            format!("{}  {}", category.icon(), category.label(i18n)),
-                            egui::FontId::proportional(palette.text_size),
-                            color,
+                            category.label(i18n),
+                            font_id,
+                            text_color,
                         );
 
                         if resp.hovered() {

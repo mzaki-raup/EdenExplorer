@@ -1911,55 +1911,67 @@ impl MainWindow {
                                 });
 
                             ui.add_space(16.0);
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if primary_dialog_button(
-                                        ui,
-                                        palette,
-                                        &self.i18n.tr("paste_conflict_rename"),
-                                    )
-                                    .on_hover_text(
-                                        egui::RichText::new(
-                                            self.i18n.tr("tooltip_paste_conflict_rename"),
+                            // A single `ui.horizontal` bounds the row's height to
+                            // its actual button content; a bare `ui.with_layout`
+                            // used directly as a `vertical()` child (the previous
+                            // shape here) let its child `Ui` inherit the *full*
+                            // remaining available height from the Area rather
+                            // than shrinking to the button row, and centering the
+                            // buttons within that inflated rect produced a large
+                            // visible gap below them (and the `Area`'s own
+                            // content-driven sizing then reserved room for it).
+                            // Nesting a second `with_layout` for Cancel inside the
+                            // first made it worse; a plain `horizontal` with Cancel
+                            // packed left and the other three right-aligned inside
+                            // it is the same pattern every other dialog here uses.
+                            ui.horizontal(|ui| {
+                                if ghost_dialog_button(ui, palette, &self.i18n.tr("cancel"))
+                                    .clicked()
+                                {
+                                    cancelled = true;
+                                }
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if primary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_rename"),
                                         )
-                                        .size(palette.tooltip_text_size)
-                                        .color(palette.tooltip_text_color),
-                                    )
-                                    .clicked()
-                                    {
-                                        resolution = Some(PasteConflictAction::Rename);
-                                    }
-                                    ui.add_space(6.0);
-                                    if secondary_dialog_button(
-                                        ui,
-                                        palette,
-                                        &self.i18n.tr("paste_conflict_skip"),
-                                    )
-                                    .clicked()
-                                    {
-                                        resolution = Some(PasteConflictAction::Skip);
-                                    }
-                                    ui.add_space(6.0);
-                                    if secondary_dialog_button(
-                                        ui,
-                                        palette,
-                                        &self.i18n.tr("paste_conflict_replace"),
-                                    )
-                                    .clicked()
-                                    {
-                                        resolution = Some(PasteConflictAction::Replace);
-                                    }
-
-                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                        if ghost_dialog_button(ui, palette, &self.i18n.tr("cancel"))
-                                            .clicked()
+                                        .on_hover_text(
+                                            egui::RichText::new(
+                                                self.i18n.tr("tooltip_paste_conflict_rename"),
+                                            )
+                                            .size(palette.tooltip_text_size)
+                                            .color(palette.tooltip_text_color),
+                                        )
+                                        .clicked()
                                         {
-                                            cancelled = true;
+                                            resolution = Some(PasteConflictAction::Rename);
                                         }
-                                    });
-                                },
-                            );
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_skip"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Skip);
+                                        }
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_replace"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Replace);
+                                        }
+                                    },
+                                );
+                            });
                         });
                     });
             });

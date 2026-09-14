@@ -206,6 +206,16 @@ pub fn draw_tab_content(
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.set_min_width(viewport_width);
+                            // The type-to-filter box (drawn by `draw_item_viewer`
+                            // via `handle_global_actions`) draws its own border
+                            // only a few px inset from this ui's own edge - a
+                            // clip rect set exactly to the scroll viewport eats
+                            // that border's top/left edge, the same class of bug
+                            // already fixed for the navbar's address bar and
+                            // search box (see CLAUDE.md). A few px of slack lets
+                            // the border render fully without letting real
+                            // overflow escape the scroll area visibly.
+                            ui.set_clip_rect(ui.clip_rect().expand(3.0));
                             pending_action = draw_item_viewer(
                                 ui,
                                 i18n,

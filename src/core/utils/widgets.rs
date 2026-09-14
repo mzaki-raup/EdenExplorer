@@ -20,10 +20,8 @@ pub fn clickable_active_icon(
     let padded_size = galley.size() + Vec2::splat(ICON_CLICK_PADDING * 2.0);
     let (rect, resp) = ui.allocate_exact_size(padded_size, Sense::click());
 
-    let color = if is_active {
-        palette.primary
-    } else if resp.hovered() {
-        palette.primary
+    let color = if is_active || resp.hovered() {
+        palette.toolbar_icon_active_color
     } else {
         default_color
     };

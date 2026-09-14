@@ -457,9 +457,12 @@ settings_category_context_menu = 自訂右鍵選單
 settings_category_tab_groups = 分頁群組
 settings_category_advanced = 進階
 
+theme_preview_title = 即時預覽
 theme_colors_sidebar = 側邊欄與導覽
 theme_colors_sidebar_text = 側邊欄文字
 theme_colors_settings_nav_inactive = 設定導覽（未選取）
+theme_colors_settings_nav_selected_text = 設定導覽（已選取）文字
+theme_colors_settings_nav_selected_icon = 設定導覽（已選取）圖示
 theme_colors_status_bar = 狀態列
 theme_colors_status_bar_bg = 狀態列背景
 theme_colors_status_bar_text = 狀態列文字
@@ -470,6 +473,7 @@ theme_colors_search_active_icon_bg = 搜尋啟用圖示背景
 theme_colors_toolbar = 工具列
 theme_colors_toolbar_bg = 工具列背景
 theme_colors_toolbar_icon_disabled = 工具列圖示（停用）
+theme_colors_toolbar_icon_active = 工具列圖示（作用中）
 theme_colors_preview_pane = 預覽面板
 theme_colors_preview_pane_bg = 預覽面板背景
 
@@ -481,6 +485,10 @@ theme_colors_notification_status_success = 狀態：成功
 theme_colors_notification_status_warning = 狀態：警告
 theme_colors_notification_status_error = 狀態：錯誤
 theme_colors_notification_status_info = 狀態：資訊
+
+theme_colors_navigation_toast = 導覽提示
+theme_colors_navigation_toast_border = 提示邊框
+theme_colors_navigation_toast_bg = 提示背景
 
 theme_colors_primary_button_text = 主要按鈕文字
 theme_colors_button_disabled_bg = 停用按鈕背景

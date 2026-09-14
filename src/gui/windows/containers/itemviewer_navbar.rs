@@ -442,10 +442,14 @@ fn draw_search_box_contents(
                 resp.request_focus();
             });
         if ui.is_rect_visible(frame_response.response.rect) {
+            // Thicker and fully opaque (`borders_active`, the same choice
+            // made for the type-to-filter box's border) rather than
+            // `opaque_border_color`'s low-alpha blend - reported as hard to
+            // see at the previous 1.5px/blended-alpha combination.
             ui.painter().rect_stroke(
                 frame_response.response.rect,
                 egui::CornerRadius::same(palette.small_radius),
-                egui::Stroke::new(1.5, opaque_border_color(palette)),
+                egui::Stroke::new(2.0, palette.borders_active),
                 egui::StrokeKind::Outside,
             );
         }
@@ -508,6 +512,21 @@ fn draw_search_box_contents(
                 tab.search_box_buffer.trim().to_string(),
                 tab.search_box_scope.clone(),
             ));
+        }
+
+        // Closing the search box previously meant reaching back to the
+        // toolbar's magnifying-glass toggle (the same icon that opened it) -
+        // a real distance from the field itself. An inline close button,
+        // right where the field ends, mirrors every other dismissible input
+        // in the app (the breadcrumb path edit, dialogs) and needs no trip
+        // back to the toolbar.
+        ui.add_space(8.0);
+        if crate::gui::utils::clickable_icon(ui, regular::X, palette)
+            .on_hover_text(i18n.tr("tooltip_search_close"))
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            tab.search_box_editing = false;
         }
 
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -775,8 +794,13 @@ fn draw_breadcrumb_row_contents(
                 .unwrap_or(palette.text_header_section);
 
             ui.add(
+                // `regular::TAG`/`fill::TAG` share a codepoint - the fill
+                // weight only renders with the "phosphor_fill" family (see
+                // `sidebar.rs`'s note on this), not the default font used by
+                // a plain `RichText`.
                 egui::Label::new(
                     egui::RichText::new(fill::TAG)
+                        .family(egui::FontFamily::Name("phosphor_fill".into()))
                         .size(BREADCRUMB_ICON_SIZE)
                         .color(color),
                 )
@@ -785,6 +809,25 @@ fn draw_breadcrumb_row_contents(
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(group.map(|g| g.name.as_str()).unwrap_or(""))
+                        .size(palette.text_size + 2.0)
+                        .color(palette.text_header_section),
+                )
+                .selectable(false),
+            );
+        } else if let Some((query, _scope)) =
+            crate::core::fs::parse_search_view_path(&tab.nav.current)
+        {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(regular::MAGNIFYING_GLASS)
+                        .size(BREADCRUMB_ICON_SIZE)
+                        .color(palette.text_header_section),
+                )
+                .selectable(false),
+            );
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(query)
                         .size(palette.text_size + 2.0)
                         .color(palette.text_header_section),
                 )
