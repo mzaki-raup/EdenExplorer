@@ -1152,6 +1152,34 @@ PowerShell process) rather than the app's own code - if you're using the
   color-only fix with a loud diagnostic color (solid red) before spending
   time tuning blend ratios, since that immediately tells you whether the
   stroke is rendering at all.
+- **Found the first real case of a `postcard`-persisted struct that
+  actually needed a field added to it after the fact, and it confirmed the
+  earlier `ThemePalette` finding's practical consequence: appending a field
+  directly, with no migration path, would have silently wiped every user's
+  existing saved data on their next launch.** `CustomThemeEntry` (a saved
+  custom theme's name/accent/secondary) needed a new `palette:
+  Option<ThemePalette>` field so selecting a saved theme could restore the
+  *whole* palette the user had, not just re-derive it from accent/secondary
+  (see the "Custom themes... colors gone" entry in `CHECKLIST.md` for the
+  full bug). Per the existing documented finding, `load_custom_themes`'s
+  postcard decode (`postcard::from_bytes::<T>`) has no per-field rescue for
+  an appended field - it fails the *entire* struct, and the existing
+  `Option::None` fallback in `load_or_migrate_bincode_to_postcard` would
+  have quietly returned an empty theme list instead of the user's real one.
+  Fixed by keeping a private `CustomThemeEntryLegacy`/
+  `CustomThemesSnapshotLegacy` pair (the exact pre-change shape) purely as
+  a decode fallback: `load_custom_themes` tries the new shape first, and on
+  failure decodes the legacy shape and converts each entry to
+  `palette: None` rather than losing it outright - re-saved in the new
+  shape automatically the next time the user changes anything about their
+  themes. **This is the reusable pattern for any future field added to a
+  `postcard`-persisted struct that already has real user data riding on
+  it** (`ThemePalette` itself still doesn't have this and remains exposed
+  per the earlier finding - test coverage: `custom_theme_entry_round_trips_full_palette`/
+  `legacy_custom_theme_bytes_without_palette_field_still_decode` in
+  `core/indexer.rs`). Don't just add `#[serde(default)]` and assume it's
+  covered - that annotation does nothing for postcard's whole-struct decode
+  failure mode; write (and keep) a small `*Legacy` shadow struct instead.
 
 ## Operational Instructions
 

@@ -528,14 +528,27 @@ pub fn draw_theme_customizer_content(
                                     .on_hover_text(entry.name.clone())
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if swatch_resp.clicked() {
-                                    editing_palette.primary = entry.accent;
-                                    editing_palette.secondary_accent = entry.secondary;
-                                    editing_palette.pinned_tab_color = entry.secondary;
-                                    editing_palette.button_favorite_fill = entry.secondary;
-                                    regenerate_base_derived_colors(
-                                        editing_palette,
-                                        customizer.selected_mode == ThemeMode::Dark,
-                                    );
+                                    if let Some(saved_palette) = &entry.palette {
+                                        // Full restore - every field the user
+                                        // had when they saved this theme, not
+                                        // just accent/secondary re-derived
+                                        // from scratch (see `CustomThemeEntry`'s
+                                        // doc comment for why that was the bug).
+                                        *editing_palette = saved_palette.clone();
+                                    } else {
+                                        // Legacy entry (saved before `palette`
+                                        // existed) - only ever had accent/
+                                        // secondary to begin with, so this is
+                                        // the most it can restore.
+                                        editing_palette.primary = entry.accent;
+                                        editing_palette.secondary_accent = entry.secondary;
+                                        editing_palette.pinned_tab_color = entry.secondary;
+                                        editing_palette.button_favorite_fill = entry.secondary;
+                                        regenerate_base_derived_colors(
+                                            editing_palette,
+                                            customizer.selected_mode == ThemeMode::Dark,
+                                        );
+                                    }
                                     changed = true;
                                     // Pre-fill the save controls with this
                                     // theme's own name/secondary, so tweaking
@@ -650,12 +663,32 @@ pub fn draw_theme_customizer_content(
                                 primary_dialog_button(ui, palette, &save_label)
                             });
                             if create_resp.inner.clicked() {
+                                // Captures the *entire* currently-edited
+                                // palette, not just accent/secondary - the
+                                // button reads "Save Current Colors", so it
+                                // should actually save all of them (see
+                                // `CustomThemeEntry`'s doc comment). The
+                                // Secondary picker above lets the user choose
+                                // a secondary the palette doesn't currently
+                                // have without needing a whole preset click
+                                // first, so it's applied on top of the clone
+                                // before saving, alongside the two derived
+                                // fields a real preset apply also sets.
+                                let mut snapshot_palette = editing_palette.clone();
+                                snapshot_palette.secondary_accent =
+                                    customizer.new_custom_theme_secondary;
+                                snapshot_palette.pinned_tab_color =
+                                    customizer.new_custom_theme_secondary;
+                                snapshot_palette.button_favorite_fill =
+                                    customizer.new_custom_theme_secondary;
+
                                 if let Some(id) = existing_id {
                                     if let Some(existing) =
                                         customizer.custom_themes.iter_mut().find(|e| e.id == id)
                                     {
-                                        existing.accent = editing_palette.primary;
-                                        existing.secondary = customizer.new_custom_theme_secondary;
+                                        existing.accent = snapshot_palette.primary;
+                                        existing.secondary = snapshot_palette.secondary_accent;
+                                        existing.palette = Some(snapshot_palette);
                                     }
                                 } else {
                                     let id = customizer.custom_themes_next_id;
@@ -663,8 +696,9 @@ pub fn draw_theme_customizer_content(
                                     customizer.custom_themes.push(CustomThemeEntry {
                                         id,
                                         name: trimmed_name,
-                                        accent: editing_palette.primary,
-                                        secondary: customizer.new_custom_theme_secondary,
+                                        accent: snapshot_palette.primary,
+                                        secondary: snapshot_palette.secondary_accent,
+                                        palette: Some(snapshot_palette),
                                     });
                                 }
                                 customizer.new_custom_theme_name.clear();

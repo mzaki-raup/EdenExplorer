@@ -86,18 +86,27 @@ fn default_recent_locations_version() -> u32 {
     1
 }
 
-/// One user-created named theme - just a name plus the same accent +
-/// secondary pair a built-in `ThemePresetDef` carries (see `theme.rs`),
-/// deliberately not a full `ThemePalette` snapshot: applying one is meant to
-/// behave exactly like clicking a prebuilt preset (set `primary`/
-/// `secondary_accent` and re-derive everything else), not restore a whole
-/// saved configuration.
+/// One user-created named theme. `accent`/`secondary` are kept as their own
+/// fields (rather than only living inside `palette`) for the swatch preview
+/// and the cheap `is_selected` check, and so a `palette: None` legacy entry
+/// (saved before `palette` existed) still has something to apply. `palette`,
+/// when present, is a *full* snapshot of every color/field the user had set
+/// when they saved - clicking the swatch restores all of it, not just the
+/// two-color accent/secondary pair the way applying a built-in preset does.
+/// Earlier versions of this feature stored only `accent`/`secondary` and
+/// re-derived everything else via `regenerate_base_derived_colors` on
+/// apply, which is exactly why a user's other manually-edited colors
+/// (sidebar text, notification colors, etc.) silently reverted to their
+/// tint-formula defaults every time they reselected their own saved theme -
+/// `palette` is what actually fixes that.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CustomThemeEntry {
     pub id: u64,
     pub name: String,
     pub accent: Color32,
     pub secondary: Color32,
+    #[serde(default)]
+    pub palette: Option<ThemePalette>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -106,6 +115,31 @@ pub struct CustomThemesSnapshot {
     pub next_id: u64,
     #[serde(default)]
     pub items: Vec<CustomThemeEntry>,
+}
+
+/// The pre-`palette`-field shape of `CustomThemeEntry`/`CustomThemesSnapshot`
+/// - kept only as a decode fallback in `load_custom_themes`. Postcard's
+/// format has no per-field rescue for an appended field (confirmed
+/// elsewhere in this codebase: a whole-struct decode either fully succeeds
+/// or fully fails, `#[serde(default)]` only helps a JSON-style format) - so
+/// without this fallback, adding `palette` to `CustomThemeEntry` would make
+/// *every* custom theme saved before this change fail to decode at once,
+/// silently wiping a user's whole saved-themes list rather than just
+/// missing the new field.
+#[derive(Deserialize, Serialize)]
+struct CustomThemeEntryLegacy {
+    id: u64,
+    name: String,
+    accent: Color32,
+    secondary: Color32,
+}
+
+#[derive(Deserialize, Serialize)]
+struct CustomThemesSnapshotLegacy {
+    #[serde(default = "default_next_custom_theme_id")]
+    next_id: u64,
+    #[serde(default)]
+    items: Vec<CustomThemeEntryLegacy>,
 }
 
 fn default_next_custom_theme_id() -> u64 {
@@ -704,7 +738,32 @@ pub fn save_recent_locations(snapshot: &RecentLocationsSnapshot) {
 
 pub fn load_custom_themes() -> Option<CustomThemesSnapshot> {
     let path = custom_themes_cache_path()?;
-    load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path)
+    if let Some(snapshot) = load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path) {
+        return Some(snapshot);
+    }
+
+    // Fell through the new shape (and bincode) - try the pre-`palette`
+    // shape before giving up, so upgrading to this version doesn't wipe an
+    // existing custom-themes list outright (see `CustomThemeEntryLegacy`'s
+    // doc comment). Re-saves in the new shape the next time anything
+    // changes (`save_custom_themes` is always called after a mutation), so
+    // this fallback only ever runs once per machine.
+    let data = std::fs::read(&path).ok()?;
+    let legacy = postcard::from_bytes::<CustomThemesSnapshotLegacy>(&data).ok()?;
+    Some(CustomThemesSnapshot {
+        next_id: legacy.next_id,
+        items: legacy
+            .items
+            .into_iter()
+            .map(|e| CustomThemeEntry {
+                id: e.id,
+                name: e.name,
+                accent: e.accent,
+                secondary: e.secondary,
+                palette: None,
+            })
+            .collect(),
+    })
 }
 
 pub fn save_custom_themes(snapshot: &CustomThemesSnapshot) {
@@ -1073,6 +1132,68 @@ mod tests {
         assert_eq!(decoded.tabs[0].split_path, Some(PathBuf::from("C:\\Users")));
         assert_eq!(decoded.tabs[1].path, PathBuf::from("C:\\"));
         assert_eq!(decoded.tabs[1].split_path, None);
+    }
+
+    #[test]
+    fn custom_theme_entry_round_trips_full_palette() {
+        let mut palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        palette.sidebar_text_color = Color32::from_rgb(1, 2, 3);
+        palette.notification_status_success = Color32::from_rgb(4, 5, 6);
+
+        let snapshot = CustomThemesSnapshot {
+            next_id: 2,
+            items: vec![CustomThemeEntry {
+                id: 1,
+                name: "My Theme".to_string(),
+                accent: palette.primary,
+                secondary: palette.secondary_accent,
+                palette: Some(palette.clone()),
+            }],
+        };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: CustomThemesSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        let restored = decoded.items[0].palette.as_ref().unwrap();
+        assert_eq!(restored.sidebar_text_color, Color32::from_rgb(1, 2, 3));
+        assert_eq!(
+            restored.notification_status_success,
+            Color32::from_rgb(4, 5, 6)
+        );
+    }
+
+    /// Confirms that adding `palette` to `CustomThemeEntry` doesn't wipe a
+    /// custom-themes list saved before that field existed - postcard has no
+    /// per-field rescue for an appended field (a whole-struct decode either
+    /// fully succeeds or fully fails), so `load_custom_themes` falls back to
+    /// decoding the pre-`palette` shape rather than losing the user's saved
+    /// themes outright. This test exercises that fallback path directly
+    /// (bypassing the real `%LOCALAPPDATA%` file) by decoding a hand-built
+    /// legacy-shape byte stream the same way `load_custom_themes` does.
+    #[test]
+    fn legacy_custom_theme_bytes_without_palette_field_still_decode() {
+        let legacy = CustomThemesSnapshotLegacy {
+            next_id: 3,
+            items: vec![CustomThemeEntryLegacy {
+                id: 1,
+                name: "Old Theme".to_string(),
+                accent: Color32::from_rgb(10, 20, 30),
+                secondary: Color32::from_rgb(40, 50, 60),
+            }],
+        };
+        let bytes = postcard::to_allocvec(&legacy).unwrap();
+
+        // The new shape must fail to decode legacy bytes (otherwise this
+        // test isn't actually exercising the fallback) ...
+        assert!(postcard::from_bytes::<CustomThemesSnapshot>(&bytes).is_err());
+
+        // ... while the legacy shape decodes cleanly, giving
+        // `load_custom_themes` something to convert (palette: None) rather
+        // than treating the file as corrupt.
+        let decoded: CustomThemesSnapshotLegacy = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded.items.len(), 1);
+        assert_eq!(decoded.items[0].name, "Old Theme");
+        assert_eq!(decoded.items[0].accent, Color32::from_rgb(10, 20, 30));
     }
 
     #[test]
