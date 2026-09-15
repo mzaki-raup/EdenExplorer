@@ -3265,6 +3265,10 @@ impl MainWindow {
                 let path = self.current_nav().current.clone();
                 self.remove_favorite(&path);
             }
+            if let Some(path) = tabbar_action.as_ref().and_then(|t| t.open_in_new_tab.clone()) {
+                self.open_new_tab(path);
+                self.load_path();
+            }
             if let Some((query, scope)) = tabbar_action.as_ref().and_then(|t| t.open_search.clone()) {
                 self.open_or_focus_search_tab(query, scope);
             }

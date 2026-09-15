@@ -928,6 +928,11 @@ pub struct ItemViewerNavBarAction {
     /// clicked - the caller appends a `SavedSearch` (or shows the
     /// limit-reached message if already at `MAX_SAVED_SEARCHES`).
     pub save_search: Option<(String, crate::core::everything::SearchScope)>,
+    /// Set when a breadcrumb segment is middle-clicked (and the
+    /// `middle_click_opens_new_tab` setting is on) - opens that segment's
+    /// folder as a new tab instead of navigating the current one, matching
+    /// the same gesture the file list's own folder rows already support.
+    pub open_in_new_tab: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]

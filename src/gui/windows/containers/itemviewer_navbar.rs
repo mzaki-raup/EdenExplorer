@@ -68,6 +68,7 @@ pub fn draw_itemviewer_navigation_bar(
     is_split_pane: bool,
     tags: &[TagGroup],
     saved_search_count: usize,
+    middle_click_opens_new_tab: bool,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
@@ -115,6 +116,7 @@ pub fn draw_itemviewer_navigation_bar(
                 &mut action,
                 tags,
                 saved_search_count,
+                middle_click_opens_new_tab,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -188,6 +190,7 @@ pub fn draw_itemviewer_navigation_bar(
                 &mut action,
                 tags,
                 saved_search_count,
+                middle_click_opens_new_tab,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -250,6 +253,7 @@ fn draw_bordered_breadcrumb(
     action: &mut ItemViewerNavBarAction,
     tags: &[TagGroup],
     saved_search_count: usize,
+    middle_click_opens_new_tab: bool,
 ) {
     // Computed before the frame is created: inside a horizontal layout, a
     // frame otherwise shrinks to fit its content (like an inline element)
@@ -356,6 +360,7 @@ fn draw_bordered_breadcrumb(
         content_width,
         tags,
         saved_search_count,
+        middle_click_opens_new_tab,
     );
 }
 
@@ -558,6 +563,7 @@ fn draw_breadcrumb_row_contents(
     breadcrumb_width: f32,
     tags: &[TagGroup],
     saved_search_count: usize,
+    middle_click_opens_new_tab: bool,
 ) {
     if tab.search_box_editing {
         draw_search_box_contents(ui, i18n, tab, tab_id, palette, action, saved_search_count);
@@ -871,7 +877,14 @@ fn draw_breadcrumb_row_contents(
 
                 handle_breadcrumb_hover(ui, &resp);
 
-                handle_breadcrumb_click(&resp, crumb, &segments, drag_active, action);
+                handle_breadcrumb_click(
+                    &resp,
+                    crumb,
+                    &segments,
+                    drag_active,
+                    middle_click_opens_new_tab,
+                    action,
+                );
 
                 breadcrumbs_right = resp.rect.right();
             }
@@ -1525,18 +1538,29 @@ fn handle_breadcrumb_click(
     crumb: &RenderedBreadcrumb,
     segments: &[RenderedBreadcrumb],
     drag_active: bool,
+    middle_click_opens_new_tab: bool,
     action: &mut ItemViewerNavBarAction,
 ) {
-    if drag_active || !resp.clicked() {
+    if drag_active {
         return;
     }
 
-    if crumb.is_ellipsis {
-        if let Some(first) = segments.first() {
-            action.nav_to = Some(first.path.clone());
+    // The ellipsis segment (collapsed leading path when the breadcrumb is
+    // too long to fit) always resolves to the first real segment's path -
+    // both click paths below share that resolution rather than duplicating
+    // the `is_ellipsis` branch.
+    let target_path = || {
+        if crumb.is_ellipsis {
+            segments.first().map(|c| c.path.clone())
+        } else {
+            Some(crumb.path.clone())
         }
-    } else {
-        action.nav_to = Some(crumb.path.clone());
+    };
+
+    if resp.clicked() {
+        action.nav_to = target_path();
+    } else if middle_click_opens_new_tab && resp.middle_clicked() {
+        action.open_in_new_tab = target_path();
     }
 }
 

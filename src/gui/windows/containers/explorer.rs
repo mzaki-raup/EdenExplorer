@@ -129,6 +129,7 @@ pub fn draw_tab_content(
                     is_split_pane,
                     &tags_state.groups,
                     saved_search_count,
+                    settings_window.current_settings.middle_click_opens_new_tab,
                 ));
             });
 
