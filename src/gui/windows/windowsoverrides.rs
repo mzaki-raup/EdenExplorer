@@ -25,8 +25,12 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
-/// Width of the client-area region reserved for native window resizing.
-const RESIZE_BORDER: i32 = 2;
+/// Width, in logical (96-DPI) pixels, of the client-area region reserved for
+/// native window resizing. Scaled up per-monitor DPI at hit-test time so the
+/// grab area stays a consistent, comfortably-sized target regardless of
+/// display scaling - matching the ~8px border Windows uses for its own
+/// resizable windows instead of an easy-to-miss sliver.
+const RESIZE_BORDER: i32 = 8;
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -381,7 +385,8 @@ unsafe extern "system" fn custom_wndproc(
                 let right = bottom_right.x;
                 let bottom = bottom_right.y;
 
-                let resize = RESIZE_BORDER;
+                let dpi = GetDpiForWindow(hwnd).max(1);
+                let resize = (RESIZE_BORDER as f32 * dpi as f32 / 96.0).round() as i32;
 
                 // Top-left
                 if x >= left && x < left + resize && y >= top && y < top + resize {
