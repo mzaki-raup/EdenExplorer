@@ -172,7 +172,7 @@ pub fn draw_favorites_settings(
                                 apply_eden_visual_overrides(ui, palette);
                                 changed |= ui
                                     .add_sized(
-                                        [ui.available_width().min(260.0), ui.spacing().interact_size.y],
+                                        [260.0, ui.spacing().interact_size.y],
                                         egui::TextEdit::singleline(&mut fav.label),
                                     )
                                     .changed();
@@ -249,7 +249,11 @@ pub fn draw_favorites_settings(
 
                         // A user-browsed image file's own icon, on its own row
                         // below the glyph choices - same layout as the Custom
-                        // Context Menu icon picker.
+                        // Context Menu icon picker. The icon preview + file
+                        // path go on a *separate* row below the Browse/Clear
+                        // buttons rather than sharing one - a real path is
+                        // often long enough to run past the column's own
+                        // right edge when everything shares one row.
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if eden_button(ui, palette, &i18n.tr("favorite_icon_browse")).clicked() {
@@ -277,17 +281,25 @@ pub fn draw_favorites_settings(
                                 fav.custom_icon_file = None;
                                 changed = true;
                             }
-                            if let Some(file) = &fav.custom_icon_file {
-                                if let Some(texture) = icon_cache.get_custom_file_icon(file) {
+                        });
+                        if let Some(file) = fav.custom_icon_file.clone() {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if let Some(texture) = icon_cache.get_custom_file_icon(&file) {
                                     ui.add(
                                         egui::Image::new(&texture)
                                             .fit_to_exact_size(egui::vec2(20.0, 20.0)),
                                     );
                                 }
-                                ui.label(file.display().to_string())
-                                    .on_hover_text(file.display().to_string());
-                            }
-                        });
+                                let path_text = file.display().to_string();
+                                ui.add(
+                                    egui::Label::new(&path_text)
+                                        .truncate()
+                                        .selectable(false),
+                                )
+                                .on_hover_text(&path_text);
+                            });
+                        }
                     });
                 });
             },

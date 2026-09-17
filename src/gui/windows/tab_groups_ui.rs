@@ -178,7 +178,7 @@ pub fn draw_tab_groups_settings(
                                 apply_eden_visual_overrides(ui, palette);
                                 changed |= ui
                                     .add_sized(
-                                        [ui.available_width().min(280.0), ui.spacing().interact_size.y],
+                                        [280.0, ui.spacing().interact_size.y],
                                         egui::TextEdit::singleline(&mut group.name),
                                     )
                                     .changed();
@@ -232,6 +232,7 @@ pub fn draw_tab_groups_settings(
                                     ui.label(path.display().to_string())
                                         .on_hover_text(path.display().to_string());
                                 });
+                                ui.add_space(6.0);
                             }
                             if let Some((from, to)) = move_path {
                                 group.paths.swap(from, to);

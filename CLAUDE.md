@@ -1457,6 +1457,41 @@ PowerShell process) rather than the app's own code - if you're using the
   pixels. When adding a row-click-to-select pattern on top of a row that
   also contains its own interactive buttons, sense the background rect
   *before* any button in the row is drawn, never after.
+- **`setting_row`'s own `ui.add_space(ui.available_width())` spacer (used to
+  push its right-aligned controls over) claims the *entire* remaining row
+  width before that right-aligned closure ever runs - so any code inside
+  that closure that itself calls `ui.available_width()` gets back whatever's
+  left *after* the spacer already took it all, not the width it visually
+  has room for.** This was already flagged as a "known follow-up" (the
+  General settings page's Language dropdown going invisible in a narrow
+  split pane) but got hit for real during the Favorites/Custom Context Menu/
+  Tab Groups/Tags master-detail redesign: every plain `TextEdit` field sized
+  itself via `[ui.available_width().min(260.0), ...]`, intending the `.min`
+  as a safety cap - instead it silently collapsed every one of those fields
+  down to a barely-visible sliver, because the "available" figure it was
+  clamping against was already near-zero by the time it was read. Fixed by
+  using a flat, fixed size (`[260.0, ...]`) instead, matching how these
+  fields worked correctly before the redesign. If a widget inside
+  `setting_row`'s right closure needs to know how much room it actually has,
+  don't call `ui.available_width()` from in there - it doesn't mean what it
+  looks like it means in this specific helper.
+- **`fill::TAG` and `regular::TAG` share the same Unicode codepoint, so
+  passing the "fill" glyph constant alone renders the outline icon anyway -
+  the actual filled weight only draws if the text is *also* given the
+  `egui::FontFamily::Name("phosphor_fill".into())` family override**, since
+  Phosphor's Fill weight is registered as its own separate named family, not
+  merged into `Proportional`. This was already documented once (the
+  sidebar's own tag icons, `sidebar.rs`) but got made a second time writing
+  the new Settings > Tags master-detail page's group-list icon - it used
+  `regular::TAG` with no family override at all, rendering as a thin
+  outline instead of matching the sidebar's solid-filled look the rest of
+  the app uses for the same icon. Whenever pairing an `egui_phosphor::fill::
+  *` glyph with a color (a strong visual signal like a tag/status color is
+  usually the point of reaching for the fill weight over the outline one),
+  double-check the `RichText`/label call also sets `.family(FontFamily::
+  Name("phosphor_fill".into()))` - the glyph constant alone is not enough,
+  and nothing will warn you if you forget it; it just quietly renders the
+  wrong weight.
 
 ## Operational Instructions
 

@@ -443,7 +443,7 @@ fn draw_entry_fields(
             apply_eden_visual_overrides(ui, palette);
             changed |= ui
                 .add_sized(
-                    [ui.available_width().min(260.0), ui.spacing().interact_size.y],
+                    [260.0, ui.spacing().interact_size.y],
                     egui::TextEdit::singleline(&mut entry.label),
                 )
                 .changed();
@@ -490,23 +490,31 @@ fn draw_entry_fields(
             entry.icon = CustomContextMenuIcon::None;
             changed = true;
         }
-        if let CustomContextMenuIcon::FileIcon(path) = &entry.icon {
+    });
+    // Icon preview + file path go on their own row below the Browse/Clear
+    // buttons - a real path is often long enough to run past the column's
+    // own right edge when everything shares one row (same fix as Favorites'
+    // identical icon-file picker).
+    if let CustomContextMenuIcon::FileIcon(path) = entry.icon.clone() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
             let is_image = path
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|ext| IMAGE_ICON_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)));
             let texture = if is_image {
-                icon_cache.get_custom_file_icon(path)
+                icon_cache.get_custom_file_icon(&path)
             } else {
-                icon_cache.get(path, false)
+                icon_cache.get(&path, false)
             };
             if let Some(texture) = texture {
                 ui.add(egui::Image::new(&texture).fit_to_exact_size(egui::vec2(20.0, 20.0)));
             }
-            ui.label(path.display().to_string())
-                .on_hover_text(path.display().to_string());
-        }
-    });
+            let path_text = path.display().to_string();
+            ui.add(egui::Label::new(&path_text).truncate().selectable(false))
+                .on_hover_text(&path_text);
+        });
+    }
 
     if !is_child {
         ui.add_space(10.0);
@@ -572,7 +580,7 @@ fn draw_entry_fields(
                 apply_eden_visual_overrides(ui, palette);
                 changed |= ui
                     .add_sized(
-                        [ui.available_width().min(260.0), ui.spacing().interact_size.y],
+                        [260.0, ui.spacing().interact_size.y],
                         egui::TextEdit::singleline(&mut entry.executable),
                     )
                     .changed();
@@ -594,7 +602,7 @@ fn draw_entry_fields(
                 apply_eden_visual_overrides(ui, palette);
                 changed |= ui
                     .add_sized(
-                        [ui.available_width().min(260.0), ui.spacing().interact_size.y],
+                        [260.0, ui.spacing().interact_size.y],
                         egui::TextEdit::singleline(&mut entry.arguments),
                     )
                     .changed();

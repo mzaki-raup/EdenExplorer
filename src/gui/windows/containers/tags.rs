@@ -94,8 +94,17 @@ pub fn draw_tags(
                         let is_selected = Some(group_id) == settings.selected_tag_group_id;
 
                         let row = list_row(ui, palette, is_selected, |ui| {
+                            // `regular::TAG` and `fill::TAG` share the same
+                            // Unicode codepoint - which glyph actually renders
+                            // depends on the *font family* requested (the
+                            // "Fill" weight is a separate named family, not
+                            // merged into Proportional), so `fill::TAG` alone
+                            // with no family override silently draws the
+                            // outline glyph anyway. Matches the sidebar's own
+                            // solid-filled tag icon (`sidebar.rs`).
                             ui.label(
-                                egui::RichText::new(regular::TAG)
+                                egui::RichText::new(egui_phosphor::fill::TAG)
+                                    .family(egui::FontFamily::Name("phosphor_fill".into()))
                                     .size(palette.text_size + 3.0)
                                     .color(group_color),
                             );
@@ -176,9 +185,10 @@ pub fn draw_tags(
                                 setting_label(ui, &i18n.tr("tag_group_name"), None, palette);
                             },
                             |ui| {
+                                crate::core::utils::widgets::apply_eden_visual_overrides(ui, palette);
                                 changed |= ui
                                     .add_sized(
-                                        [ui.available_width().min(260.0), ui.spacing().interact_size.y],
+                                        [260.0, ui.spacing().interact_size.y],
                                         egui::TextEdit::singleline(&mut group.name),
                                     )
                                     .changed();
@@ -204,6 +214,15 @@ pub fn draw_tags(
                             );
                             return;
                         }
+
+                        // Applied once, before either loop below - both the
+                        // drag-rect precomputation pass and the real draw
+                        // pass allocate items sequentially via the same `ui`,
+                        // so setting this here keeps the *visible* row gap
+                        // and the *rects `compute_drop_index` reasons about*
+                        // in agreement (both come from the same ambient
+                        // `item_spacing.y` egui adds between allocations).
+                        ui.spacing_mut().item_spacing.y = 6.0;
 
                         let drag_is_active = drag_source_index.is_some();
                         let mut item_rects = Vec::with_capacity(group_items.len());
