@@ -146,6 +146,15 @@ pub struct SettingsWindow {
     /// and Favorites settings (only one picker is open at a time in
     /// practice, so a single field is enough).
     pub icon_picker_search: String,
+    /// Which entry is selected in each master-detail settings page's left
+    /// column (Favorites/Custom Context Menu/Tab Groups/Tags) - by a stable
+    /// id rather than a positional index, so reordering or deleting an
+    /// unrelated entry doesn't silently select the wrong one. Purely
+    /// transient UI state, never persisted.
+    pub selected_favorite_index: Option<usize>,
+    pub selected_context_menu_id: Option<u64>,
+    pub selected_tab_group_id: Option<u64>,
+    pub selected_tag_group_id: Option<u64>,
 }
 
 pub struct SidebarState {

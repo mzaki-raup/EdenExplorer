@@ -1409,6 +1409,54 @@ PowerShell process) rather than the app's own code - if you're using the
   parameter tweaks, check whether the *outer* container needs to stop
   wrapping that specific content at all, rather than continuing to adjust
   either layout's own settings against each other.
+- **Passing a master-detail page's two columns as `FnOnce` closure
+  *arguments* to one shared layout-splitting function does not borrow-check
+  when both columns need a mutable borrow of the same state, even though
+  the function only ever runs them one after the other internally.** The
+  first cut of a shared `master_detail_columns(ui, left_closure,
+  right_closure)` helper (written for the Favorites/Custom Context Menu/Tab
+  Groups/Tags redesign) failed to compile everywhere it was used, because
+  both closures are constructed - and their captures borrow-checked - as
+  soon as they're passed as sibling arguments to the same call, regardless
+  of the fact that the function body only calls one, then the other. Two
+  closures that each need `&mut settings`/`&mut tags_state`/`&mut favorites`
+  fail here even though there's no real aliasing at runtime. This is
+  different from the sequential-reborrow pattern that *does* work (see the
+  Appearance page's own two-column split): that one runs
+  `ui.allocate_ui_with_layout(...)` calls as two separate **statements**
+  inside a single closure, not as two closures passed to an outer function.
+  Fixed by changing the shared helper to just return `(column_width,
+  column_height)` and having each page write the same `ui.horizontal(|ui|
+  { allocate_ui_with_layout(left); allocate_ui_with_layout(right); })` shape
+  inline itself. If a helper meant to reduce duplication across pages needs
+  to run two pieces of caller-supplied UI code that both touch the same
+  mutable state, don't pass them in as two `FnOnce` parameters to one call -
+  return whatever's actually shared (sizes, ids, rects) and let each call
+  site write the sequential statements itself.
+- **A row's own click-to-select sense registered *after* drawing the row's
+  content (including its own buttons) silently steals every click meant for
+  those buttons, not just clicks on the row's empty space.** The master-
+  detail redesign's shared `list_row` helper first drew the row via
+  `Frame::show(...)`, then added a separate `ui.interact(frame_response.
+  response.rect, ...)` for row selection - since egui gives click priority
+  to whichever overlapping sense was registered *later*, and this row-select
+  sense was registered after the buttons drawn moments earlier inside the
+  frame, it won every click in the row's rect, including ones landing
+  exactly on a reorder/delete button. Confirmed live: clicking a Favorite's
+  down-arrow changed the *selection* instead of moving the row. This is the
+  exact same rule already documented above for the tab strip's own drag
+  background, just easy to get backwards when starting from a `Frame::show`
+  return value (which only gives you the rect *after* content already drew)
+  instead of computing the rect first. Fixed by reversing the order:
+  `ui.allocate_exact_size(..., Sense::click())` for the background rect and
+  sense *first*, then paint the fill/border into that rect via
+  `ui.painter()` directly (not `Frame::show`, which would draw-then-return),
+  then draw the row's actual content (the buttons) afterward via
+  `ui.scope_builder` positioned at that same rect - the buttons' senses now
+  register after the background's, so they correctly win for their own
+  pixels. When adding a row-click-to-select pattern on top of a row that
+  also contains its own interactive buttons, sense the background rect
+  *before* any button in the row is drawn, never after.
 
 ## Operational Instructions
 
