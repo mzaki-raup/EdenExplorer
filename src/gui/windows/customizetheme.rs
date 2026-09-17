@@ -93,6 +93,13 @@ pub fn draw_theme_customizer_content(
             // row's own item spacing being the only separation.
             ui.add_space(10.0);
 
+            // Captured before `editing_palette` below borrows `customizer`
+            // mutably (through a specific field) - `tab_gap` is a plain,
+            // unrelated field, but reading it *after* that borrow starts
+            // would conflict with it for as long as `editing_palette` is
+            // still alive, which is the whole rest of this function.
+            let tab_gap_for_preview = customizer.tab_gap;
+
             let editing_palette = match customizer.selected_mode {
                 ThemeMode::Dark => &mut customizer.dark_palette,
                 ThemeMode::Light => &mut customizer.light_palette,
@@ -441,6 +448,47 @@ pub fn draw_theme_customizer_content(
                                                     );
                                                     if resp.changed() {
                                                         tab_gap_changed = true;
+                                                    }
+                                                },
+                                            );
+                                            ui.end_row();
+
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_tab_corner_radius"),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    // One picker drives both the active and
+                                                    // inactive tab's top corners together
+                                                    // (`nw`/`ne` - `sw`/`se` stay 0, a tab never
+                                                    // rounds its bottom edge) rather than
+                                                    // exposing all four `CornerRadius` fields
+                                                    // separately, matching how the user asked
+                                                    // for one "tab corner radius" setting, not
+                                                    // an active/inactive distinction.
+                                                    let mut radius = editing_palette
+                                                        .tab_active_radius
+                                                        .nw;
+                                                    let resp = ui.add_sized(
+                                                        egui::vec2(90.0, 0.0),
+                                                        egui::DragValue::new(&mut radius)
+                                                            .range(0..=20)
+                                                            .speed(0.2),
+                                                    );
+                                                    if resp.changed() {
+                                                        editing_palette.tab_active_radius.nw =
+                                                            radius;
+                                                        editing_palette.tab_active_radius.ne =
+                                                            radius;
+                                                        editing_palette.tab_inactive_radius.nw =
+                                                            radius;
+                                                        editing_palette.tab_inactive_radius.ne =
+                                                            radius;
+                                                        changed = true;
                                                     }
                                                 },
                                             );
@@ -1697,7 +1745,7 @@ pub fn draw_theme_customizer_content(
                             .id_salt("theme_preview_scroll")
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
-                                draw_theme_preview(ui, editing_palette, i18n);
+                                draw_theme_preview(ui, editing_palette, i18n, tab_gap_for_preview);
                             });
                     },
                 );
@@ -1896,6 +1944,51 @@ fn preview_toolbar_icon(ui: &mut egui::Ui, p: &ThemePalette, icon: &str, is_acti
     }
 }
 
+/// A mockup tab shape mirroring the real paint in `tabs.rs::
+/// handle_draw_tab_new_allocated` - rounded top corners only (`sw`/`se`
+/// forced to 0, matching how a real tab never rounds its bottom edge, since
+/// that's where it meets the content below it), using the same active/
+/// inactive radius and fill fields so the Tab Corner Radius picker has
+/// genuine visual feedback instead of needing several real tabs open to see.
+fn preview_tab(ui: &mut egui::Ui, p: &ThemePalette, title: &str, active: bool) {
+    let radius = if active {
+        p.tab_active_radius
+    } else {
+        p.tab_inactive_radius
+    };
+    let rounding = egui::CornerRadius {
+        nw: radius.nw,
+        ne: radius.ne,
+        sw: 0,
+        se: 0,
+    };
+    let fill = if active {
+        p.primary
+    } else {
+        p.tab_inactive_bg_color
+    };
+    let text_color = if active {
+        p.tab_text_selected
+    } else {
+        p.text_normal
+    };
+
+    let font_id = egui::FontId::proportional(11.0);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(title.to_string(), font_id.clone(), text_color);
+    let (rect, _) = ui.allocate_exact_size(
+        galley.size() + egui::vec2(20.0, 12.0),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect_filled(rect, rounding, fill);
+    ui.painter().galley(
+        rect.center() - galley.size() / 2.0,
+        galley,
+        text_color,
+    );
+}
+
 /// Live mockup of the app's major themed surfaces, redrawn every frame
 /// straight from `p`'s current field values - so any color edit below shows
 /// up here instantly, without depending on whether the mode being edited is
@@ -1908,7 +2001,7 @@ fn preview_toolbar_icon(ui: &mut egui::Ui, p: &ThemePalette, icon: &str, is_acti
 /// content height per row keeps them ending at the same y too, rather than
 /// each cluster's box floating at whatever size its own content happened to
 /// need.
-fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n) {
+fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap: f32) {
     const ROW1_HEIGHT: f32 = 52.0;
     const ROW2_HEIGHT: f32 = 26.0;
 
@@ -2179,7 +2272,32 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n) {
 
             ui.add_space(12.0);
 
-            // --- Row 3: Status bar (full width) ---
+            // --- Row 3: Tabs (full width) - reflects both Tab Corner Radius
+            // and Tab Gap live, since neither previously had any visual
+            // feedback short of actually opening several real tabs.
+            ui.vertical(|ui| {
+                preview_caption(ui, p, "Tabs");
+                ui.horizontal(|ui| {
+                    // Matches the real tab strip's own technique exactly
+                    // (`tabs.rs`: `ui.spacing_mut().item_spacing = vec2(spacing,
+                    // spacing)`) rather than layering an explicit `add_space`
+                    // on top of whatever this row's ambient item spacing
+                    // already was - doing both double-counted the gap, so the
+                    // mockup never actually matched the real tab strip's
+                    // spacing (most visible at the extremes: a Tab Gap of 0
+                    // still showed a visible gap here).
+                    ui.spacing_mut().item_spacing.x = tab_gap;
+                    for (title, active) in
+                        [("Downloads", true), ("Documents", false), ("Pictures", false)]
+                    {
+                        preview_tab(ui, p, title, active);
+                    }
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // --- Row 4: Status bar (full width) ---
             ui.vertical(|ui| {
                 preview_caption(ui, p, "Status Bar");
                 egui::Frame::NONE
