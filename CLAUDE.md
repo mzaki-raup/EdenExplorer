@@ -1252,6 +1252,41 @@ PowerShell process) rather than the app's own code - if you're using the
   one. Fixed by setting `DWMWA_BORDER_COLOR` to `DWMWA_COLOR_NONE` (a real
   constant in the `windows` crate's `Dwm` module, `0xFFFFFFFE`) instead of
   an accent color, so DWM stops drawing its own.
+- **A layout element positioned with absolute coordinates derived from only
+  its own size (not its actual start position) breaks the instant something
+  earlier in the same row changes how much space it consumes.** The sidebar
+  resize-handle's hit-region and drag-pill (`mainwindow.rs`) were built as
+  `egui::Rect::from_min_size(egui::pos2(sidebar_width - separator_width /
+  2.0, 0.0), ...)` - correct only because the sidebar column happened to
+  start at local x=0 at the time it was written. Adding a `ui.add_space(8.0)`
+  before the sidebar column (to fix a separate "no gap on the left" bug -
+  see `CHECKLIST.md`) shifted the sidebar's real start to x=8, and this
+  handle code kept assuming x=0, so it rendered 8px too far left and
+  visually overlapped the sidebar's own now-shifted right edge. The fix
+  wasn't to hardcode a new offset - it was to capture the real start
+  position (`let sidebar_start_x = ui.cursor().left();`, read right after
+  the `add_space`) and use `sidebar_start_x + sidebar_width` instead of
+  `sidebar_width` alone. When touching layout code that adds/removes
+  leading space in a row (`add_space`, a new sibling, a margin change),
+  grep the rest of that function for any absolute `pos2`/`Rect` math that
+  assumes a column starts at a fixed coordinate - it's an easy thing to
+  miss because the code that breaks isn't textually near the line you
+  actually changed.
+- **An `egui::Painter::hline`/`vline` drawn at exactly a container's own
+  `available_rect_before_wrap()` bound renders flush against whatever sits
+  at that same edge - including the app's own outer window border, if nothing
+  insets it.** The split-pane active-indicator line (`ACTIVE_PANE_INDICATOR_
+  THICKNESS`, `mainwindow.rs`) used `accent_rect.x_range()` directly for both
+  the primary and secondary pane, so the secondary (right) pane's indicator
+  touched the outer border with zero gap - every other bordered element near
+  it (the address-bar pill, panel corners) keeps a small margin from its own
+  container edge, but a raw `hline`/`vline` doesn't do that automatically the
+  way a `Frame`'s own margin does. Fixed by insetting the range by 2px on
+  each end (`Rangef::new(accent_rect.left() + 2.0, accent_rect.right() -
+  2.0)`) rather than relying on the container rect already having a gap
+  built in. This one could only be caught by actually toggling split view
+  live and zooming the corner - a single-pane screenshot never renders this
+  line at all, so code review alone would have missed it entirely.
 
 ## Operational Instructions
 

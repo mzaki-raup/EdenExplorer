@@ -766,6 +766,19 @@ impl eframe::App for MainWindow {
                     avail,
                     egui::Layout::left_to_right(egui::Align::Min),
                     |ui| {
+                        // The `-offset` translate above cancels CentralPanel's own left
+                        // margin (mirroring the `ui.add_space(8.0)` used below to restore
+                        // the equivalent vertical gap before the topbar) - without this,
+                        // the sidebar's own left border renders flush against the app's
+                        // hand-painted outer window border with no gap at all.
+                        ui.add_space(8.0);
+                        // The separator handle/overlay below is positioned with absolute
+                        // coordinates computed from `sidebar_width` alone, which assumes
+                        // the sidebar column starts at local x=0 - true before the
+                        // add_space above existed, no longer true now. Capture the real
+                        // start x so that math stays correct.
+                        let sidebar_start_x = ui.cursor().left();
+
                         // --- Sidebar column ---
                         let collapsed_width = 38.0;
                         let sidebar_width_min = 140.0;
@@ -831,7 +844,10 @@ impl eframe::App for MainWindow {
                         if !self.sidebar_collapsed {
                             let separator_width = 6.0;
                             let separator_rect = egui::Rect::from_min_size(
-                                egui::pos2(sidebar_width - separator_width / 2.0, 0.0),
+                                egui::pos2(
+                                    sidebar_start_x + sidebar_width - separator_width / 2.0,
+                                    0.0,
+                                ),
                                 egui::vec2(separator_width, ui.available_height()),
                             );
 
@@ -846,7 +862,7 @@ impl eframe::App for MainWindow {
                                 let center_y = ui.available_height() / 2.0;
 
                                 let handle_rect = egui::Rect::from_center_size(
-                                    egui::pos2(sidebar_width, center_y), // exactly on sidebar right edge
+                                    egui::pos2(sidebar_start_x + sidebar_width, center_y), // exactly on sidebar right edge
                                     egui::vec2(handle_width, handle_height),
                                 );
 
@@ -1119,8 +1135,18 @@ impl eframe::App for MainWindow {
                                                             if primary_focused {
                                                                 let accent_rect =
                                                                     ui.available_rect_before_wrap();
+                                                                // Inset slightly so the indicator never
+                                                                // renders flush against the pane's own
+                                                                // outer edge (the sidebar-adjacent side
+                                                                // here, the app's outer window border for
+                                                                // the secondary pane's equivalent line
+                                                                // below) - matches the small gap every
+                                                                // other bordered element keeps from it.
                                                                 ui.painter().hline(
-                                                                    accent_rect.x_range(),
+                                                                    egui::Rangef::new(
+                                                                        accent_rect.left() + 2.0,
+                                                                        accent_rect.right() - 2.0,
+                                                                    ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         ACTIVE_PANE_INDICATOR_THICKNESS,
@@ -1213,8 +1239,15 @@ impl eframe::App for MainWindow {
                                                             if secondary_focused {
                                                                 let accent_rect =
                                                                     ui.available_rect_before_wrap();
+                                                                // See the matching comment on the primary
+                                                                // pane's indicator above - without this
+                                                                // inset the line renders flush against the
+                                                                // app's own outer window border here.
                                                                 ui.painter().hline(
-                                                                    accent_rect.x_range(),
+                                                                    egui::Rangef::new(
+                                                                        accent_rect.left() + 2.0,
+                                                                        accent_rect.right() - 2.0,
+                                                                    ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         ACTIVE_PANE_INDICATOR_THICKNESS,
