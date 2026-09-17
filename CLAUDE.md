@@ -1287,6 +1287,40 @@ PowerShell process) rather than the app's own code - if you're using the
   built in. This one could only be caught by actually toggling split view
   live and zooming the corner - a single-pane screenshot never renders this
   line at all, so code review alone would have missed it entirely.
+- **A `#[serde(default = ...)]` attribute on a new `ThemePalette` field does
+  NOT protect it, no matter how reasonable that looks next to the dozens of
+  other fields already using that same attribute - `ThemePalette`'s actual
+  load path decodes the whole struct in one shot with no per-field rescue
+  (this was already documented above as a *theoretical* finding; this entry
+  is what it looks like when it actually happens).** Added a `tab_gap: f32`
+  field to `ThemePalette` (with `#[serde(default = "default_tab_gap")]`,
+  matching the pattern used everywhere else in the struct) for a new Tab Gap
+  setting - and on the very next launch, every color in both the user's
+  dark and light palettes silently reset to the app's stock defaults
+  (confirmed by pixel-sampling the "new" accent color against `base_color()`'s
+  literal `(110, 85, 160)` - an exact match). The user's actual customized
+  accent color was gone for good; it had never been backed up and the reset
+  defaults were already written back to `theme.bin` before this was
+  noticed. A second, independent crash followed from the corrupted file
+  left behind (`cursor has Nan` inside `sidebar.rs::draw_section_header`,
+  confirmed via a debug-build panic backtrace) - unrelated to the palette
+  fields themselves, but every subsequent launch crashed until `theme.bin`
+  was deleted to let the app regenerate a clean one. **The fix was not a
+  data-recovery one - it was architectural: `tab_gap` was pulled out of
+  `ThemePalette` entirely** and given its own dedicated small file via
+  `core::indexer` (`TabLayoutSnapshot`/`load_tab_layout`/`save_tab_layout`,
+  using the *safe* `take_from_bytes` + "rest is empty" decode pattern
+  `SidebarSectionsSnapshot` already uses - not the unsafe whole-buffer
+  `from_bytes` pattern `ThemePalette` and `AppSettingsSnapshot` both still
+  use), exactly mirroring how `sidebar_width` already avoids this same trap
+  (see `ThemeCustomizer::sidebar_width`'s own doc comment). **Before adding
+  any new field to `ThemePalette` (or `AppSettingsSnapshot` - it has the
+  identical unsafe decode path), ask whether it actually needs to vary by
+  dark/light mode or be bundled with the rest of that struct at all - if
+  not, give it its own tiny file the way `sidebar_width`/`tab_gap` do,
+  rather than trusting `#[serde(default = ...)]` to make an append safe.**
+  It doesn't, for either of those two structs, regardless of how many other
+  fields already carry that attribute as if it were protection.
 
 ## Operational Instructions
 

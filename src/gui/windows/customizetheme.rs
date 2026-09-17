@@ -110,6 +110,7 @@ pub fn draw_theme_customizer_content(
 
             let mut changed = false;
             let mut sidebar_width_changed = false;
+            let mut tab_gap_changed = false;
             let mut custom_themes_changed = false;
 
             // SCROLLABLE CONTENT
@@ -338,6 +339,24 @@ pub fn draw_theme_customizer_content(
                                         );
                                         if resp.changed() {
                                             sidebar_width_changed = true;
+                                        }
+                                    },
+                                );
+                                ui.end_row();
+
+                                eden_text_label(ui, palette, &i18n.tr("theme_tab_gap"));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        apply_eden_visual_overrides(ui, palette);
+                                        let resp = ui.add_sized(
+                                            egui::vec2(90.0, 0.0),
+                                            egui::DragValue::new(&mut customizer.tab_gap)
+                                                .range(0.0..=24.0)
+                                                .speed(0.2),
+                                        );
+                                        if resp.changed() {
+                                            tab_gap_changed = true;
                                         }
                                     },
                                 );
@@ -1506,6 +1525,10 @@ pub fn draw_theme_customizer_content(
                 action = Some(ThemeCustomizerAction::SidebarWidthChanged(
                     customizer.sidebar_width,
                 ));
+            }
+
+            if tab_gap_changed {
+                action = Some(ThemeCustomizerAction::TabGapChanged(customizer.tab_gap));
             }
 
             if let Some(pending_id) = customizer.custom_theme_delete_confirm {

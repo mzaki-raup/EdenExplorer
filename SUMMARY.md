@@ -88,6 +88,8 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Custom Context Menu: export/import just your custom right-click commands as a standalone file (a full settings export already includes them too), and an unquoted-path placeholder (`%L`, alongside the existing always-quoted `%1`/`%V`) for commands that want to add their own quoting or none at all
 - Tab Groups: save the currently-open tabs (or any hand-picked set of folders) as a named group in Settings, then reopen the whole set at once - added alongside current tabs or replacing them - from the "+" new-tab button's menu; the same folder can appear more than once in a group on purpose
 - Behavior settings: double-click-empty-space-to-navigate-up, an optional per-row selection-checkbox column, middle-click-to-open-in-new-tab, whether last session's tabs restore on launch, and defaults for new tabs' view layout and search scope
+- Multi-row tab strip: once tabs no longer fit at a readable width on one row, the strip automatically wraps onto additional rows (shrinking tab width toward a minimum first); the topbar grows to fit however many rows are currently needed
+- Configurable tab gap: an Appearance → Layout setting (0-24px, default 8) controlling the horizontal spacing between tabs, which also feeds into the wrapping math above
 
 ## Roadmap (from README)
 Upcoming alpha features: multi-tag AND/OR filtering in the tag view. Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.

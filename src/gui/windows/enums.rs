@@ -9,6 +9,12 @@ pub enum ThemeCustomizerAction {
     /// has one width regardless of dark/light mode), so it carries the new
     /// width directly instead of a `ThemeMode`.
     SidebarWidthChanged(f32),
+    /// The Layout section's tab-gap control changed - like
+    /// `SidebarWidthChanged`, not a per-mode palette edit (persisted in its
+    /// own small file via `core::indexer`, not `ThemePalette` - appending a
+    /// field to `ThemePalette` resets every existing user's saved colors on
+    /// next load, see `CLAUDE.md`'s documented finding on this).
+    TabGapChanged(f32),
     /// The customizer's own Dark/Light toggle was clicked - switches which
     /// palette is being *edited*, but previously never touched the live
     /// app theme (`MainWindow::theme`), so editing the mode that wasn't

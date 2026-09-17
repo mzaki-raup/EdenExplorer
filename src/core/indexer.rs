@@ -551,6 +551,62 @@ pub fn save_sidebar_sections(snapshot: &SidebarSectionsSnapshot) {
     }
 }
 
+/// Horizontal gap between tabs in the tab strip - a brand-new, dedicated
+/// file rather than a field on `ThemePalette`/`AppSettingsSnapshot`
+/// (appending a field to either of those resets every existing user's saved
+/// data on next load, since their loaders decode the whole struct at once
+/// rather than rescuing a missing trailing field - see `CLAUDE.md`). A new
+/// file with nothing preceding it has no old data to break.
+#[derive(Serialize, Deserialize)]
+pub struct TabLayoutSnapshot {
+    pub tab_gap: f32,
+}
+
+fn default_tab_gap() -> f32 {
+    // Matches egui's own ambient `item_spacing.x` default, which this value
+    // replaces - zero visual change for anyone until they touch the new
+    // Appearance > Layout setting.
+    8.0
+}
+
+impl Default for TabLayoutSnapshot {
+    fn default() -> Self {
+        Self {
+            tab_gap: default_tab_gap(),
+        }
+    }
+}
+
+fn tab_layout_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("tab_layout.bin"))
+}
+
+pub fn load_tab_layout() -> TabLayoutSnapshot {
+    let Some(path) = tab_layout_cache_path() else {
+        return TabLayoutSnapshot::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return TabLayoutSnapshot::default();
+    };
+    postcard::take_from_bytes::<TabLayoutSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_tab_layout(snapshot: &TabLayoutSnapshot) {
+    let Some(path) = tab_layout_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 fn window_position_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("window_position.bin"))

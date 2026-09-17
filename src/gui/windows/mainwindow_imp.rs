@@ -5096,6 +5096,12 @@ impl MainWindow {
                     },
                 );
             }
+            ThemeCustomizerAction::TabGapChanged(gap) => {
+                self.tab_gap = gap;
+                crate::core::indexer::save_tab_layout(
+                    &crate::core::indexer::TabLayoutSnapshot { tab_gap: gap },
+                );
+            }
         }
     }
 }

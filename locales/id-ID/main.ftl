@@ -351,6 +351,7 @@ launch-window-not-ready =
 launch-window-rejected = 
     Jendela EdenExplorer yang sedang berjalan tidak menerima permintaan.
 theme_sidebar_item_spacing_y = Spasi Vertikal Item Sidebar
+theme_tab_gap = Jarak Antar Tab
 restore = Pulihkan
 maximize = Maksimalkan
 minimize = Minimalkan

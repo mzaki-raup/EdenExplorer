@@ -68,6 +68,11 @@ pub struct MainWindow {
     pub(crate) last_window_size: Option<(f32, f32)>,
     pub(crate) last_window_position: Option<(f32, f32)>,
     pub(crate) sidebar_collapsed: bool,
+    /// Horizontal gap between tabs in the tab strip, user-configurable via
+    /// Appearance > Layout - persisted in its own small file (`tab_layout.bin`),
+    /// not `ThemePalette` (see `ThemeCustomizerAction::TabGapChanged`'s doc
+    /// comment for why).
+    pub(crate) tab_gap: f32,
     /// Whether the OS window had keyboard focus as of the last frame - used
     /// to detect the window regaining focus (e.g. after running an external
     /// script/program from a custom context menu command) so the current
@@ -346,6 +351,7 @@ impl Default for MainWindow {
                 Some("dark") | _ => ThemeMode::Dark,
             },
             sidebar_collapsed: false,
+            tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
@@ -815,7 +821,17 @@ impl eframe::App for MainWindow {
                                     ));
                                 });
                                 if !self.sidebar_collapsed {
-                                    let sidebar_box_size = ui.available_size();
+                                    // Leaves a gap between the sidebar box's own bottom
+                                    // border and the app's outer window border, matching
+                                    // the gap already present on every other edge - without
+                                    // this, the sidebar's bottom stroke renders flush
+                                    // against the outer border (the `-offset` translate
+                                    // above only ever restores a gap on the top/left, see
+                                    // the `ui.add_space(8.0)` calls on those sides).
+                                    let sidebar_bottom_gap = 8.0;
+                                    let mut sidebar_box_size = ui.available_size();
+                                    sidebar_box_size.y =
+                                        (sidebar_box_size.y - sidebar_bottom_gap).max(0.0);
                                     sidebar_frame.show(ui, |ui| {
                                         ui.allocate_ui_with_layout(
                                             sidebar_box_size,
@@ -923,7 +939,7 @@ impl eframe::App for MainWindow {
                                         // Tabs that don't fit on one row wrap onto extra
                                         // rows below, so the topbar's height must grow
                                         // to fit however many rows are needed.
-                                        let spacing = ui.spacing().item_spacing.x;
+                                        let spacing = self.tab_gap;
                                         let tab_rows = tab_row_count(
                                             self.tab_infos_cache.len(),
                                             ui.available_width() - topbar_left_padding,
@@ -976,6 +992,7 @@ impl eframe::App for MainWindow {
                                                     &self.tab_infos_cache,
                                                     active_id,
                                                     &palette,
+                                                    self.tab_gap,
                                                     self.hwnd,
                                                     scroll_to_id,
                                                     drag_active,
