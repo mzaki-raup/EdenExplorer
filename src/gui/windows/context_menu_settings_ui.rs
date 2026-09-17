@@ -341,13 +341,18 @@ fn draw_entry_fields(
     ui.add_space(10.0);
     eden_text_label(ui, palette, &i18n.tr("custom_context_menu_icon"));
     ui.add_space(4.0);
-    if let Some(glyph) = crate::gui::windows::icon_picker_ui::draw_icon_picker(
+    let current_glyph = match &entry.icon {
+        CustomContextMenuIcon::Glyph(g) => Some(g.as_str()),
+        _ => None,
+    };
+    if let Some(glyph) = crate::gui::windows::icon_picker_ui::draw_icon_picker_button(
         ui,
         i18n,
         palette,
         icon_picker_search,
         ("ccm_icon_picker", entry.id),
-        |glyph| matches!(&entry.icon, CustomContextMenuIcon::Glyph(g) if g == glyph),
+        current_glyph,
+        regular::SHAPES,
     ) {
         entry.icon = CustomContextMenuIcon::Glyph(glyph);
         changed = true;

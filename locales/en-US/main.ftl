@@ -403,6 +403,7 @@ custom_context_menu_icon_browse = Browse for icon file...
 custom_context_menu_icon_clear = Clear icon
 icon_picker_search_hint = Search icons...
 icon_picker_no_results = No icons match your search
+icon_picker_choose_hover = Click to choose an icon
 custom_context_menu_scope_files = Files
 custom_context_menu_scope_folders = Folders
 custom_context_menu_scope_background = Folder background

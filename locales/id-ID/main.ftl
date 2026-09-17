@@ -405,6 +405,7 @@ custom_context_menu_icon_browse = Cari file ikon...
 custom_context_menu_icon_clear = Hapus ikon
 icon_picker_search_hint = Cari ikon...
 icon_picker_no_results = Tidak ada ikon yang cocok dengan pencarian Anda
+icon_picker_choose_hover = Klik untuk memilih ikon
 custom_context_menu_scope_files = File
 custom_context_menu_scope_folders = Folder
 custom_context_menu_scope_background = Latar folder

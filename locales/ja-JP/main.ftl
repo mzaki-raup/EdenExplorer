@@ -406,6 +406,7 @@ custom_context_menu_icon_browse = アイコンファイルを参照...
 custom_context_menu_icon_clear = アイコンをクリア
 icon_picker_search_hint = アイコンを検索...
 icon_picker_no_results = 一致するアイコンが見つかりません
+icon_picker_choose_hover = クリックしてアイコンを選択
 custom_context_menu_scope_files = ファイル
 custom_context_menu_scope_folders = フォルダー
 custom_context_menu_scope_background = フォルダーの背景

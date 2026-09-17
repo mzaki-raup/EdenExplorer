@@ -178,22 +178,30 @@ pub fn draw_favorites_settings(
                             fav.custom_icon_file = None;
                             changed = true;
                         }
+
+                        ui.add_space(4.0);
+
+                        let current_glyph = if fav.custom_icon_file.is_none() {
+                            fav.custom_icon.as_deref()
+                        } else {
+                            None
+                        };
+                        if let Some(glyph) =
+                            crate::gui::windows::icon_picker_ui::draw_icon_picker_button(
+                                ui,
+                                i18n,
+                                palette,
+                                icon_picker_search,
+                                ("favorite_icon_picker", index),
+                                current_glyph,
+                                regular::SHAPES,
+                            )
+                        {
+                            fav.custom_icon = Some(glyph);
+                            fav.custom_icon_file = None;
+                            changed = true;
+                        }
                     });
-                    ui.add_space(4.0);
-                    if let Some(glyph) = crate::gui::windows::icon_picker_ui::draw_icon_picker(
-                        ui,
-                        i18n,
-                        palette,
-                        icon_picker_search,
-                        ("favorite_icon_picker", index),
-                        |glyph| {
-                            fav.custom_icon_file.is_none() && fav.custom_icon.as_deref() == Some(glyph)
-                        },
-                    ) {
-                        fav.custom_icon = Some(glyph);
-                        fav.custom_icon_file = None;
-                        changed = true;
-                    }
 
                     // A user-browsed image file's own icon, on its own row
                     // below the glyph choices - same layout as the Custom

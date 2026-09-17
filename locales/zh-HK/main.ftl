@@ -406,6 +406,7 @@ custom_context_menu_icon_browse = 瀏覽圖示檔案…
 custom_context_menu_icon_clear = 清除圖示
 icon_picker_search_hint = 搜尋圖示...
 icon_picker_no_results = 搵唔到符合嘅圖示
+icon_picker_choose_hover = 點擊以選擇圖示
 custom_context_menu_scope_files = 檔案
 custom_context_menu_scope_folders = 資料夾
 custom_context_menu_scope_background = 資料夾背景
