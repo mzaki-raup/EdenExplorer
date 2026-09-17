@@ -1281,12 +1281,30 @@ PowerShell process) rather than the app's own code - if you're using the
   touched the outer border with zero gap - every other bordered element near
   it (the address-bar pill, panel corners) keeps a small margin from its own
   container edge, but a raw `hline`/`vline` doesn't do that automatically the
-  way a `Frame`'s own margin does. Fixed by insetting the range by 2px on
-  each end (`Rangef::new(accent_rect.left() + 2.0, accent_rect.right() -
-  2.0)`) rather than relying on the container rect already having a gap
-  built in. This one could only be caught by actually toggling split view
-  live and zooming the corner - a single-pane screenshot never renders this
-  line at all, so code review alone would have missed it entirely.
+  way a `Frame`'s own margin does. First fix attempt inset the range by only
+  2px on each end - looked correct in a live-zoomed screenshot of a plain
+  folder-view pane, was reported *fixed*, then reported *still broken* by
+  the user against a Settings tab in the same split pane. Exact pixel
+  sampling (not just a visual look at a crop) found why: the app's outer
+  border isn't a hairline at the exact viewport edge, it's a real ~3-4px
+  painted band (`Stroke::new(3.0, ...)` centered on `viewport_rect().
+  shrink(1.5)`), and a 2px inset lands the indicator's edge *inside* that
+  band's own pixel span rather than before it - the first pane just
+  happened to have a hair more natural clearance, making 2px look
+  sufficient there by coincidence. Bumped to 6px, which reliably clears the
+  border's own span with margin regardless of what's drawn inside the pane.
+  **Two lessons, not one: (1) an inset needs to clear the *painted width* of
+  whatever it's avoiding, not just be "a small positive number" - measure
+  the actual border's pixel span before picking a value; (2) verifying one
+  instance of a bug (one pane, one content type, one crop) and calling it
+  fixed doesn't rule out a *narrower* margin at some other instance of the
+  same code path - re-check with exact pixel sampling (`Bitmap.GetPixel` at
+  specific coordinates, comparing against known color values), not a visual
+  glance at a screenshot crop, especially after a user reports "still
+  happening" following a claimed fix.** This bug could only be caught by
+  actually toggling split view live and sampling pixels at the corner - a
+  single-pane screenshot never renders this line at all, so code review
+  alone would have missed it entirely both times.
 - **A `#[serde(default = ...)]` attribute on a new `ThemePalette` field does
   NOT protect it, no matter how reasonable that looks next to the dozens of
   other fields already using that same attribute - `ThemePalette`'s actual

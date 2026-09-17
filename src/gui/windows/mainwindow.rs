@@ -1161,8 +1161,8 @@ impl eframe::App for MainWindow {
                                                                 // other bordered element keeps from it.
                                                                 ui.painter().hline(
                                                                     egui::Rangef::new(
-                                                                        accent_rect.left() + 2.0,
-                                                                        accent_rect.right() - 2.0,
+                                                                        accent_rect.left() + 6.0,
+                                                                        accent_rect.right() - 6.0,
                                                                     ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
@@ -1262,8 +1262,8 @@ impl eframe::App for MainWindow {
                                                                 // app's own outer window border here.
                                                                 ui.painter().hline(
                                                                     egui::Rangef::new(
-                                                                        accent_rect.left() + 2.0,
-                                                                        accent_rect.right() - 2.0,
+                                                                        accent_rect.left() + 6.0,
+                                                                        accent_rect.right() - 6.0,
                                                                     ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
