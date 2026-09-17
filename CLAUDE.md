@@ -1206,6 +1206,33 @@ PowerShell process) rather than the app's own code - if you're using the
   draw order and is gating on a focus snapshot rather than an explicit
   "this specific UI is open" flag - `request_focus()` is not a synchronization
   primitive other code run earlier in the frame can see.
+- **`egui::ScrollArea::max_height(N)` is a cap, not a guarantee - it computes
+  `available_outer.size().at_most(max_size)` (confirmed directly in egui's
+  source), so if the surrounding `Ui`'s own idea of "available height" comes
+  back smaller than `N`, the ScrollArea silently shrinks to *that*, not to
+  `N`.** The notifications bell panel (an `egui::Area`, not a `Window`/
+  `CentralPanel`) hit exactly this: `.max_height(PANEL_MAX_HEIGHT)` (480)
+  was supposed to let the row list grow to fit up to 3-4 operations
+  comfortably, but the panel was reported as "shorter than before" - live
+  pixel-sampling showed the *second* row's status icon cut off mid-glyph
+  right at the popup's own border, not a scrollbar appearing early: a real
+  clip, not a "working as capped" case. Root cause: inside an `Area`
+  (which, unlike `Window`, has no persisted size memory to fall back on -
+  see the extensive `Window`-size-memory history elsewhere in this file),
+  the content `Ui`'s available-height figure came back far smaller than the
+  real space below the panel, and `max_height` only ever *caps down* from
+  whatever that number is - it can't stretch a too-small available-height
+  figure back up to the requested cap. Fixed by explicitly reserving the
+  height the actual row count needs (`row_count * an_estimated_row_height`,
+  itself capped at the same `PANEL_MAX_HEIGHT`) via `ui.set_min_height(...)`
+  *before* creating the `ScrollArea`, so its own `available_outer` can never
+  under-report space again. If content inside an `Area`/floating popup gets
+  clipped despite an apparently-generous `max_height`, don't assume the cap
+  itself is the problem - measure whether the *available* height feeding
+  into that cap is the actual culprit (a live pixel-level screenshot showing
+  a hard mid-glyph cut, not a scrollbar, is the tell), and reserve a
+  known-good minimum height explicitly rather than trusting the ScrollArea
+  to compute it from context alone.
 
 ## Operational Instructions
 
