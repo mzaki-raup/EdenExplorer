@@ -1339,6 +1339,76 @@ PowerShell process) rather than the app's own code - if you're using the
   rather than trusting `#[serde(default = ...)]` to make an append safe.**
   It doesn't, for either of those two structs, regardless of how many other
   fields already carry that attribute as if it were protection.
+- **A `ui.painter().rect_stroke(rect, ...)` drawn at exactly a `StripBuilder`
+  cell's `ui.max_rect()` renders flush against whatever sits at that cell's
+  edge - including the app's own outer window border, for whichever pane is
+  last/only.** The item viewer's "subtle box border around the file/folder
+  view" (`explorer.rs`, `content_rect = ui.max_rect()` inside a `StripBuilder`
+  cell) has no margin of its own on any side; its top/left/bottom are always
+  internal (the navbar strip above, the sidebar or split divider to the
+  left, the status bar strip below), but its *right* edge is the pane's own
+  right bound, which for the last/only pane coincides with the outer
+  border's own ~3-4px painted span. Both strokes landed in the same pixel
+  band, reading as one slightly-thicker line - confirmed only by exact pixel
+  sampling (`Bitmap.GetPixel` at specific coordinates against known color
+  values), since both colors were purple-tinted and visually blended at a
+  glance. Fixed by pulling in only the rect's right edge before stroking
+  (`rect.max.x -= 6.0`), leaving the other three sides untouched since they
+  never touch the outer border. When a border/stroke is drawn against a
+  `StripBuilder` cell's or `ui.max_rect()`'s raw bounds, check which of its
+  edges can ever coincide with the app's own outer border (usually just one,
+  not all four) before reaching for a uniform `.shrink()` - insetting every
+  side loses margin that was already fine on the internal edges for no
+  reason.
+- **Re-querying `ui.available_height()` *inside* a plain `ui.horizontal(|ui|
+  {...})` closure does not return the parent's remaining page height - a
+  horizontal layout's row has no inherent height bound of its own (it grows
+  to fit whatever's tallest inside), so the value inside can be far larger/
+  effectively unbounded compared to what the same call returns just before
+  entering the closure.** Splitting the Appearance settings page into two
+  side-by-side columns (`customizetheme.rs`), each sized via
+  `ui.allocate_ui_with_layout(egui::vec2(column_width, ui.available_height()),
+  top_down, ...)` called *from inside* a `ui.horizontal(|ui| {...})` wrapping
+  both columns, silently broke both columns' sizing - `ui.available_height()`
+  queried at that point returned something disconnected from the page's real
+  ~640px remaining height, and every inner `ScrollArea` (even with
+  `auto_shrink` disabled) collapsed to a ~100px sliver with hundreds of px of
+  visibly dead space below it. A quick `eprintln!` of `ui.available_height()`
+  right before entering the `horizontal` (not inside it) showed the correct,
+  sane value, pointing straight at the closure boundary as the actual cause.
+  Fixed by capturing the height into a local *before* entering
+  `ui.horizontal`, then reusing that captured value for both columns' sizing
+  instead of re-querying it from inside. When a layout looks like it's
+  fighting for space it should obviously have (a page reports a sane
+  available-height figure at the top level but content still collapses),
+  suspect a `ui.available_height()`/`ui.available_width()` call made *inside*
+  a differently-laid-out child closure (`horizontal` vs. the parent's own
+  layout direction) before assuming the sizing math itself is wrong - print
+  the value at both points and compare rather than guessing.
+- **Nesting one auto-shrinking/scrollable layout directly inside another
+  general-purpose one silently breaks both, and the fix is to opt the inner
+  one out of the outer entirely, not to tune either one's parameters.** The
+  Appearance settings category previously rendered inside the Settings
+  page's own shared `settings_content_scroll` `ScrollArea` (used by every
+  category, with `auto_shrink([false, true])`) and its `SETTINGS_CONTENT_
+  MAX_WIDTH` (720px) width cap - both entirely reasonable for a single
+  scrolling reading column, both wrong once Appearance needed its own
+  independent two-column scrolling layout (settings list left, static
+  preview right - see the entry above and `CHECKLIST.md`). Trying to make
+  the *inner* layout coexist with the outer one (adjusting `auto_shrink`,
+  explicit `.max_height()` calls) never actually fixed the collapsed-height
+  symptom, because the outer ScrollArea's own auto-shrink-to-content
+  behavior was measuring against a child that itself wanted to fill
+  "whatever's available" - a circular sizing dependency neither side can
+  resolve alone. The actual fix was structural: special-case
+  `SettingsCategory::Appearance` in `settings.rs` to skip both the shared
+  `ScrollArea` and the width cap entirely, rendering directly into the full
+  available space with its own self-contained scrolling instead. If a
+  newly-added nested scroll/auto-sizing layout inside an existing one
+  produces a squashed-with-dead-space-below symptom that survives several
+  parameter tweaks, check whether the *outer* container needs to stop
+  wrapping that specific content at all, rather than continuing to adjust
+  either layout's own settings against each other.
 
 ## Operational Instructions
 

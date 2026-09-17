@@ -510,6 +510,37 @@ pub fn draw_settings_page(
             ui.add_space(4.0);
 
             // ---------------- Right: selected category's content ----------------
+            // Appearance manages its own two-column layout (a scrollable list of
+            // pickers on the left, a static live-preview column on the right - see
+            // `draw_theme_customizer_content`) with its own internal scroll areas,
+            // so it deliberately skips both the shared `settings_content_scroll`
+            // ScrollArea below and the `SETTINGS_CONTENT_MAX_WIDTH` cap every other
+            // category uses - nesting it inside another auto-shrinking ScrollArea
+            // left it fighting that outer one for how much height it could claim,
+            // and it needs real width for two columns side by side, not a single
+            // 720px reading column.
+            if settings.selected_category == SettingsCategory::Appearance {
+                // Still needs a `vertical` wrapper of its own - without one, each
+                // top-level row `draw_theme_customizer_content` draws (the mode
+                // toggle, the two-column area, the footer) would be laid out as a
+                // sibling of the sidebar in the *parent* `horizontal_top` above,
+                // i.e. placed to its right on the same line instead of stacking
+                // downward, since nothing here otherwise switches the flow from
+                // horizontal back to vertical.
+                ui.vertical(|ui| {
+                    if let Some(theme_action) =
+                        crate::gui::windows::customizetheme::draw_theme_customizer_content(
+                            ui,
+                            i18n,
+                            &ui.ctx().clone(),
+                            theme_customizer,
+                            palette,
+                        )
+                    {
+                        action = Some(SettingsAction::ThemeCustomizer(theme_action));
+                    }
+                });
+            } else {
             ui.vertical(|ui| {
                 ui.set_max_width(SETTINGS_CONTENT_MAX_WIDTH.min(ui.available_width()));
 
@@ -529,19 +560,9 @@ pub fn draw_settings_page(
                             SettingsCategory::Startup => {
                                 draw_startup_section(ui, i18n, settings, palette, &mut action);
                             }
-                            SettingsCategory::Appearance => {
-                                if let Some(theme_action) =
-                                    crate::gui::windows::customizetheme::draw_theme_customizer_content(
-                                        ui,
-                                        i18n,
-                                        &ui.ctx().clone(),
-                                        theme_customizer,
-                                        palette,
-                                    )
-                                {
-                                    action = Some(SettingsAction::ThemeCustomizer(theme_action));
-                                }
-                            }
+                            SettingsCategory::Appearance => unreachable!(
+                                "Appearance is handled above, outside this shared ScrollArea"
+                            ),
                             SettingsCategory::ContextMenu => {
                                 if let Some(a) = crate::gui::windows::context_menu_settings_ui::draw_custom_context_menu_settings(
                                     ui, i18n, settings, palette, icon_cache,
@@ -582,6 +603,7 @@ pub fn draw_settings_page(
                         }
                     });
             });
+            }
         });
 
         crate::gui::windows::containers::tags::draw_delete_confirmation_popup(
