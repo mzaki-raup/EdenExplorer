@@ -119,7 +119,17 @@ pub fn draw_theme_customizer_content(
             // Toolbar/Preview Pane/Buttons/Notifications), so giving it the
             // same room as the settings list keeps its own labels from
             // clipping instead of just being "wide enough to not look tiny."
-            let half_width = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).max(280.0);
+            // Reserves a trailing gap after the right column so its own content
+            // (the mockup boxes, the "Live Preview" label) doesn't sit flush
+            // against the item viewer's own content border - every other edge
+            // in this app keeps a small margin from its container's border,
+            // this row had none of its own.
+            const RIGHT_COLUMN_TRAILING_GAP: f32 = 12.0;
+            let half_width = ((ui.available_width()
+                - ui.spacing().item_spacing.x
+                - RIGHT_COLUMN_TRAILING_GAP)
+                / 2.0)
+                .max(280.0);
             let settings_width = half_width;
             let preview_width = half_width;
             // Captured *before* entering `ui.horizontal` below - a plain
