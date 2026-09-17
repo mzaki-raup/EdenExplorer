@@ -218,10 +218,22 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             cyBottomHeight: 0,
         };
 
-        let border_color = color32_to_dwm(palette.borders_default);
         let caption_color = color32_to_dwm(palette.application_bg_color);
         let text_color = color32_to_dwm(palette.application_bg_color);
 
+        // `mainwindow.rs` already paints its own accent-colored 3px border
+        // around the whole viewport by hand every frame (the one place this
+        // app's border actually comes from) - setting DWMWA_BORDER_COLOR
+        // (attribute 34) to that same accent color additionally asked
+        // *Windows itself* to draw a second, native ~1px border on top of
+        // it. The two together read as a double border specifically along
+        // the top edge (where DWM's own border renders as a distinct thin
+        // outer line above the app's thicker painted one; left/right/bottom
+        // don't show the same visible gap between the two). Using
+        // `DWMWA_COLOR_NONE` here tells DWM not to draw a border of its own
+        // at all, leaving the app's single hand-painted border as the only
+        // one visible on every edge.
+        let border_color = DWMWA_COLOR_NONE;
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWINDOWATTRIBUTE(34),

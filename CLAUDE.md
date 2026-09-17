@@ -1233,6 +1233,25 @@ PowerShell process) rather than the app's own code - if you're using the
   a hard mid-glyph cut, not a scrollbar, is the tell), and reserve a
   known-good minimum height explicitly rather than trusting the ScrollArea
   to compute it from context alone.
+- **The app's own hand-painted outer window border (`mainwindow.rs`, a
+  `rect_stroke` around `ctx.viewport_rect()` every frame) isn't the only
+  border source - `windowsoverrides.rs`'s `apply_window_override` also sets
+  the native `DWMWA_BORDER_COLOR` attribute to the same accent color,
+  asking *Windows' own compositor* to draw a second, ~1px native border on
+  top of it.** Reported as "a double border, thin outer + thick inner, but
+  only at the top edge" - the two borders only read as visibly separate
+  along the top (DWM's own top-edge border rendering differs from its
+  plain left/right/bottom resize-border pixels, which the app's thicker
+  paint fully covers). If a *single* border painted by this app's own code
+  ever looks doubled, inconsistent between edges, or oddly positioned,
+  check `windowsoverrides.rs`'s `DwmSetWindowAttribute` calls
+  (`DWMWA_BORDER_COLOR`/`DWMWA_CAPTION_COLOR`/etc., attributes 34-36)
+  before assuming the egui-side paint call is the culprit - this app
+  currently has *two* independent places asking for a colored border
+  around the same window, and only one of them is meant to actually draw
+  one. Fixed by setting `DWMWA_BORDER_COLOR` to `DWMWA_COLOR_NONE` (a real
+  constant in the `windows` crate's `Dwm` module, `0xFFFFFFFE`) instead of
+  an accent color, so DWM stops drawing its own.
 
 ## Operational Instructions
 
