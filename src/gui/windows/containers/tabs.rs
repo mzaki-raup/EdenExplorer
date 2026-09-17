@@ -405,7 +405,6 @@ fn draw_tab_groups_menu(
     }
 
     ui.label(i18n.tr("tab_group_menu"));
-    ui.separator();
 
     for group in tab_groups {
         let label = if group.name.is_empty() {
