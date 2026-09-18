@@ -2974,3 +2974,81 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
         egui::Sense::click(),
     )
 }
+
+/// Right-click menu for an *empty* folder's background - New Folder/New
+/// File/Refresh/Open Terminal/Paste/Properties, plus the user's own Windows
+/// context menu if enabled in Settings. Every view already draws some form
+/// of this for a folder that actually has items in it (each wired through
+/// its own background `Response`), but none of them reached an empty
+/// folder - the "This folder is empty" placeholder was drawn with no
+/// interactive background behind it at all, so right-clicking it did
+/// nothing (the exact same class of bug already documented in `CLAUDE.md`
+/// for the double-click-to-navigate-up handler, which had the same gap).
+/// `bg_response` should come from `ui.interact(rect, id, Sense::click())`
+/// over the empty-state area, mirroring how each view already senses that
+/// area for the navigate-up double-click.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_empty_folder_context_menu(
+    i18n: &I18n,
+    palette: &ThemePalette,
+    bg_response: &egui::Response,
+    current_dir: &std::path::Path,
+    paste_enabled: bool,
+    settings_window: &SettingsWindow,
+    explorer_state: &mut ExplorerState,
+    hwnd: Option<HWND>,
+    action: &mut Option<ItemViewerAction>,
+) {
+    Popup::context_menu(bg_response)
+        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            apply_eden_text_overrides(ui, palette);
+            if ui.button("New Folder").clicked() {
+                *action = Some(ItemViewerAction::CreateFolder);
+                ui.close();
+            }
+            if ui.button("New File").clicked() {
+                *action = Some(ItemViewerAction::CreateFile);
+                ui.close();
+            }
+            if ui.button("Refresh").clicked() {
+                *action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                ui.close();
+            }
+            if ui.button("Open Terminal").clicked() {
+                *action = Some(ItemViewerAction::OpenTerminal);
+                ui.close();
+            }
+
+            ui.separator();
+
+            if ui
+                .add_enabled(paste_enabled, egui::Button::new("Paste"))
+                .clicked()
+            {
+                *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                ui.close();
+            }
+            if ui.button("Properties").clicked() {
+                *action = Some(ItemViewerAction::Context(
+                    ItemViewerContextAction::Properties(vec![current_dir.to_path_buf()]),
+                ));
+                ui.close();
+            }
+
+            if settings_window.current_settings.windows_context_menu_enabled {
+                ui.separator();
+                let dir_owned = current_dir.to_path_buf();
+                let bg_key = vec![dir_owned.clone()];
+                draw_windows_context_submenu(
+                    ui,
+                    i18n,
+                    palette,
+                    explorer_state,
+                    hwnd,
+                    bg_key,
+                    |hwnd| ShellContextMenu::for_background(&dir_owned, hwnd),
+                );
+            }
+        });
+}

@@ -11,8 +11,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    handle_context_menu_actions, handle_editing_file_name, handle_keyboard_navigation,
-    handle_row_click,
+    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
+    handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -76,9 +76,31 @@ pub fn draw_gallery_view(
     );
 
     if filtered_indices.is_empty() {
+        let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
             ui.label(i18n.tr("folder_is_empty"));
         });
+
+        // See the matching comment in itemviewer.rs's own empty-folder
+        // handling - the populated-folder background context menu below
+        // never reaches an empty folder, since it's wired through a
+        // background `Response` only computed once there's an actual grid
+        // of tiles to lay out.
+        if !modal_input_blocked {
+            let empty_resp =
+                ui.interact(empty_rect, ui.id().with("empty_gallery_bg"), egui::Sense::click());
+            draw_empty_folder_context_menu(
+                i18n,
+                palette,
+                &empty_resp,
+                &current_dir,
+                paste_enabled,
+                settings_window,
+                explorer_state,
+                hwnd,
+                &mut action,
+            );
+        }
         return action;
     }
 
@@ -153,6 +175,46 @@ pub fn draw_gallery_view(
                 }
 
                 let content_origin = ui.min_rect().min;
+
+                // A pending selection (set right after creating a new file/
+                // folder, so the user can immediately see and rename it -
+                // `create_new_folder`/`create_new_file` in `mainwindow_imp.
+                // rs`) only actually scrolled/selected in the Details table
+                // view, since that's the only place that read it - Gallery
+                // never consumed it at all, so a new item created while in
+                // Gallery mode could render far outside the current scroll
+                // position (or, worse, outside this virtualized view's
+                // "nearby rows" draw window entirely) with no indication
+                // anything happened. The target rect is computed directly
+                // from the item's index rather than waiting for it to
+                // actually render this frame, since `scroll_to_rect` only
+                // needs a valid rect to schedule the scroll - not one that
+                // was actually painted.
+                if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
+                    if let (Some(target_path), true) =
+                        (pending_paths.first(), pending_paths.len() == 1)
+                    {
+                        if let Some(item_index) = filtered_indices
+                            .iter()
+                            .position(|&file_index| &files[file_index].path == target_path)
+                        {
+                            let row = item_index / columns;
+                            let col = item_index % columns;
+                            let target_rect = egui::Rect::from_min_size(
+                                content_origin
+                                    + egui::vec2(col as f32 * col_pitch, row as f32 * row_pitch),
+                                egui::vec2(tile_width, tile_height),
+                            );
+                            ui.scroll_to_rect(target_rect, Some(egui::Align::Center));
+
+                            explorer_state.selected_paths.clear();
+                            explorer_state.selected_paths.insert(target_path.clone());
+                            explorer_state.selection_anchor = Some(item_index);
+                            explorer_state.selection_focus = Some(item_index);
+                        }
+                    }
+                    explorer_state.pending_selection_paths = None;
+                }
 
                 let bg_rect = egui::Rect::from_min_size(
                     content_origin,

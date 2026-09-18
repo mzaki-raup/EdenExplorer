@@ -208,6 +208,9 @@ pub fn draw_item_viewer(
             }
         });
 
+        let empty_resp =
+            ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
+
         // The populated-folder double-click-to-go-up handler below lives
         // inside the `!visible_items_empty` table-drawing branch (it's
         // wired through `table_background_response`, which only makes
@@ -218,12 +221,39 @@ pub fn draw_item_viewer(
         if !modal_input_blocked
             && !is_recycle_bin_view
             && settings_window.current_settings.double_click_navigates_up
+            && empty_resp.double_clicked()
         {
-            let empty_resp =
-                ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
-            if empty_resp.double_clicked() {
-                tabbar_action.get_or_insert_with(Default::default).nav =
-                    Some(ItemViewerNavAction::Up);
+            tabbar_action.get_or_insert_with(Default::default).nav = Some(ItemViewerNavAction::Up);
+        }
+
+        // Same gap as the double-click handler above: the populated-folder
+        // background right-click menu lives inside the `!visible_items_
+        // empty` branch too, so an empty folder had no right-click
+        // affordance at all in any of New Folder/New File/Open Terminal/
+        // Properties/the Windows context menu.
+        if !modal_input_blocked {
+            if !is_drive_view && !is_recycle_bin_view {
+                draw_empty_folder_context_menu(
+                    i18n,
+                    palette,
+                    &empty_resp,
+                    &current_dir,
+                    paste_enabled,
+                    settings_window,
+                    explorer_state,
+                    hwnd,
+                    &mut action,
+                );
+            } else if is_recycle_bin_view {
+                Popup::context_menu(&empty_resp)
+                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        apply_eden_text_overrides(ui, palette);
+                        if ui.button("Refresh").clicked() {
+                            action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                            ui.close();
+                        }
+                    });
             }
         }
     }
@@ -367,22 +397,40 @@ pub fn draw_item_viewer(
                 }
             });
 
+            let empty_resp = ui.interact(
+                empty_rect,
+                ui.id().with("empty_folder_bg_detail_preview"),
+                egui::Sense::click(),
+            );
+
             // See the matching comment on the plain-Details empty case
             // above - the populated-folder handler lives inside the
             // `!visible_items_empty` branch below and never runs here.
             if !modal_input_blocked
                 && !is_recycle_bin_view
                 && settings_window.current_settings.double_click_navigates_up
+                && empty_resp.double_clicked()
             {
-                let empty_resp = ui.interact(
-                    empty_rect,
-                    ui.id().with("empty_folder_bg_detail_preview"),
-                    egui::Sense::click(),
+                tabbar_action.get_or_insert_with(Default::default).nav =
+                    Some(ItemViewerNavAction::Up);
+            }
+
+            // Same gap as the double-click handler above - see the matching
+            // comment on the plain-Details empty case for why this needs
+            // its own explicit wiring rather than reaching the populated-
+            // folder background menu further down.
+            if !modal_input_blocked {
+                draw_empty_folder_context_menu(
+                    i18n,
+                    palette,
+                    &empty_resp,
+                    &current_dir,
+                    paste_enabled,
+                    settings_window,
+                    explorer_state,
+                    hwnd,
+                    &mut action,
                 );
-                if empty_resp.double_clicked() {
-                    tabbar_action.get_or_insert_with(Default::default).nav =
-                        Some(ItemViewerNavAction::Up);
-                }
             }
         }
 
