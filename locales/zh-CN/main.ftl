@@ -352,6 +352,7 @@ launch-window-rejected =
     运行中的 EdenExplorer 窗口拒绝了请求。
 theme_sidebar_item_spacing_y = 侧边栏项目垂直间距
 theme_tab_gap = 标签页间距
+theme_min_tab_width = 标签页最小宽度
 theme_tab_corner_radius = 标签页圆角
 restore = 恢复
 maximize = 最大化

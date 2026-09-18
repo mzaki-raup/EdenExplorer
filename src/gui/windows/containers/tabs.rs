@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
 const PREFERRED_TAB_WIDTH: f32 = 180.0;
-const MIN_TAB_WIDTH: f32 = 110.0;
 pub const TAB_HEIGHT: f32 = 32.0;
 /// Guaranteed-empty strip reserved at the end of every tab row (after the last
 /// tab, or after the add-tab button) purely so there's always somewhere to
@@ -29,38 +28,50 @@ const DRAG_HANDLE_WIDTH: f32 = 72.0;
 /// packed row always has somewhere empty to drag the window by. The rest of the
 /// row - including the gap between the last tab/add-tab button and the window
 /// controls - also stays part of the draggable tab strip background.
-pub fn compute_tab_layout(tab_count: usize, full_width: f32, spacing: f32) -> (f32, usize) {
+pub fn compute_tab_layout(
+    tab_count: usize,
+    full_width: f32,
+    spacing: f32,
+    min_tab_width: f32,
+) -> (f32, usize) {
     let windows_buttons_width = 45.0 * 3.0;
     // The add-tab button rides along in the same wrapped row as the tabs (it's the
     // last item), so its width doesn't need reserving separately here.
     let reserved = windows_buttons_width + spacing + DRAG_HANDLE_WIDTH;
-    let tab_region_width = (full_width - reserved).max(MIN_TAB_WIDTH);
+    let tab_region_width = (full_width - reserved).max(min_tab_width);
+    // `min_tab_width` is user-configurable (Appearance > Layout) and can now
+    // exceed `PREFERRED_TAB_WIDTH` - capping a tab's width at a flat
+    // `PREFERRED_TAB_WIDTH` in that case would return a width *below* the
+    // user's own configured minimum, which used to be silently impossible
+    // when `MIN_TAB_WIDTH` was a fixed constant always smaller than
+    // `PREFERRED_TAB_WIDTH`.
+    let preferred_width = PREFERRED_TAB_WIDTH.max(min_tab_width);
 
     if tab_count == 0 {
-        return (PREFERRED_TAB_WIDTH, 1);
+        return (preferred_width, 1);
     }
 
     let tab_count_f = tab_count as f32;
     let gaps = (tab_count_f - 1.0).max(0.0);
     let natural_tab_width = ((tab_region_width - gaps * spacing) / tab_count_f).max(0.0);
 
-    if natural_tab_width >= MIN_TAB_WIDTH {
-        return (natural_tab_width.min(PREFERRED_TAB_WIDTH), 1);
+    if natural_tab_width >= min_tab_width {
+        return (natural_tab_width.min(preferred_width), 1);
     }
 
-    let per_row = ((tab_region_width + spacing) / (MIN_TAB_WIDTH + spacing))
+    let per_row = ((tab_region_width + spacing) / (min_tab_width + spacing))
         .floor()
         .max(1.0) as usize;
     let rows = tab_count.div_ceil(per_row).max(1);
 
-    (MIN_TAB_WIDTH, rows)
+    (min_tab_width, rows)
 }
 
 /// Number of rows `draw_tabs` will use for `tab_count` tabs in `full_width` - callers
 /// that need to reserve vertical space for the tab strip should use this before
 /// drawing it (drawing itself recomputes the same layout for consistency).
-pub fn tab_row_count(tab_count: usize, full_width: f32, spacing: f32) -> usize {
-    compute_tab_layout(tab_count, full_width, spacing).1
+pub fn tab_row_count(tab_count: usize, full_width: f32, spacing: f32, min_tab_width: f32) -> usize {
+    compute_tab_layout(tab_count, full_width, spacing, min_tab_width).1
 }
 
 pub fn draw_tabs(
@@ -70,6 +81,7 @@ pub fn draw_tabs(
     active_id: u64,
     palette: &ThemePalette,
     tab_gap: f32,
+    min_tab_width: f32,
     hwnd: Option<HWND>,
     scroll_to_id: Option<u64>,
     drag_active: bool,
@@ -90,10 +102,10 @@ pub fn draw_tabs(
     let full_width = ui.available_width();
     let spacing = tab_gap;
 
-    let (tab_width, _rows) = compute_tab_layout(tabs.len(), full_width, spacing);
+    let (tab_width, _rows) = compute_tab_layout(tabs.len(), full_width, spacing, min_tab_width);
     let windows_buttons_width = 45.0 * 3.0;
     let reserved = windows_buttons_width + spacing;
-    let tab_region_width = (full_width - reserved).max(MIN_TAB_WIDTH);
+    let tab_region_width = (full_width - reserved).max(min_tab_width);
 
     ui.allocate_ui_with_layout(
         egui::vec2(tab_region_width, ui.available_height()),
@@ -124,7 +136,7 @@ pub fn draw_tabs(
             // `bg_resp` above already covers the *full* row including this gap.
             let packing_rect = {
                 let mut r = ui.available_rect_before_wrap();
-                r.set_width((r.width() - DRAG_HANDLE_WIDTH).max(MIN_TAB_WIDTH));
+                r.set_width((r.width() - DRAG_HANDLE_WIDTH).max(min_tab_width));
                 r
             };
 

@@ -73,6 +73,11 @@ pub struct MainWindow {
     /// not `ThemePalette` (see `ThemeCustomizerAction::TabGapChanged`'s doc
     /// comment for why).
     pub(crate) tab_gap: f32,
+    /// The tab strip's minimum tab width before it starts wrapping to a new
+    /// row, user-configurable via Appearance > Layout - persisted alongside
+    /// `tab_gap` in the same small file, not `ThemePalette` (see
+    /// `ThemeCustomizerAction::MinTabWidthChanged`'s doc comment).
+    pub(crate) min_tab_width: f32,
     /// Whether the OS window had keyboard focus as of the last frame - used
     /// to detect the window regaining focus (e.g. after running an external
     /// script/program from a custom context menu command) so the current
@@ -352,6 +357,7 @@ impl Default for MainWindow {
             },
             sidebar_collapsed: false,
             tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
+            min_tab_width: crate::core::indexer::load_tab_layout().min_tab_width,
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
@@ -944,6 +950,7 @@ impl eframe::App for MainWindow {
                                             self.tab_infos_cache.len(),
                                             ui.available_width() - topbar_left_padding,
                                             spacing,
+                                            self.min_tab_width,
                                         ) as f32;
                                         let tabs_content_height =
                                             tab_rows * TAB_HEIGHT + (tab_rows - 1.0).max(0.0) * spacing;
@@ -993,6 +1000,7 @@ impl eframe::App for MainWindow {
                                                     active_id,
                                                     &palette,
                                                     self.tab_gap,
+                                                    self.min_tab_width,
                                                     self.hwnd,
                                                     scroll_to_id,
                                                     drag_active,

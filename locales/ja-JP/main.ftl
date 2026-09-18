@@ -352,6 +352,7 @@ launch-window-rejected =
     実行中のEdenExplorerウィンドウがリクエストを拒否しました。
 theme_sidebar_item_spacing_y = サイドバー項目の垂直間隔
 theme_tab_gap = タブの間隔
+theme_min_tab_width = タブの最小幅
 theme_tab_corner_radius = タブの角丸半径
 restore = 戻す
 maximize = 最大化
