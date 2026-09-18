@@ -11,7 +11,11 @@ use crate::gui::windows::containers::sidebar::draw_sidebar_item;
 use crate::gui::windows::containers::structs::{
     TagColumn, TagColumnFitRequest, TagColumnState, TagsState,
 };
-use crate::gui::windows::settings::{reorder_buttons, setting_label};
+use crate::gui::windows::settings::{
+    master_detail_column_size, no_selection_hint, reorder_buttons, setting_label, setting_row,
+    settings_section,
+};
+use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
 use egui::FontId;
 use egui::ScrollArea;
@@ -27,10 +31,10 @@ pub fn draw_tags(
     icon_cache: &IconCache,
     palette: &ThemePalette,
     tags_state: &mut TagsState,
+    settings: &mut SettingsWindow,
 ) -> bool {
     let mut changed = false;
     let mut drag_state = tags_state.drag_state.take();
-    let mut rename_state = tags_state.rename_state.take();
     let mut delete_confirmation = tags_state.delete_confirmation.take();
     let pointer_pos = ui.ctx().input(|input| input.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|input| input.pointer.primary_released());
@@ -44,407 +48,376 @@ pub fn draw_tags(
     );
     ui.add_space(8.0);
 
-    let tabs_width = ui.available_width();
-    ui.allocate_ui_with_layout(
-        egui::vec2(tabs_width, ui.available_height()),
-        egui::Layout::top_down(egui::Align::Min),
-        |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
+    if tags_state.groups.is_empty() {
+        ui.centered_and_justified(|ui| {
+            ui.label(i18n.tr("tag_empty_state"));
+        });
+        tags_state.drag_state = drag_state;
+        tags_state.delete_confirmation = delete_confirmation;
+        return changed;
+    }
 
-                if tags_state.groups.is_empty() {
-                    ui.centered_and_justified(|ui| {
-                        ui.label(i18n.tr("tag_empty_state"));
-                    });
-                    return;
-                }
+    // Keep a valid selection - default to the first group once there's
+    // anything to select, and drop a selection pointing at a group deleted
+    // below (or from another session's import).
+    if settings.selected_tag_group_id.is_none()
+        || !tags_state
+            .groups
+            .iter()
+            .any(|g| Some(g.id) == settings.selected_tag_group_id)
+    {
+        settings.selected_tag_group_id = tags_state.groups.first().map(|g| g.id);
+    }
 
-                ScrollArea::vertical()
-                    .max_height(ui.available_height())
-                    .min_scrolled_height(ui.available_height())
-                    .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    // A real top padding, not the previous negative space
-                    // (tuned back when this page had no title above it, to
-                    // pull the first group up flush with the sidebar) -
-                    // that negative offset pushed the first group's own
-                    // bordered frame slightly above this scroll area's own
-                    // clip bounds, clipping its top border off entirely
-                    // (the same "content drawn flush against/past a clip
-                    // boundary loses that edge" issue documented elsewhere
-                    // in this codebase for a different border).
-                    ui.add_space(4.0);
-                    ui.spacing_mut().item_spacing.y = 12.0;
+    let mut group_reorder: Option<(usize, usize)> = None;
 
-                    let mut group_reorder: Option<(usize, usize)> = None;
-
+    let (col_w, col_h) = master_detail_column_size(ui);
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, col_h),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+            ScrollArea::vertical()
+                .id_salt("tags_list_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
                     for group_index in 0..groups_len {
-                        let group_id = tags_state.groups[group_index].id;
-                        let group_name = tags_state.groups[group_index].name.clone();
-                        let group_items = tags_state.groups[group_index].items.clone();
-                        let group_color = tags_state.groups[group_index].color;
-                        let editing_this_group = rename_state
-                            .as_ref()
-                            .map(|state| state.group_id == group_id)
-                            .unwrap_or(false);
-                        let drag_source_index = drag_state
-                            .as_ref()
-                            .filter(|drag| drag.group_id == group_id && drag.active)
-                            .map(|drag| drag.source_index);
-                        let mut drop_index: Option<usize> = None;
-                        let mut should_clear_drag = false;
-                        let mut clear_rename_state = false;
+                        let group = &tags_state.groups[group_index];
+                        let group_id = group.id;
+                        let group_name = if group.name.is_empty() {
+                            i18n.tr("tag_group_untitled")
+                        } else {
+                            group.name.clone()
+                        };
+                        let group_color = group.color;
+                        let item_count = group.items.len();
+                        let is_selected = Some(group_id) == settings.selected_tag_group_id;
 
-                        // Pre-compute is_tagged status for all items to avoid borrow conflict
-                        let item_tagged_status: std::collections::HashMap<std::path::PathBuf, bool> =
-                            group_items.iter().map(|path| (path.clone(), tags_state.is_tagged(path))).collect();
+                        let row = list_row(ui, palette, is_selected, |ui| {
+                            // `regular::TAG` and `fill::TAG` share the same
+                            // Unicode codepoint - which glyph actually renders
+                            // depends on the *font family* requested (the
+                            // "Fill" weight is a separate named family, not
+                            // merged into Proportional), so `fill::TAG` alone
+                            // with no family override silently draws the
+                            // outline glyph anyway. Matches the sidebar's own
+                            // solid-filled tag icon (`sidebar.rs`).
+                            ui.label(
+                                egui::RichText::new(egui_phosphor::fill::TAG)
+                                    .family(egui::FontFamily::Name("phosphor_fill".into()))
+                                    .size(palette.text_size + 3.0)
+                                    .color(group_color),
+                            );
+                            ui.label(egui::RichText::new(&group_name).strong());
 
-                        let group = &mut tags_state.groups[group_index];
-
-                        let group_frame = egui::Frame::NONE
-                            .fill(palette.faint_bg_color)
-                            .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.35)))
-                            .corner_radius(egui::CornerRadius::same(palette.medium_radius))
-                            .inner_margin(egui::Margin::symmetric(12, 10));
-
-                        group_frame.show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-
-                            let header_id = ui.make_persistent_id(("tag_group", group_id));
-                            let header_state =
-                                egui::collapsing_header::CollapsingState::load_with_default_open(
-                                    ui.ctx(),
-                                    header_id,
-                                    true,
-                                );
-
-                            let header_response = header_state.show_header(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(regular::TAG)
-                                        .size(palette.text_size + 3.0)
-                                        .color(group_color),
-                                );
-                                ui.add_space(4.0);
-
-                                if editing_this_group {
-                                    if let Some(rename) = rename_state
-                                        .as_mut()
-                                        .filter(|state| state.group_id == group_id)
-                                    {
-                                        let edit_id = ui.id().with("tag_rename_input").with(group_id);
-                                        let edit_response = ui.add(
-                                            egui::TextEdit::singleline(&mut rename.buffer)
-                                                .id(edit_id)
-                                                .desired_width(ui.available_width() - 180.0)
-                                                .font(egui::FontId::new(
-                                                    palette.text_size,
-                                                    egui::FontFamily::Proportional,
-                                                )),
-                                        );
-
-                                        if rename.should_focus {
-                                            ui.memory_mut(|mem| mem.request_focus(edit_id));
-                                            edit_response.request_focus();
-                                            if edit_response.has_focus() {
-                                                rename.should_focus = false;
-                                            }
-                                        }
-
-                                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                                        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-
-                                        if enter || edit_response.lost_focus() {
-                                            let new_name = rename.buffer.trim().to_string();
-                                            if !new_name.is_empty() && group.name != new_name {
-                                                group.name = new_name;
-                                                changed = true;
-                                            }
-                                            clear_rename_state = true;
-                                        } else if escape {
-                                            clear_rename_state = true;
-                                        }
-                                    }
-                                } else {
-                                    ui.label(
-                                        egui::RichText::new(&group_name)
-                                            .size(palette.text_size)
-                                            .color(ui.visuals().text_color())
-                                            .strong(),
-                                    );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if let Some(swap) =
+                                    reorder_buttons(ui, palette, group_index, groups_len)
+                                {
+                                    group_reorder = Some(swap);
                                 }
-
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if rgba_color_edit_button(ui, &mut group.color).changed() {
-                                            changed = true;
-                                        }
-                                        egui::Frame::NONE
-                                            .fill(group_color.linear_multiply(0.18))
-                                            .corner_radius(egui::CornerRadius::same(
-                                                palette.small_radius,
-                                            ))
-                                            .inner_margin(egui::Margin::symmetric(7, 2))
-                                            .show(ui, |ui| {
-                                                ui.label(
-                                                    egui::RichText::new(
-                                                        group_items.len().to_string(),
-                                                    )
-                                                    .size(palette.text_size - 1.0)
-                                                    .color(group_color),
-                                                );
-                                            });
-                                        if clickable_icon(ui, regular::TRASH, palette)
-                                            .on_hover_text(i18n.tr("tag_delete_group"))
-                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                            .clicked()
-                                        {
-                                            delete_confirmation = Some(group_id);
-                                        }
-                                        if clickable_icon(ui, regular::PENCIL_SIMPLE, palette)
-                                            .on_hover_text(i18n.tr("inputs_rename"))
-                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                            .clicked()
-                                        {
-                                            rename_state = Some(
-                                                crate::gui::windows::containers::structs::TagRenameState {
-                                                    group_id,
-                                                    buffer: group_name.clone(),
-                                                    should_focus: true,
-                                                },
-                                            );
-                                        }
-                                        if let Some(swap) =
-                                            reorder_buttons(ui, palette, group_index, groups_len)
-                                        {
-                                            group_reorder = Some(swap);
-                                        }
-                                    },
-                                );
-                            });
-
-                            let _ = header_response.body(|ui| {
-                                ui.add_space(6.0);
-                                ui.add(egui::Separator::default().horizontal().spacing(0.0));
-                                ui.add_space(6.0);
-
-                                let collapsible_body_frame = egui::Frame::NONE
-                                    .inner_margin(egui::Margin::symmetric(4, 0));
-
-                                collapsible_body_frame.show(ui, |ui| {
-                                    if group_items.is_empty() {
+                                if clickable_icon(ui, regular::TRASH, palette)
+                                    .on_hover_text(i18n.tr("tag_delete_group"))
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    delete_confirmation = Some(group_id);
+                                }
+                                egui::Frame::NONE
+                                    .fill(group_color.linear_multiply(0.18))
+                                    .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                    .inner_margin(egui::Margin::symmetric(7, 2))
+                                    .show(ui, |ui| {
                                         ui.label(
-                                            egui::RichText::new(i18n.tr("tag_empty_group"))
-                                                .size(palette.text_size)
-                                                .color(palette.text_normal),
+                                            egui::RichText::new(item_count.to_string())
+                                                .size(palette.text_size - 1.0)
+                                                .color(group_color),
                                         );
-                                        return;
-                                    }
-
-                                    let drag_is_active = drag_source_index.is_some();
-                                    let mut item_rects = Vec::with_capacity(group_items.len());
-                                    let mut item_responses = Vec::with_capacity(group_items.len());
-
-                                    if drag_is_active {
-                                        for _ in &group_items {
-                                            let (rect, resp) = tag_item_layout(ui);
-                                            item_rects.push(rect);
-                                            item_responses.push(resp);
-                                        }
-
-                                        if let Some(drag_source_index) = drag_source_index {
-                                            if let Some(pointer) = pointer_pos {
-                                                drop_index = compute_drop_index(
-                                                    &item_rects,
-                                                    pointer.y,
-                                                    drag_source_index,
-                                                );
-                                            }
-                                        }
-                                    }
-
-                                    for (item_index, path) in group_items.iter().enumerate() {
-                                        let label = tag_item_label(path);
-                                        let is_dir = path.is_dir();
-                                        let resp = if drag_is_active {
-                                            let rect = item_rects[item_index];
-                                            let item_resp = item_responses[item_index].clone();
-                                            draw_sidebar_item(
-                                                ui,
-                                                icon_cache,
-                                                path,
-                                                &label,
-                                                is_dir,
-                                                false,
-                                                palette,
-                                                true,
-                                                Some((rect, item_resp)),
-                                            )
-                                        } else {
-                                            draw_sidebar_item(
-                                                ui,
-                                                icon_cache,
-                                                path,
-                                                &label,
-                                                is_dir,
-                                                false,
-                                                palette,
-                                                true,
-                                                None,
-                                            )
-                                        };
-
-                                        if drag_state.is_none() && resp.drag_started() {
-                                            drag_state = Some(crate::gui::windows::containers::structs::TagDragState {
-                                                group_id,
-                                                source_index: item_index,
-                                                active: true,
-                                            });
-                                        }
-
-                                        if resp.clicked() && drag_state.is_none() {
-                                            let file_item = FileItem {
-                                                name: label.clone(),
-                                                path: path.clone(),
-                                                is_dir,
-                                                is_hidden: false,
-                                                recycle_bin_pidl: None,
-                                                file_size: None,
-                                                modified_time: None,
-                                                created_time: None,
-                                                deleted_time: None,
-                                                modified_time_raw: None,
-                                                created_time_raw: None,
-                                                deleted_time_raw: None,
-                                                original_directory: None,
-                                                total_space: None,
-                                                free_space: None,
-                                            };
-                                            if let Some(action) = handle_row_click(&file_item) {
-                                                tags_state.pending_action = Some(action);
-                                            }
-                                        }
-
-                                        let is_tagged = item_tagged_status.get(path).copied().unwrap_or(false);
-                                        Popup::context_menu(&resp)
-                                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                                            .show(|ui| {
-                                                let file_item = FileItem {
-                                                    name: label.clone(),
-                                                    path: path.clone(),
-                                                    is_dir,
-                                                    is_hidden: false,
-                                                    recycle_bin_pidl: None,
-                                                    file_size: None,
-                                                    modified_time: None,
-                                                    created_time: None,
-                                                    deleted_time: None,
-                                                    modified_time_raw: None,
-                                                    created_time_raw: None,
-                                                    deleted_time_raw: None,
-                                                    original_directory: None,
-                                                    total_space: None,
-                                                    free_space: None,
-                                                };
-                                                let mut action = None;
-                                                handle_context_menu_actions_tags(
-                                                    ui,
-                                                    i18n,
-                                                    &file_item,
-                                                    &mut action,
-                                                    palette,
-                                                    is_tagged,
-                                                    Some(group_id),
-                                                );
-                                                if let Some(a) = action {
-                                                    tags_state.pending_action = Some(a);
-                                                }
-                                            });
-                                    }
-
-                                    if let Some(drag_source_index) = drag_source_index {
-                                        if let Some(drop) = drop_index {
-                                            if drop < item_rects.len() {
-                                                let rect = item_rects[drop];
-                                                draw_insert_line(
-                                                    ui,
-                                                    palette,
-                                                    rect.top(),
-                                                    rect.left(),
-                                                    rect.right(),
-                                                );
-                                            } else if let Some(last) = item_rects.last().copied() {
-                                                draw_insert_line(
-                                                    ui,
-                                                    palette,
-                                                    last.bottom(),
-                                                    last.left(),
-                                                    last.right(),
-                                                );
-                                            }
-                                        }
-
-                                        if pointer_released {
-                                            if let Some(drop) = drop_index {
-                                                if drag_source_index < group.items.len()
-                                                    && drag_source_index != drop
-                                                {
-                                                    let item = group.items.remove(drag_source_index);
-                                                    let mut target = drop;
-
-                                                    if drop > drag_source_index {
-                                                        target -= 1;
-                                                    }
-
-                                                    target = target.min(group.items.len());
-                                                    group.items.insert(target, item);
-                                                    changed = true;
-                                                }
-                                            }
-
-                                            should_clear_drag = true;
-                                        }
-
-                                        if let Some(label_path) = group_items.get(drag_source_index) {
-                                            draw_object_drag_ghost(
-                                                ui,
-                                                palette,
-                                                &tag_item_label(label_path),
-                                                true,
-                                            );
-                                        }
-                                    }
-                                });
+                                    });
                             });
-
-                            if clear_rename_state
-                                && rename_state
-                                    .as_ref()
-                                    .map(|state| state.group_id == group_id)
-                                    .unwrap_or(false)
-                            {
-                                rename_state = None;
-                            }
                         });
 
-                        if should_clear_drag {
-                            drag_state = None;
+                        if row.clicked() {
+                            settings.selected_tag_group_id = Some(group_id);
                         }
                     }
+                });
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, col_h),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+            ScrollArea::vertical()
+                .id_salt("tags_detail_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let Some(selected_id) = settings.selected_tag_group_id else {
+                        no_selection_hint(ui, palette, regular::TAG, &i18n.tr("tag_select_hint"));
+                        return;
+                    };
+                    let Some(group_index) =
+                        tags_state.groups.iter().position(|g| g.id == selected_id)
+                    else {
+                        return;
+                    };
 
-                    if let Some((from, to)) = group_reorder {
-                        tags_state.groups.swap(from, to);
-                        changed = true;
+                    let group_items = tags_state.groups[group_index].items.clone();
+                    let drag_source_index = drag_state
+                        .as_ref()
+                        .filter(|drag| drag.group_id == selected_id && drag.active)
+                        .map(|drag| drag.source_index);
+                    let mut drop_index: Option<usize> = None;
+                    let mut should_clear_drag = false;
+
+                    // Pre-compute is_tagged status for all items to avoid borrow conflict
+                    let item_tagged_status: std::collections::HashMap<std::path::PathBuf, bool> =
+                        group_items
+                            .iter()
+                            .map(|path| (path.clone(), tags_state.is_tagged(path)))
+                            .collect();
+
+                    settings_section(ui, palette, |ui| {
+                        let group = &mut tags_state.groups[group_index];
+                        setting_row(
+                            ui,
+                            |ui| {
+                                setting_label(ui, &i18n.tr("tag_group_name"), None, palette);
+                            },
+                            |ui| {
+                                crate::core::utils::widgets::apply_eden_visual_overrides(ui, palette);
+                                changed |= ui
+                                    .add_sized(
+                                        [260.0, ui.spacing().interact_size.y],
+                                        egui::TextEdit::singleline(&mut group.name),
+                                    )
+                                    .changed();
+                            },
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            setting_label(ui, &i18n.tr("tag_group_color"), None, palette);
+                            if rgba_color_edit_button(ui, &mut group.color).changed() {
+                                changed = true;
+                            }
+                        });
+                    });
+
+                    ui.add_space(6.0);
+
+                    settings_section(ui, palette, |ui| {
+                        if group_items.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("tag_empty_group"))
+                                    .size(palette.text_size)
+                                    .color(palette.text_normal),
+                            );
+                            return;
+                        }
+
+                        // Applied once, before either loop below - both the
+                        // drag-rect precomputation pass and the real draw
+                        // pass allocate items sequentially via the same `ui`,
+                        // so setting this here keeps the *visible* row gap
+                        // and the *rects `compute_drop_index` reasons about*
+                        // in agreement (both come from the same ambient
+                        // `item_spacing.y` egui adds between allocations).
+                        ui.spacing_mut().item_spacing.y = 6.0;
+
+                        let drag_is_active = drag_source_index.is_some();
+                        let mut item_rects = Vec::with_capacity(group_items.len());
+                        let mut item_responses = Vec::with_capacity(group_items.len());
+
+                        if drag_is_active {
+                            for _ in &group_items {
+                                let (rect, resp) = tag_item_layout(ui);
+                                item_rects.push(rect);
+                                item_responses.push(resp);
+                            }
+
+                            if let Some(drag_source_index) = drag_source_index {
+                                if let Some(pointer) = pointer_pos {
+                                    drop_index = compute_drop_index(
+                                        &item_rects,
+                                        pointer.y,
+                                        drag_source_index,
+                                    );
+                                }
+                            }
+                        }
+
+                        for (item_index, path) in group_items.iter().enumerate() {
+                            let label = tag_item_label(path);
+                            let is_dir = path.is_dir();
+                            let resp = if drag_is_active {
+                                let rect = item_rects[item_index];
+                                let item_resp = item_responses[item_index].clone();
+                                draw_sidebar_item(
+                                    ui,
+                                    icon_cache,
+                                    path,
+                                    &label,
+                                    is_dir,
+                                    false,
+                                    palette,
+                                    true,
+                                    Some((rect, item_resp)),
+                                )
+                            } else {
+                                draw_sidebar_item(
+                                    ui,
+                                    icon_cache,
+                                    path,
+                                    &label,
+                                    is_dir,
+                                    false,
+                                    palette,
+                                    true,
+                                    None,
+                                )
+                            };
+
+                            if drag_state.is_none() && resp.drag_started() {
+                                drag_state = Some(crate::gui::windows::containers::structs::TagDragState {
+                                    group_id: selected_id,
+                                    source_index: item_index,
+                                    active: true,
+                                });
+                            }
+
+                            if resp.clicked() && drag_state.is_none() {
+                                let file_item = FileItem {
+                                    name: label.clone(),
+                                    path: path.clone(),
+                                    is_dir,
+                                    is_hidden: false,
+                                    recycle_bin_pidl: None,
+                                    file_size: None,
+                                    modified_time: None,
+                                    created_time: None,
+                                    deleted_time: None,
+                                    modified_time_raw: None,
+                                    created_time_raw: None,
+                                    deleted_time_raw: None,
+                                    original_directory: None,
+                                    total_space: None,
+                                    free_space: None,
+                                };
+                                if let Some(action) = handle_row_click(&file_item) {
+                                    tags_state.pending_action = Some(action);
+                                }
+                            }
+
+                            let is_tagged = item_tagged_status.get(path).copied().unwrap_or(false);
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    let file_item = FileItem {
+                                        name: label.clone(),
+                                        path: path.clone(),
+                                        is_dir,
+                                        is_hidden: false,
+                                        recycle_bin_pidl: None,
+                                        file_size: None,
+                                        modified_time: None,
+                                        created_time: None,
+                                        deleted_time: None,
+                                        modified_time_raw: None,
+                                        created_time_raw: None,
+                                        deleted_time_raw: None,
+                                        original_directory: None,
+                                        total_space: None,
+                                        free_space: None,
+                                    };
+                                    let mut action = None;
+                                    handle_context_menu_actions_tags(
+                                        ui,
+                                        i18n,
+                                        &file_item,
+                                        &mut action,
+                                        palette,
+                                        is_tagged,
+                                        Some(selected_id),
+                                    );
+                                    if let Some(a) = action {
+                                        tags_state.pending_action = Some(a);
+                                    }
+                                });
+                        }
+
+                        if let Some(drag_source_index) = drag_source_index {
+                            if let Some(drop) = drop_index {
+                                if drop < item_rects.len() {
+                                    let rect = item_rects[drop];
+                                    draw_insert_line(
+                                        ui,
+                                        palette,
+                                        rect.top(),
+                                        rect.left(),
+                                        rect.right(),
+                                    );
+                                } else if let Some(last) = item_rects.last().copied() {
+                                    draw_insert_line(
+                                        ui,
+                                        palette,
+                                        last.bottom(),
+                                        last.left(),
+                                        last.right(),
+                                    );
+                                }
+                            }
+
+                            if pointer_released {
+                                if let Some(drop) = drop_index {
+                                    let group = &mut tags_state.groups[group_index];
+                                    if drag_source_index < group.items.len()
+                                        && drag_source_index != drop
+                                    {
+                                        let item = group.items.remove(drag_source_index);
+                                        let mut target = drop;
+
+                                        if drop > drag_source_index {
+                                            target -= 1;
+                                        }
+
+                                        target = target.min(group.items.len());
+                                        group.items.insert(target, item);
+                                        changed = true;
+                                    }
+                                }
+
+                                should_clear_drag = true;
+                            }
+
+                            if let Some(label_path) = group_items.get(drag_source_index) {
+                                draw_object_drag_ghost(
+                                    ui,
+                                    palette,
+                                    &tag_item_label(label_path),
+                                    true,
+                                );
+                            }
+                        }
+                    });
+
+                    if should_clear_drag {
+                        drag_state = None;
                     }
                 });
-            });
-            });
+            },
+        );
+    });
+
+    if let Some((from, to)) = group_reorder {
+        tags_state.groups.swap(from, to);
+        changed = true;
+    }
 
     if pointer_released && drag_state.is_some() {
         drag_state = None;
     }
 
     tags_state.drag_state = drag_state;
-    tags_state.rename_state = rename_state;
     tags_state.delete_confirmation = delete_confirmation;
 
     if changed {
@@ -452,6 +425,56 @@ pub fn draw_tags(
     }
 
     changed
+}
+
+/// One selectable row in a master-detail page's left-column list - a
+/// smaller nested card, like `entry_card`, but click-sensitive and with a
+/// distinct fill/border when selected.
+///
+/// Senses the row's own background click *before* drawing `add_contents`
+/// (its buttons included), rather than after - egui gives click priority to
+/// whichever overlapping sense was registered later, so sensing the
+/// background first and drawing (and thus sensing) the buttons afterward is
+/// what lets a reorder/delete button inside the row still work, instead of
+/// the row-select swallowing every click in its rect including the ones
+/// meant for a button on top of it.
+fn list_row(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    selected: bool,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let row_height = ui.spacing().interact_size.y + 20.0;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), row_height),
+        egui::Sense::click(),
+    );
+
+    if ui.is_rect_visible(rect) {
+        let fill = if selected {
+            palette.primary_hover
+        } else {
+            palette.row_bg
+        };
+        let stroke_color = if selected {
+            palette.borders_active
+        } else {
+            palette.borders_default
+        };
+        let corner = egui::CornerRadius::same(palette.small_radius);
+        ui.painter().rect_filled(rect, corner, fill);
+        ui.painter()
+            .rect_stroke(rect, corner, egui::Stroke::new(1.5, stroke_color), egui::StrokeKind::Inside);
+    }
+
+    let content_rect = rect.shrink2(egui::vec2(10.0, 6.0));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
+        ui.horizontal_centered(|ui| add_contents(ui));
+    });
+
+    ui.add_space(6.0);
+
+    response
 }
 
 /// Converts a filesystem `SystemTime` into the Windows FILETIME representation

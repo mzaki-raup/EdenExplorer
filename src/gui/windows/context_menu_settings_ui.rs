@@ -2,6 +2,13 @@
 //! `core::context_menu_settings`). One top level of submenu nesting is
 //! supported (a submenu's children are always leaf commands), matching how
 //! this is actually used in practice.
+//!
+//! Master-detail layout: the left column lists every top-level entry (icon +
+//! label, reorderable, deletable, click to select); the right column shows
+//! the selected entry's own fields, and - if it's a submenu - its children
+//! below as always-visible cards (no collapse/expand), each individually
+//! reorderable/deletable. Selection is tracked by the entry's stable `id`
+//! (`SettingsWindow::selected_context_menu_id`).
 
 use crate::core::context_menu_settings::{
     CustomContextMenuEntry, CustomContextMenuIcon, next_entry_id,
@@ -12,8 +19,8 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::settings::{
-    empty_state_hint, entry_card, reorder_buttons, setting_checkbox, setting_label, setting_row,
-    settings_section,
+    empty_state_hint, entry_card, master_detail_column_size, no_selection_hint, reorder_buttons,
+    setting_checkbox, setting_label, setting_row, settings_section,
 };
 use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
@@ -35,153 +42,210 @@ pub fn draw_custom_context_menu_settings(
     let mut action = None;
     let mut icon_picker_search = std::mem::take(&mut settings.icon_picker_search);
 
-    settings_section(ui, palette, |ui| {
-        setting_label(
+    setting_label(
+        ui,
+        &i18n.tr("settings_custom_context_menu"),
+        Some((&i18n.tr("tooltip_settings_custom_context_menu"), palette)),
+        palette,
+    );
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        if eden_button(
             ui,
-            &i18n.tr("settings_custom_context_menu"),
-            Some((&i18n.tr("tooltip_settings_custom_context_menu"), palette)),
             palette,
-        );
-        ui.add_space(6.0);
-
-        ui.horizontal(|ui| {
-            if eden_button(
-                ui,
-                palette,
-                &format!(
-                    "{} {}",
-                    regular::PLUS,
-                    i18n.tr("custom_context_menu_add_command")
-                ),
-            )
-            .clicked()
-            {
-                let id = next_entry_id(&settings.current_settings.custom_context_menu);
-                settings
-                    .current_settings
-                    .custom_context_menu
-                    .push(CustomContextMenuEntry::new_leaf(id));
-                action = Some(SettingsAction::ApplySettings);
-            }
-            if eden_button(
-                ui,
-                palette,
-                &format!(
-                    "{} {}",
-                    regular::PLUS,
-                    i18n.tr("custom_context_menu_add_submenu")
-                ),
-            )
-            .clicked()
-            {
-                let id = next_entry_id(&settings.current_settings.custom_context_menu);
-                settings
-                    .current_settings
-                    .custom_context_menu
-                    .push(CustomContextMenuEntry::new_submenu(id));
-                action = Some(SettingsAction::ApplySettings);
-            }
-        });
-
-        ui.add_space(6.0);
-
-        ui.horizontal(|ui| {
-            if eden_button(ui, palette, &i18n.tr("custom_context_menu_export")).clicked() {
-                action = Some(SettingsAction::ExportContextMenu);
-            }
-            if eden_button(ui, palette, &i18n.tr("custom_context_menu_import")).clicked() {
-                action = Some(SettingsAction::ImportContextMenu);
-            }
-        });
-
-        ui.add_space(10.0);
-
-        if settings.current_settings.custom_context_menu.is_empty() {
-            empty_state_hint(
-                ui,
-                palette,
-                regular::LIST,
-                &i18n.tr("custom_context_menu_empty_state"),
-            );
-            return;
+            &format!(
+                "{} {}",
+                regular::PLUS,
+                i18n.tr("custom_context_menu_add_command")
+            ),
+        )
+        .clicked()
+        {
+            let id = next_entry_id(&settings.current_settings.custom_context_menu);
+            settings
+                .current_settings
+                .custom_context_menu
+                .push(CustomContextMenuEntry::new_leaf(id));
+            settings.selected_context_menu_id = Some(id);
+            action = Some(SettingsAction::ApplySettings);
         }
+        if eden_button(
+            ui,
+            palette,
+            &format!(
+                "{} {}",
+                regular::PLUS,
+                i18n.tr("custom_context_menu_add_submenu")
+            ),
+        )
+        .clicked()
+        {
+            let id = next_entry_id(&settings.current_settings.custom_context_menu);
+            settings
+                .current_settings
+                .custom_context_menu
+                .push(CustomContextMenuEntry::new_submenu(id));
+            settings.selected_context_menu_id = Some(id);
+            action = Some(SettingsAction::ApplySettings);
+        }
+    });
 
-        let mut remove_index: Option<usize> = None;
-        let mut move_indices: Option<(usize, usize)> = None;
-        let mut changed = false;
-        let total_len = settings.current_settings.custom_context_menu.len();
+    ui.add_space(6.0);
 
-        for (index, entry) in settings
+    ui.horizontal(|ui| {
+        if eden_button(ui, palette, &i18n.tr("custom_context_menu_export")).clicked() {
+            action = Some(SettingsAction::ExportContextMenu);
+        }
+        if eden_button(ui, palette, &i18n.tr("custom_context_menu_import")).clicked() {
+            action = Some(SettingsAction::ImportContextMenu);
+        }
+    });
+
+    ui.add_space(10.0);
+
+    if settings.current_settings.custom_context_menu.is_empty() {
+        empty_state_hint(
+            ui,
+            palette,
+            regular::LIST,
+            &i18n.tr("custom_context_menu_empty_state"),
+        );
+        settings.icon_picker_search = icon_picker_search;
+        return action;
+    }
+
+    if settings.selected_context_menu_id.is_none()
+        || !settings
             .current_settings
             .custom_context_menu
-            .iter_mut()
-            .enumerate()
-        {
-            let header_label = if entry.label.is_empty() {
-                i18n.tr("custom_context_menu_untitled")
-            } else {
-                entry.label.clone()
-            };
-            let header_icon = match &entry.icon {
-                CustomContextMenuIcon::Glyph(g) => g.clone(),
-                _ => (if entry.is_submenu {
-                    regular::LIST
-                } else {
-                    regular::TERMINAL
-                })
-                .to_string(),
-            };
+            .iter()
+            .any(|e| Some(e.id) == settings.selected_context_menu_id)
+    {
+        settings.selected_context_menu_id = settings
+            .current_settings
+            .custom_context_menu
+            .first()
+            .map(|e| e.id);
+    }
 
-            entry_card(ui, palette, |ui| {
-                let header_id = ui.make_persistent_id(("custom_ctx_menu_entry", entry.id));
-                let header_state = egui::collapsing_header::CollapsingState::load_with_default_open(
-                    ui.ctx(),
-                    header_id,
-                    false,
-                );
+    let mut remove_index: Option<usize> = None;
+    let mut move_indices: Option<(usize, usize)> = None;
+    let mut changed = false;
+    let total_len = settings.current_settings.custom_context_menu.len();
 
-                let header_response = header_state.show_header(ui, |ui| {
-                    ui.label(&header_icon);
-                    ui.label(egui::RichText::new(&header_label).strong());
+    let (col_w, col_h) = master_detail_column_size(ui);
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, col_h),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("ccm_list_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (index, entry) in settings
+                        .current_settings
+                        .custom_context_menu
+                        .iter()
+                        .enumerate()
+                    {
+                        let label = if entry.label.is_empty() {
+                            i18n.tr("custom_context_menu_untitled")
+                        } else {
+                            entry.label.clone()
+                        };
+                        let icon = match &entry.icon {
+                            CustomContextMenuIcon::Glyph(g) => g.clone(),
+                            _ => (if entry.is_submenu {
+                                regular::LIST
+                            } else {
+                                regular::TERMINAL
+                            })
+                            .to_string(),
+                        };
+                        let is_selected = Some(entry.id) == settings.selected_context_menu_id;
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {
-                            move_indices = Some(swap);
+                        let row = list_row(ui, palette, is_selected, |ui| {
+                            ui.label(&icon);
+                            ui.label(egui::RichText::new(&label).strong());
+
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {
+                                    move_indices = Some(swap);
+                                }
+                                if eden_button(ui, palette, regular::TRASH)
+                                    .on_hover_text(i18n.tr("custom_context_menu_remove"))
+                                    .clicked()
+                                {
+                                    remove_index = Some(index);
+                                }
+                                if entry.is_submenu {
+                                    ui.label(
+                                        egui::RichText::new(format!("({})", entry.children.len()))
+                                            .color(palette.tooltip_text_color),
+                                    );
+                                }
+                            });
+                        });
+
+                        if row.clicked() {
+                            settings.selected_context_menu_id = Some(entry.id);
                         }
-                        if eden_button(ui, palette, regular::TRASH)
-                            .on_hover_text(i18n.tr("custom_context_menu_remove"))
-                            .clicked()
-                        {
-                            remove_index = Some(index);
-                        }
-                        if entry.is_submenu {
-                            ui.label(
-                                egui::RichText::new(format!("({})", entry.children.len()))
-                                    .color(palette.tooltip_text_color),
-                            );
+                    }
+                });
+            },
+        );
+        ui.allocate_ui_with_layout(
+            egui::vec2(col_w, col_h),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("ccm_detail_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let Some(selected_id) = settings.selected_context_menu_id else {
+                        no_selection_hint(
+                            ui,
+                            palette,
+                            regular::LIST,
+                            &i18n.tr("custom_context_menu_select_hint"),
+                        );
+                        return;
+                    };
+                    let Some(entry) = settings
+                        .current_settings
+                        .custom_context_menu
+                        .iter_mut()
+                        .find(|e| e.id == selected_id)
+                    else {
+                        return;
+                    };
+
+                    settings_section(ui, palette, |ui| {
+                        if draw_entry_fields(
+                            ui,
+                            i18n,
+                            palette,
+                            icon_cache,
+                            &mut icon_picker_search,
+                            entry,
+                            false,
+                        ) {
+                            changed = true;
                         }
                     });
-                });
-
-                let _ = header_response.body(|ui| {
-                    ui.add_space(4.0);
-                    if draw_entry_fields(
-                        ui,
-                        i18n,
-                        palette,
-                        icon_cache,
-                        &mut icon_picker_search,
-                        entry,
-                        false,
-                    ) {
-                        changed = true;
-                    }
 
                     if entry.is_submenu {
-                        ui.add_space(8.0);
-                        eden_text_label(ui, palette, &i18n.tr("custom_context_menu_children"));
-                        ui.add_space(4.0);
-                        ui.indent(("custom_ctx_menu_children", entry.id), |ui| {
+                        ui.add_space(6.0);
+                        settings_section(ui, palette, |ui| {
+                            eden_text_label(ui, palette, &i18n.tr("custom_context_menu_children"));
+                            ui.add_space(8.0);
+
+                            if entry.children.is_empty() {
+                                ui.weak(i18n.tr("custom_context_menu_no_children"));
+                            }
+
                             let mut remove_child: Option<usize> = None;
                             let mut move_child: Option<(usize, usize)> = None;
                             let child_total = entry.children.len();
@@ -197,57 +261,46 @@ pub fn draw_custom_context_menu_settings(
                                 };
 
                                 entry_card(ui, palette, |ui| {
-                                    let child_header_id = ui
-                                        .make_persistent_id(("custom_ctx_menu_child", entry.id, child.id));
-                                    let child_header_state =
-                                        egui::collapsing_header::CollapsingState::load_with_default_open(
-                                            ui.ctx(),
-                                            child_header_id,
-                                            false,
+                                    ui.horizontal(|ui| {
+                                        ui.label(&child_icon);
+                                        ui.label(egui::RichText::new(&child_label).strong());
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if let Some(swap) = reorder_buttons(
+                                                    ui,
+                                                    palette,
+                                                    child_index,
+                                                    child_total,
+                                                ) {
+                                                    move_child = Some(swap);
+                                                }
+                                                if eden_button(ui, palette, regular::TRASH)
+                                                    .on_hover_text(
+                                                        i18n.tr("custom_context_menu_remove"),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    remove_child = Some(child_index);
+                                                }
+                                            },
                                         );
-
-                                    let child_header_response =
-                                        child_header_state.show_header(ui, |ui| {
-                                            ui.label(&child_icon);
-                                            ui.label(egui::RichText::new(&child_label).strong());
-
-                                            ui.with_layout(
-                                                egui::Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    if let Some(swap) = reorder_buttons(
-                                                        ui,
-                                                        palette,
-                                                        child_index,
-                                                        child_total,
-                                                    ) {
-                                                        move_child = Some(swap);
-                                                    }
-                                                    if eden_button(ui, palette, regular::TRASH)
-                                                        .on_hover_text(
-                                                            i18n.tr("custom_context_menu_remove"),
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        remove_child = Some(child_index);
-                                                    }
-                                                },
-                                            );
-                                        });
-
-                                    let _ = child_header_response.body(|ui| {
-                                        ui.add_space(4.0);
-                                        if draw_entry_fields(
-                                            ui,
-                                            i18n,
-                                            palette,
-                                            icon_cache,
-                                            &mut icon_picker_search,
-                                            child,
-                                            true,
-                                        ) {
-                                            changed = true;
-                                        }
                                     });
+                                    ui.add_space(6.0);
+                                    ui.separator();
+                                    ui.add_space(6.0);
+
+                                    if draw_entry_fields(
+                                        ui,
+                                        i18n,
+                                        palette,
+                                        icon_cache,
+                                        &mut icon_picker_search,
+                                        child,
+                                        true,
+                                    ) {
+                                        changed = true;
+                                    }
                                 });
                             }
                             if let Some((from, to)) = move_child {
@@ -259,6 +312,7 @@ pub fn draw_custom_context_menu_settings(
                                 changed = true;
                             }
 
+                            ui.add_space(4.0);
                             if eden_button(
                                 ui,
                                 palette,
@@ -283,27 +337,85 @@ pub fn draw_custom_context_menu_settings(
                         });
                     }
                 });
-            });
-        }
-
-        if let Some((from, to)) = move_indices {
-            settings.current_settings.custom_context_menu.swap(from, to);
-            changed = true;
-        }
-
-        if let Some(i) = remove_index {
-            settings.current_settings.custom_context_menu.remove(i);
-            changed = true;
-        }
-
-        if changed {
-            action = Some(SettingsAction::ApplySettings);
-        }
+            },
+        );
     });
+
+    if let Some((from, to)) = move_indices {
+        settings.current_settings.custom_context_menu.swap(from, to);
+        changed = true;
+    }
+
+    if let Some(i) = remove_index {
+        let removed_id = settings.current_settings.custom_context_menu[i].id;
+        settings.current_settings.custom_context_menu.remove(i);
+        if settings.selected_context_menu_id == Some(removed_id) {
+            settings.selected_context_menu_id = settings
+                .current_settings
+                .custom_context_menu
+                .first()
+                .map(|e| e.id);
+        }
+        changed = true;
+    }
+
+    if changed {
+        action = Some(SettingsAction::ApplySettings);
+    }
 
     settings.icon_picker_search = icon_picker_search;
 
     action
+}
+
+/// One selectable row in a master-detail page's left-column list - a
+/// smaller nested card, like `entry_card`, but click-sensitive and with a
+/// distinct fill/border when selected.
+///
+/// Senses the row's own background click *before* drawing `add_contents`
+/// (its buttons included), rather than after - egui gives click priority to
+/// whichever overlapping sense was registered later, so sensing the
+/// background first and drawing (and thus sensing) the buttons afterward is
+/// what lets a reorder/delete button inside the row still work, instead of
+/// the row-select swallowing every click in its rect including the ones
+/// meant for a button on top of it.
+fn list_row(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    selected: bool,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let row_height = ui.spacing().interact_size.y + 20.0;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), row_height),
+        egui::Sense::click(),
+    );
+
+    if ui.is_rect_visible(rect) {
+        let fill = if selected {
+            palette.primary_hover
+        } else {
+            palette.row_bg
+        };
+        let stroke_color = if selected {
+            palette.borders_active
+        } else {
+            palette.borders_default
+        };
+        let corner = egui::CornerRadius::same(palette.small_radius);
+        ui.painter().rect_filled(rect, corner, fill);
+        ui.painter()
+            .rect_stroke(rect, corner, egui::Stroke::new(1.5, stroke_color), egui::StrokeKind::Inside);
+    }
+
+    let content_rect = rect.shrink2(egui::vec2(10.0, 6.0));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
+        ui.horizontal_centered(|ui| add_contents(ui));
+    });
+
+    ui.add_space(6.0);
+
+    response
 }
 
 /// Draws label/icon/(scope + submenu toggle)/(executable/arguments/run
@@ -341,13 +453,18 @@ fn draw_entry_fields(
     ui.add_space(10.0);
     eden_text_label(ui, palette, &i18n.tr("custom_context_menu_icon"));
     ui.add_space(4.0);
-    if let Some(glyph) = crate::gui::windows::icon_picker_ui::draw_icon_picker(
+    let current_glyph = match &entry.icon {
+        CustomContextMenuIcon::Glyph(g) => Some(g.as_str()),
+        _ => None,
+    };
+    if let Some(glyph) = crate::gui::windows::icon_picker_ui::draw_icon_picker_button(
         ui,
         i18n,
         palette,
         icon_picker_search,
         ("ccm_icon_picker", entry.id),
-        |glyph| matches!(&entry.icon, CustomContextMenuIcon::Glyph(g) if g == glyph),
+        current_glyph,
+        regular::SHAPES,
     ) {
         entry.icon = CustomContextMenuIcon::Glyph(glyph);
         changed = true;
@@ -373,23 +490,31 @@ fn draw_entry_fields(
             entry.icon = CustomContextMenuIcon::None;
             changed = true;
         }
-        if let CustomContextMenuIcon::FileIcon(path) = &entry.icon {
+    });
+    // Icon preview + file path go on their own row below the Browse/Clear
+    // buttons - a real path is often long enough to run past the column's
+    // own right edge when everything shares one row (same fix as Favorites'
+    // identical icon-file picker).
+    if let CustomContextMenuIcon::FileIcon(path) = entry.icon.clone() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
             let is_image = path
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|ext| IMAGE_ICON_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)));
             let texture = if is_image {
-                icon_cache.get_custom_file_icon(path)
+                icon_cache.get_custom_file_icon(&path)
             } else {
-                icon_cache.get(path, false)
+                icon_cache.get(&path, false)
             };
             if let Some(texture) = texture {
                 ui.add(egui::Image::new(&texture).fit_to_exact_size(egui::vec2(20.0, 20.0)));
             }
-            ui.label(path.display().to_string())
-                .on_hover_text(path.display().to_string());
-        }
-    });
+            let path_text = path.display().to_string();
+            ui.add(egui::Label::new(&path_text).truncate().selectable(false))
+                .on_hover_text(&path_text);
+        });
+    }
 
     if !is_child {
         ui.add_space(10.0);

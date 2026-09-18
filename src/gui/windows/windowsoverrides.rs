@@ -25,8 +25,12 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
-/// Width of the client-area region reserved for native window resizing.
-const RESIZE_BORDER: i32 = 2;
+/// Width, in logical (96-DPI) pixels, of the client-area region reserved for
+/// native window resizing. Scaled up per-monitor DPI at hit-test time so the
+/// grab area stays a consistent, comfortably-sized target regardless of
+/// display scaling - matching the ~8px border Windows uses for its own
+/// resizable windows instead of an easy-to-miss sliver.
+const RESIZE_BORDER: i32 = 8;
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -214,10 +218,22 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             cyBottomHeight: 0,
         };
 
-        let border_color = color32_to_dwm(palette.borders_default);
         let caption_color = color32_to_dwm(palette.application_bg_color);
         let text_color = color32_to_dwm(palette.application_bg_color);
 
+        // `mainwindow.rs` already paints its own accent-colored 3px border
+        // around the whole viewport by hand every frame (the one place this
+        // app's border actually comes from) - setting DWMWA_BORDER_COLOR
+        // (attribute 34) to that same accent color additionally asked
+        // *Windows itself* to draw a second, native ~1px border on top of
+        // it. The two together read as a double border specifically along
+        // the top edge (where DWM's own border renders as a distinct thin
+        // outer line above the app's thicker painted one; left/right/bottom
+        // don't show the same visible gap between the two). Using
+        // `DWMWA_COLOR_NONE` here tells DWM not to draw a border of its own
+        // at all, leaving the app's single hand-painted border as the only
+        // one visible on every edge.
+        let border_color = DWMWA_COLOR_NONE;
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWINDOWATTRIBUTE(34),
@@ -381,7 +397,8 @@ unsafe extern "system" fn custom_wndproc(
                 let right = bottom_right.x;
                 let bottom = bottom_right.y;
 
-                let resize = RESIZE_BORDER;
+                let dpi = GetDpiForWindow(hwnd).max(1);
+                let resize = (RESIZE_BORDER as f32 * dpi as f32 / 96.0).round() as i32;
 
                 // Top-left
                 if x >= left && x < left + resize && y >= top && y < top + resize {

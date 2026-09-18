@@ -68,6 +68,11 @@ pub struct MainWindow {
     pub(crate) last_window_size: Option<(f32, f32)>,
     pub(crate) last_window_position: Option<(f32, f32)>,
     pub(crate) sidebar_collapsed: bool,
+    /// Horizontal gap between tabs in the tab strip, user-configurable via
+    /// Appearance > Layout - persisted in its own small file (`tab_layout.bin`),
+    /// not `ThemePalette` (see `ThemeCustomizerAction::TabGapChanged`'s doc
+    /// comment for why).
+    pub(crate) tab_gap: f32,
     /// Whether the OS window had keyboard focus as of the last frame - used
     /// to detect the window regaining focus (e.g. after running an external
     /// script/program from a custom context menu command) so the current
@@ -346,6 +351,7 @@ impl Default for MainWindow {
                 Some("dark") | _ => ThemeMode::Dark,
             },
             sidebar_collapsed: false,
+            tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
             was_window_focused: true,
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
@@ -766,6 +772,19 @@ impl eframe::App for MainWindow {
                     avail,
                     egui::Layout::left_to_right(egui::Align::Min),
                     |ui| {
+                        // The `-offset` translate above cancels CentralPanel's own left
+                        // margin (mirroring the `ui.add_space(8.0)` used below to restore
+                        // the equivalent vertical gap before the topbar) - without this,
+                        // the sidebar's own left border renders flush against the app's
+                        // hand-painted outer window border with no gap at all.
+                        ui.add_space(8.0);
+                        // The separator handle/overlay below is positioned with absolute
+                        // coordinates computed from `sidebar_width` alone, which assumes
+                        // the sidebar column starts at local x=0 - true before the
+                        // add_space above existed, no longer true now. Capture the real
+                        // start x so that math stays correct.
+                        let sidebar_start_x = ui.cursor().left();
+
                         // --- Sidebar column ---
                         let collapsed_width = 38.0;
                         let sidebar_width_min = 140.0;
@@ -802,7 +821,17 @@ impl eframe::App for MainWindow {
                                     ));
                                 });
                                 if !self.sidebar_collapsed {
-                                    let sidebar_box_size = ui.available_size();
+                                    // Leaves a gap between the sidebar box's own bottom
+                                    // border and the app's outer window border, matching
+                                    // the gap already present on every other edge - without
+                                    // this, the sidebar's bottom stroke renders flush
+                                    // against the outer border (the `-offset` translate
+                                    // above only ever restores a gap on the top/left, see
+                                    // the `ui.add_space(8.0)` calls on those sides).
+                                    let sidebar_bottom_gap = 8.0;
+                                    let mut sidebar_box_size = ui.available_size();
+                                    sidebar_box_size.y =
+                                        (sidebar_box_size.y - sidebar_bottom_gap).max(0.0);
                                     sidebar_frame.show(ui, |ui| {
                                         ui.allocate_ui_with_layout(
                                             sidebar_box_size,
@@ -831,7 +860,10 @@ impl eframe::App for MainWindow {
                         if !self.sidebar_collapsed {
                             let separator_width = 6.0;
                             let separator_rect = egui::Rect::from_min_size(
-                                egui::pos2(sidebar_width - separator_width / 2.0, 0.0),
+                                egui::pos2(
+                                    sidebar_start_x + sidebar_width - separator_width / 2.0,
+                                    0.0,
+                                ),
                                 egui::vec2(separator_width, ui.available_height()),
                             );
 
@@ -846,7 +878,7 @@ impl eframe::App for MainWindow {
                                 let center_y = ui.available_height() / 2.0;
 
                                 let handle_rect = egui::Rect::from_center_size(
-                                    egui::pos2(sidebar_width, center_y), // exactly on sidebar right edge
+                                    egui::pos2(sidebar_start_x + sidebar_width, center_y), // exactly on sidebar right edge
                                     egui::vec2(handle_width, handle_height),
                                 );
 
@@ -907,7 +939,7 @@ impl eframe::App for MainWindow {
                                         // Tabs that don't fit on one row wrap onto extra
                                         // rows below, so the topbar's height must grow
                                         // to fit however many rows are needed.
-                                        let spacing = ui.spacing().item_spacing.x;
+                                        let spacing = self.tab_gap;
                                         let tab_rows = tab_row_count(
                                             self.tab_infos_cache.len(),
                                             ui.available_width() - topbar_left_padding,
@@ -960,6 +992,7 @@ impl eframe::App for MainWindow {
                                                     &self.tab_infos_cache,
                                                     active_id,
                                                     &palette,
+                                                    self.tab_gap,
                                                     self.hwnd,
                                                     scroll_to_id,
                                                     drag_active,
@@ -1119,8 +1152,18 @@ impl eframe::App for MainWindow {
                                                             if primary_focused {
                                                                 let accent_rect =
                                                                     ui.available_rect_before_wrap();
+                                                                // Inset slightly so the indicator never
+                                                                // renders flush against the pane's own
+                                                                // outer edge (the sidebar-adjacent side
+                                                                // here, the app's outer window border for
+                                                                // the secondary pane's equivalent line
+                                                                // below) - matches the small gap every
+                                                                // other bordered element keeps from it.
                                                                 ui.painter().hline(
-                                                                    accent_rect.x_range(),
+                                                                    egui::Rangef::new(
+                                                                        accent_rect.left() + 6.0,
+                                                                        accent_rect.right() - 6.0,
+                                                                    ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         ACTIVE_PANE_INDICATOR_THICKNESS,
@@ -1213,8 +1256,15 @@ impl eframe::App for MainWindow {
                                                             if secondary_focused {
                                                                 let accent_rect =
                                                                     ui.available_rect_before_wrap();
+                                                                // See the matching comment on the primary
+                                                                // pane's indicator above - without this
+                                                                // inset the line renders flush against the
+                                                                // app's own outer window border here.
                                                                 ui.painter().hline(
-                                                                    accent_rect.x_range(),
+                                                                    egui::Rangef::new(
+                                                                        accent_rect.left() + 6.0,
+                                                                        accent_rect.right() - 6.0,
+                                                                    ),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         ACTIVE_PANE_INDICATOR_THICKNESS,

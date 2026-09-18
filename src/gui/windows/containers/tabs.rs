@@ -69,6 +69,7 @@ pub fn draw_tabs(
     tabs: &[TabInfo],
     active_id: u64,
     palette: &ThemePalette,
+    tab_gap: f32,
     hwnd: Option<HWND>,
     scroll_to_id: Option<u64>,
     drag_active: bool,
@@ -87,7 +88,7 @@ pub fn draw_tabs(
     let hovered_target_ref = drag_hover_target.as_ref();
     let mut tab_drop_target: Option<PathBuf> = None;
     let full_width = ui.available_width();
-    let spacing = ui.spacing().item_spacing.x;
+    let spacing = tab_gap;
 
     let (tab_width, _rows) = compute_tab_layout(tabs.len(), full_width, spacing);
     let windows_buttons_width = 45.0 * 3.0;
@@ -405,7 +406,6 @@ fn draw_tab_groups_menu(
     }
 
     ui.label(i18n.tr("tab_group_menu"));
-    ui.separator();
 
     for group in tab_groups {
         let label = if group.name.is_empty() {

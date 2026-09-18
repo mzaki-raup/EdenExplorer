@@ -359,6 +359,53 @@ pub(crate) fn empty_state_hint(ui: &mut egui::Ui, palette: &ThemePalette, icon: 
     });
 }
 
+/// Splits the rest of the current row into two equal-width columns (a
+/// master list on the left, its selected entry's detail on the right) -
+/// shared by every master-detail settings page (Favorites/Custom Context
+/// Menu/Tab Groups/Tags) so each one doesn't re-derive the same layout math,
+/// which is easy to get subtly wrong (see `CLAUDE.md`'s entries from the
+/// Appearance page's own two-column redesign: `ui.available_height()`
+/// re-queried *inside* the `horizontal` row returns an unbounded value, not
+/// the page's real remaining height, so it must be captured *before*
+/// entering it and passed to both columns instead). Leaves a small trailing
+/// gap after the right column so its content doesn't sit flush against the
+/// item viewer's own content border, matching every other edge in the app.
+/// Returns `(column_width, column_height)` for a master-detail page's two
+/// equal columns, leaving a small trailing gap after the right column so its
+/// content doesn't sit flush against the item viewer's own content border.
+///
+/// Deliberately **not** a function that takes the two columns' content as
+/// `FnOnce` closure parameters, the way the Appearance page's own two-column
+/// split first tried it - passing both closures as sibling arguments to one
+/// call forces the borrow checker to treat them as constructed
+/// simultaneously (each capturing its environment up front), so two
+/// closures that both need a mutable borrow of the same page state
+/// (`settings`, `tags_state`, `favorites`, ...) fail to compile even though
+/// the helper only ever runs them one after the other internally. Callers
+/// must instead write the same `ui.horizontal(|ui| { allocate_ui_with_layout
+/// (left); allocate_ui_with_layout(right); })` shape inline themselves -
+/// sequential statements *within one closure* borrow-check fine (each
+/// `allocate_ui_with_layout` call's own closure borrows, runs, and releases
+/// before the next one starts), which is exactly the pattern
+/// `customizetheme.rs`'s two-column split already relies on.
+pub(crate) fn master_detail_column_size(ui: &egui::Ui) -> (f32, f32) {
+    const TRAILING_GAP: f32 = 12.0;
+    let half_width =
+        ((ui.available_width() - ui.spacing().item_spacing.x - TRAILING_GAP) / 2.0).max(240.0);
+    (half_width, ui.available_height())
+}
+
+/// A muted centered placeholder for a master-detail page's right (detail)
+/// column when nothing is selected in the left list yet.
+pub(crate) fn no_selection_hint(ui: &mut egui::Ui, palette: &ThemePalette, icon: &str, text: &str) {
+    ui.vertical_centered(|ui| {
+        ui.add_space(40.0);
+        ui.label(RichText::new(icon).size(32.0).color(palette.tooltip_text_color));
+        ui.add_space(8.0);
+        ui.label(RichText::new(text).color(palette.tooltip_text_color));
+    });
+}
+
 /// Draws small up/down move buttons for reordering `index` within a list of
 /// `len` items - disabled at whichever end doesn't apply. Returns
 /// `Some((from, to))` for the caller to `.swap(from, to)` on click.
@@ -510,6 +557,91 @@ pub fn draw_settings_page(
             ui.add_space(4.0);
 
             // ---------------- Right: selected category's content ----------------
+            // Appearance manages its own two-column layout (a scrollable list of
+            // pickers on the left, a static live-preview column on the right - see
+            // `draw_theme_customizer_content`) with its own internal scroll areas,
+            // so it deliberately skips both the shared `settings_content_scroll`
+            // ScrollArea below and the `SETTINGS_CONTENT_MAX_WIDTH` cap every other
+            // category uses - nesting it inside another auto-shrinking ScrollArea
+            // left it fighting that outer one for how much height it could claim,
+            // and it needs real width for two columns side by side, not a single
+            // 720px reading column.
+            // Appearance and every master-detail page (Favorites/Custom Context
+            // Menu/Tab Groups/Tags) manage their own two-column layout with
+            // their own internal scroll areas, so they all skip the shared
+            // `settings_content_scroll` ScrollArea and `SETTINGS_CONTENT_MAX_
+            // WIDTH` cap below that every other category uses - nesting one
+            // scrolling/width-capped layout inside another left both fighting
+            // the other for space (see `CLAUDE.md`'s entry on this from the
+            // Appearance page's own redesign), and a master-detail page needs
+            // real width for two side-by-side columns, not a single 720px
+            // reading column. Each still needs a plain `vertical` wrapper of
+            // its own - without one, its own top-level rows would lay out as
+            // siblings of the category sidebar in the parent `horizontal_top`
+            // above (placed to its right on the same line) instead of
+            // stacking downward, since nothing else here switches the flow
+            // back from horizontal to vertical.
+            let is_master_detail_page = matches!(
+                settings.selected_category,
+                SettingsCategory::Appearance
+                    | SettingsCategory::Favorites
+                    | SettingsCategory::ContextMenu
+                    | SettingsCategory::TabGroups
+                    | SettingsCategory::Tags
+            );
+
+            if is_master_detail_page {
+                ui.vertical(|ui| match settings.selected_category {
+                    SettingsCategory::Appearance => {
+                        if let Some(theme_action) =
+                            crate::gui::windows::customizetheme::draw_theme_customizer_content(
+                                ui,
+                                i18n,
+                                &ui.ctx().clone(),
+                                theme_customizer,
+                                palette,
+                            )
+                        {
+                            action = Some(SettingsAction::ThemeCustomizer(theme_action));
+                        }
+                    }
+                    SettingsCategory::Favorites => {
+                        if crate::gui::windows::favorites_ui::draw_favorites_settings(
+                            ui,
+                            i18n,
+                            settings,
+                            palette,
+                            icon_cache,
+                            favorites,
+                        ) {
+                            crate::core::indexer::save_favorites('C', favorites);
+                        }
+                    }
+                    SettingsCategory::ContextMenu => {
+                        if let Some(a) = crate::gui::windows::context_menu_settings_ui::draw_custom_context_menu_settings(
+                            ui, i18n, settings, palette, icon_cache,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::TabGroups => {
+                        if let Some(a) = crate::gui::windows::tab_groups_ui::draw_tab_groups_settings(
+                            ui, i18n, settings, palette, icon_cache,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::Tags => {
+                        crate::gui::windows::containers::tags::draw_tags(
+                            ui, i18n, icon_cache, palette, tags_state, settings,
+                        );
+                        if let Some(tags_action) = tags_state.pending_action.take() {
+                            item_action = Some(tags_action);
+                        }
+                    }
+                    _ => unreachable!("only master-detail categories reach this branch"),
+                });
+            } else {
             ui.vertical(|ui| {
                 ui.set_max_width(SETTINGS_CONTENT_MAX_WIDTH.min(ui.available_width()));
 
@@ -529,59 +661,16 @@ pub fn draw_settings_page(
                             SettingsCategory::Startup => {
                                 draw_startup_section(ui, i18n, settings, palette, &mut action);
                             }
-                            SettingsCategory::Appearance => {
-                                if let Some(theme_action) =
-                                    crate::gui::windows::customizetheme::draw_theme_customizer_content(
-                                        ui,
-                                        i18n,
-                                        &ui.ctx().clone(),
-                                        theme_customizer,
-                                        palette,
-                                    )
-                                {
-                                    action = Some(SettingsAction::ThemeCustomizer(theme_action));
-                                }
-                            }
-                            SettingsCategory::ContextMenu => {
-                                if let Some(a) = crate::gui::windows::context_menu_settings_ui::draw_custom_context_menu_settings(
-                                    ui, i18n, settings, palette, icon_cache,
-                                ) {
-                                    action = Some(a);
-                                }
-                            }
-                            SettingsCategory::TabGroups => {
-                                if let Some(a) = crate::gui::windows::tab_groups_ui::draw_tab_groups_settings(
-                                    ui, i18n, settings, palette, icon_cache,
-                                ) {
-                                    action = Some(a);
-                                }
-                            }
-                            SettingsCategory::Favorites => {
-                                if crate::gui::windows::favorites_ui::draw_favorites_settings(
-                                    ui,
-                                    i18n,
-                                    palette,
-                                    icon_cache,
-                                    favorites,
-                                    &mut settings.icon_picker_search,
-                                ) {
-                                    crate::core::indexer::save_favorites('C', favorites);
-                                }
-                            }
-                            SettingsCategory::Tags => {
-                                crate::gui::windows::containers::tags::draw_tags(
-                                    ui, i18n, icon_cache, palette, tags_state,
-                                );
-                                if let Some(tags_action) = tags_state.pending_action.take() {
-                                    item_action = Some(tags_action);
-                                }
-                            }
                             SettingsCategory::Advanced => {
                                 draw_advanced_section(ui, i18n, settings, palette, &mut action);
                             }
+                            _ => unreachable!(
+                                "master-detail categories are handled above, outside this shared ScrollArea"
+                            ),
                         }
                     });
             });
+            }
         });
 
         crate::gui::windows::containers::tags::draw_delete_confirmation_popup(

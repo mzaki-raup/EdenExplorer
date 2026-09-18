@@ -928,6 +928,11 @@ pub struct ItemViewerNavBarAction {
     /// clicked - the caller appends a `SavedSearch` (or shows the
     /// limit-reached message if already at `MAX_SAVED_SEARCHES`).
     pub save_search: Option<(String, crate::core::everything::SearchScope)>,
+    /// Set when a breadcrumb segment is middle-clicked (and the
+    /// `middle_click_opens_new_tab` setting is on) - opens that segment's
+    /// folder as a new tab instead of navigating the current one, matching
+    /// the same gesture the file list's own folder rows already support.
+    pub open_in_new_tab: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -1248,12 +1253,6 @@ pub struct TagPickerState {
     pub focus_requested: bool,
 }
 
-pub struct TagRenameState {
-    pub group_id: u64,
-    pub buffer: String,
-    pub should_focus: bool,
-}
-
 #[derive(Clone, Copy)]
 pub struct TagDragState {
     pub group_id: u64,
@@ -1265,7 +1264,6 @@ pub struct TagsState {
     pub groups: Vec<TagGroup>,
     pub next_group_id: u64,
     pub picker: Option<TagPickerState>,
-    pub rename_state: Option<TagRenameState>,
     pub drag_state: Option<TagDragState>,
     pub delete_confirmation: Option<u64>,
     pub pending_action: Option<ItemViewerAction>,
@@ -1278,7 +1276,6 @@ impl Default for TagsState {
             groups: Vec::new(),
             next_group_id: 1,
             picker: None,
-            rename_state: None,
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
@@ -1581,7 +1578,6 @@ impl TagsState {
                 .collect(),
             next_group_id: snapshot.next_group_id.max(1),
             picker: None,
-            rename_state: None,
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,

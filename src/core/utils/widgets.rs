@@ -424,6 +424,12 @@ pub fn draw_dropdown(
         visuals.widgets.active.bg_fill = palette.primary_active;
         apply_eden_visual_overrides(ui, palette);
         apply_eden_dropdown_visual_color_overrides(ui, palette);
+        // A fixed `width` that exceeds the available space (e.g. a narrow
+        // split pane, or Settings opened in one) overflows straight past
+        // the ui's own clip rect - `ComboBox` doesn't shrink to fit on its
+        // own. Clamping here fixes every call site at once rather than
+        // each one needing its own bound.
+        let width = width.min(ui.available_width().max(60.0));
         egui::ComboBox::from_id_salt(id)
             .width(width)
             .selected_text(selected_text)

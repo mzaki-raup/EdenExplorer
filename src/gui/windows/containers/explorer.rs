@@ -129,6 +129,7 @@ pub fn draw_tab_content(
                     is_split_pane,
                     &tags_state.groups,
                     saved_search_count,
+                    settings_window.current_settings.middle_click_opens_new_tab,
                 ));
             });
 
@@ -255,8 +256,20 @@ pub fn draw_tab_content(
 
                 // A subtle box border around the file/folder view, so a dual-pane
                 // split makes it clear at a glance where each pane's view ends.
+                // `content_rect`'s top/left/bottom are always internal (the navbar
+                // strip above, the sidebar or split divider to the left, the status
+                // bar strip below - see the `StripBuilder` this cell comes from),
+                // but its *right* edge is this pane's own right bound, which for
+                // the last/only pane is also the app's hand-painted outer window
+                // border - a real ~3-4px painted band, not a hairline. Drawing
+                // flush against it put this stroke's own pixels inside that band,
+                // reading as one slightly-thicker line rather than two separate
+                // ones. Only the right edge needs pulling in to clear it - the
+                // other three sides already had their own margin.
+                let mut content_border_rect = content_rect;
+                content_border_rect.max.x -= 6.0;
                 ui.painter().rect_stroke(
-                    content_rect,
+                    content_border_rect,
                     egui::CornerRadius::same(4),
                     egui::Stroke::new(1.5, palette.borders_default),
                     egui::StrokeKind::Inside,

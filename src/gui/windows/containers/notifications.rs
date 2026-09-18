@@ -12,6 +12,11 @@ use std::time::{Duration, Instant};
 const TOAST_DURATION: Duration = Duration::from_secs(4);
 const PANEL_WIDTH: f32 = 460.0;
 const PANEL_MAX_HEIGHT: f32 = 480.0;
+/// Rough height of one `draw_operation_row` (icon/title/status line, its
+/// progress bar slot, and the spacing+separator drawn after it) - used only
+/// to pre-reserve room for the rows about to be drawn, not as an exact
+/// measurement.
+const ROW_HEIGHT_ESTIMATE: f32 = 46.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileOpKind {
@@ -435,6 +440,23 @@ pub fn draw_notifications_button(
                         ui.add_space(8.0);
                     } else {
                         let mut actions = Vec::new();
+                        // `ScrollArea`'s own `max_height` only ever *caps*
+                        // whatever height it thinks is actually available
+                        // (`available_outer.size().at_most(max_size)`) - it
+                        // doesn't force a minimum. Inside this `Area` (as
+                        // opposed to a `Window`/`CentralPanel`), that
+                        // available-height figure can come back far smaller
+                        // than the real room below the panel, which silently
+                        // clipped the row list after only ~1 row regardless
+                        // of how many operations there actually were.
+                        // Reserving the room a row count of this size
+                        // actually needs (capped at `PANEL_MAX_HEIGHT`) before
+                        // the `ScrollArea` runs guarantees it never shrinks
+                        // below that, while still capping/scrolling once the
+                        // list genuinely exceeds the panel's max height.
+                        let wanted_height = (state.operations.len() as f32 * ROW_HEIGHT_ESTIMATE)
+                            .min(PANEL_MAX_HEIGHT);
+                        ui.set_min_height(wanted_height);
                         egui::ScrollArea::vertical()
                             .max_height(PANEL_MAX_HEIGHT)
                             .show(ui, |ui| {
