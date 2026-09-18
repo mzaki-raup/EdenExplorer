@@ -85,6 +85,14 @@ fn default_button_text_color() -> Color32 {
     Color32::from_rgb(220, 226, 232)
 }
 
+// Genuinely new UI (the circular count badges on Custom Context Menu/Tab
+// Groups' child-item counts, and the notification bell's unread count) -
+// there's no prior hardcoded look to preserve, so this is just a reasonable
+// "stands out against either theme" red rather than anything derived.
+fn default_badge_color() -> Color32 {
+    Color32::from_rgb(211, 47, 47)
+}
+
 // `apply_theme` resets `style.visuals` to egui's own stock dark/light
 // defaults before applying palette overrides, but never touched
 // `widgets.noninteractive.bg_stroke` - the color every plain `ui.separator()`
@@ -428,6 +436,11 @@ pub struct ThemePalette {
     pub toolbar_icon_hover_color: Color32,
     #[serde(default = "default_transparent")]
     pub toolbar_icon_hover_bg_color: Color32,
+
+    // The circular count badge shared by Custom Context Menu/Tab Groups'
+    // child-item counts and the notification bell's unread count.
+    #[serde(default = "default_badge_color")]
+    pub badge_color: Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -567,6 +580,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         toolbar_icon_active_color: base,
         toolbar_icon_hover_color: base,
         toolbar_icon_hover_bg_color: Color32::TRANSPARENT,
+        badge_color: default_badge_color(),
     };
     regenerate_base_derived_colors(&mut palette, true);
     palette
@@ -699,6 +713,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         toolbar_icon_active_color: base,
         toolbar_icon_hover_color: base,
         toolbar_icon_hover_bg_color: Color32::TRANSPARENT,
+        badge_color: default_badge_color(),
     };
     regenerate_base_derived_colors(&mut palette, false);
     palette

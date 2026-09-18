@@ -125,7 +125,17 @@ pub fn draw_tags(
                                 }
                                 egui::Frame::NONE
                                     .fill(group_color.linear_multiply(0.18))
-                                    .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                    // A corner radius past the badge's own
+                                    // half-height (egui clamps it down to the
+                                    // actual max it can draw) reads as a
+                                    // circle for a single digit and a pill
+                                    // for two-plus - matches the circular
+                                    // badge used for Custom Context Menu/Tab
+                                    // Groups' own counts (`count_badge` in
+                                    // `settings.rs`), just keeping this
+                                    // badge's own per-group tag color instead
+                                    // of the shared `badge_color` field.
+                                    .corner_radius(egui::CornerRadius::same(255))
                                     .inner_margin(egui::Margin::symmetric(7, 2))
                                     .show(ui, |ui| {
                                         ui.label(

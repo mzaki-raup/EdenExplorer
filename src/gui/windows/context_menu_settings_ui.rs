@@ -19,8 +19,8 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::settings::{
-    empty_state_hint, entry_card, master_detail_column_size, no_selection_hint, reorder_buttons,
-    setting_checkbox, setting_label, setting_row, settings_section,
+    count_badge, empty_state_hint, entry_card, master_detail_column_size, no_selection_hint,
+    reorder_buttons, setting_checkbox, setting_label, setting_row, settings_section,
 };
 use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
@@ -181,10 +181,7 @@ pub fn draw_custom_context_menu_settings(
                                     remove_index = Some(index);
                                 }
                                 if entry.is_submenu {
-                                    ui.label(
-                                        egui::RichText::new(format!("({})", entry.children.len()))
-                                            .color(palette.tooltip_text_color),
-                                    );
+                                    count_badge(ui, palette, entry.children.len());
                                 }
                             });
                         });

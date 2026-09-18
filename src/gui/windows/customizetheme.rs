@@ -1725,6 +1725,24 @@ pub fn draw_theme_customizer_content(
                                                 &mut editing_palette.navigation_toast_bg_color,
                                             );
                                         });
+
+                                    ui.add_space(10.0);
+                                    ui.separator();
+
+                                    eden_text_label(ui, palette, &i18n.tr("theme_colors_badge"));
+                                    ui.add_space(6.0);
+                                    egui::Grid::new("theme_badge")
+                                        .num_columns(2)
+                                        .spacing([12.0, 6.0])
+                                        .show(ui, |ui| {
+                                            changed |= color_row(
+                                                ui,
+                                                palette,
+                                                i18n,
+                                                "theme_colors_badge_color",
+                                                &mut editing_palette.badge_color,
+                                            );
+                                        });
                                 });
                             });
                     },
@@ -2266,6 +2284,43 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap:
                                 );
                             });
                         }
+
+                        ui.add_space(10.0);
+                        // Mirrors the real notification bell + its count
+                        // badge exactly (`notifications.rs`) so a Badge
+                        // Color edit shows up here identically to how it'll
+                        // look on the real bell.
+                        ui.vertical(|ui| {
+                            ui.add_space((ROW2_HEIGHT - 24.0) / 2.0);
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(24.0, 24.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                regular::BELL,
+                                egui::FontId::proportional(16.0),
+                                p.icon_color,
+                            );
+                            let badge_center = rect.right_top() + egui::vec2(-2.0, 2.0);
+                            let fill_luminance = 0.299 * p.badge_color.r() as f32
+                                + 0.587 * p.badge_color.g() as f32
+                                + 0.114 * p.badge_color.b() as f32;
+                            let badge_text_color = if fill_luminance > 140.0 {
+                                egui::Color32::BLACK
+                            } else {
+                                egui::Color32::WHITE
+                            };
+                            ui.painter().circle_filled(badge_center, 8.0, p.badge_color);
+                            ui.painter().text(
+                                badge_center,
+                                egui::Align2::CENTER_CENTER,
+                                "3",
+                                egui::FontId::proportional(9.0),
+                                badge_text_color,
+                            );
+                        });
                     });
                 });
             });

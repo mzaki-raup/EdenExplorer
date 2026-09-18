@@ -17,7 +17,7 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::settings::{
-    empty_state_hint, master_detail_column_size, no_selection_hint, reorder_buttons,
+    count_badge, empty_state_hint, master_detail_column_size, no_selection_hint, reorder_buttons,
     setting_label, setting_row, settings_section,
 };
 use crate::gui::windows::structs::SettingsWindow;
@@ -128,10 +128,7 @@ pub fn draw_tab_groups_settings(
                                 {
                                     remove_index = Some(index);
                                 }
-                                ui.label(
-                                    egui::RichText::new(format!("({})", group.paths.len()))
-                                        .color(palette.tooltip_text_color),
-                                );
+                                count_badge(ui, palette, group.paths.len());
                             });
                         });
 
