@@ -2198,129 +2198,126 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap:
 
             ui.add_space(12.0);
 
-            // --- Row 2: Buttons | Notifications & Status ---
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    preview_caption(ui, p, "Buttons");
-                    ui.horizontal(|ui| {
-                        preview_swatch(
-                            ui,
-                            egui::vec2(64.0, ROW2_HEIGHT),
-                            p.button_background,
-                            egui::Stroke::new(1.0, p.button_stroke),
-                            p.medium_radius,
-                            "Button",
-                            p.button_text_color,
-                        );
-                        ui.add_space(6.0);
-                        preview_swatch(
-                            ui,
-                            egui::vec2(64.0, ROW2_HEIGHT),
-                            p.primary,
-                            egui::Stroke::NONE,
-                            p.medium_radius,
-                            "Primary",
-                            p.primary_button_text_color,
-                        );
-                        ui.add_space(6.0);
-                        preview_swatch(
-                            ui,
-                            egui::vec2(64.0, ROW2_HEIGHT),
-                            p.button_disabled_bg,
-                            egui::Stroke::NONE,
-                            p.medium_radius,
-                            "Disabled",
-                            p.button_disabled_text,
-                        );
-                    });
+            // --- Row 2: Buttons (own row - Notifications & Status used to
+            // share this row side-by-side, but that squeezed both clusters
+            // together; it's now its own row below instead) ---
+            ui.vertical(|ui| {
+                preview_caption(ui, p, "Buttons");
+                ui.horizontal(|ui| {
+                    preview_swatch(
+                        ui,
+                        egui::vec2(64.0, ROW2_HEIGHT),
+                        p.button_background,
+                        egui::Stroke::new(1.0, p.button_stroke),
+                        p.medium_radius,
+                        "Button",
+                        p.button_text_color,
+                    );
+                    ui.add_space(6.0);
+                    preview_swatch(
+                        ui,
+                        egui::vec2(64.0, ROW2_HEIGHT),
+                        p.primary,
+                        egui::Stroke::NONE,
+                        p.medium_radius,
+                        "Primary",
+                        p.primary_button_text_color,
+                    );
+                    ui.add_space(6.0);
+                    preview_swatch(
+                        ui,
+                        egui::vec2(64.0, ROW2_HEIGHT),
+                        p.button_disabled_bg,
+                        egui::Stroke::NONE,
+                        p.medium_radius,
+                        "Disabled",
+                        p.button_disabled_text,
+                    );
                 });
+            });
 
-                ui.add_space(16.0);
-                ui.add(egui::Separator::default().vertical().spacing(4.0));
-                ui.add_space(16.0);
+            ui.add_space(12.0);
 
-                ui.vertical(|ui| {
-                    preview_caption(ui, p, "Notifications & Status");
-                    ui.horizontal(|ui| {
-                        preview_swatch(
-                            ui,
-                            egui::vec2(96.0, ROW2_HEIGHT),
-                            p.notification_bg_color,
-                            egui::Stroke::new(1.0, p.notification_border_color),
-                            p.medium_radius,
-                            "Notification",
-                            p.notification_header_text_color,
-                        );
-                        ui.add_space(6.0);
-                        preview_swatch(
-                            ui,
-                            egui::vec2(80.0, ROW2_HEIGHT),
-                            p.navigation_toast_bg_color,
-                            egui::Stroke::new(1.0, p.navigation_toast_border_color),
-                            p.medium_radius,
-                            "Toast",
-                            p.text_normal,
-                        );
-                        ui.add_space(10.0);
-                        for (color, label) in [
-                            (p.notification_status_success, "OK"),
-                            (p.notification_status_warning, "..."),
-                            (p.notification_status_error, "!"),
-                            (p.notification_status_info, "i"),
-                        ] {
-                            ui.vertical(|ui| {
-                                ui.add_space((ROW2_HEIGHT - 20.0) / 2.0);
-                                let (rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(20.0, 20.0),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().circle_filled(rect.center(), 8.0, color);
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    label,
-                                    egui::FontId::proportional(8.0),
-                                    p.icon_color,
-                                );
-                            });
-                        }
-
-                        ui.add_space(10.0);
-                        // Mirrors the real notification bell + its count
-                        // badge exactly (`notifications.rs`) so a Badge
-                        // Color edit shows up here identically to how it'll
-                        // look on the real bell.
+            // --- Row 2b: Notifications & Status (full width, own row) ---
+            ui.vertical(|ui| {
+                preview_caption(ui, p, "Notifications & Status");
+                ui.horizontal(|ui| {
+                    preview_swatch(
+                        ui,
+                        egui::vec2(96.0, ROW2_HEIGHT),
+                        p.notification_bg_color,
+                        egui::Stroke::new(1.0, p.notification_border_color),
+                        p.medium_radius,
+                        "Notification",
+                        p.notification_header_text_color,
+                    );
+                    ui.add_space(6.0);
+                    preview_swatch(
+                        ui,
+                        egui::vec2(80.0, ROW2_HEIGHT),
+                        p.navigation_toast_bg_color,
+                        egui::Stroke::new(1.0, p.navigation_toast_border_color),
+                        p.medium_radius,
+                        "Toast",
+                        p.text_normal,
+                    );
+                    ui.add_space(10.0);
+                    for (color, label) in [
+                        (p.notification_status_success, "OK"),
+                        (p.notification_status_warning, "..."),
+                        (p.notification_status_error, "!"),
+                        (p.notification_status_info, "i"),
+                    ] {
                         ui.vertical(|ui| {
-                            ui.add_space((ROW2_HEIGHT - 24.0) / 2.0);
+                            ui.add_space((ROW2_HEIGHT - 20.0) / 2.0);
                             let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(24.0, 24.0),
+                                egui::vec2(20.0, 20.0),
                                 egui::Sense::hover(),
                             );
+                            ui.painter().circle_filled(rect.center(), 8.0, color);
                             ui.painter().text(
                                 rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                regular::BELL,
-                                egui::FontId::proportional(16.0),
+                                label,
+                                egui::FontId::proportional(8.0),
                                 p.icon_color,
                             );
-                            let badge_center = rect.right_top() + egui::vec2(-2.0, 2.0);
-                            let fill_luminance = 0.299 * p.badge_color.r() as f32
-                                + 0.587 * p.badge_color.g() as f32
-                                + 0.114 * p.badge_color.b() as f32;
-                            let badge_text_color = if fill_luminance > 140.0 {
-                                egui::Color32::BLACK
-                            } else {
-                                egui::Color32::WHITE
-                            };
-                            ui.painter().circle_filled(badge_center, 8.0, p.badge_color);
-                            ui.painter().text(
-                                badge_center,
-                                egui::Align2::CENTER_CENTER,
-                                "3",
-                                egui::FontId::proportional(9.0),
-                                badge_text_color,
-                            );
                         });
+                    }
+
+                    ui.add_space(10.0);
+                    // Mirrors the real notification bell + its count
+                    // badge exactly (`notifications.rs`) so a Badge
+                    // Color edit shows up here identically to how it'll
+                    // look on the real bell.
+                    ui.vertical(|ui| {
+                        ui.add_space((ROW2_HEIGHT - 24.0) / 2.0);
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            regular::BELL,
+                            egui::FontId::proportional(16.0),
+                            p.icon_color,
+                        );
+                        let badge_center = rect.right_top() + egui::vec2(-2.0, 2.0);
+                        let fill_luminance = 0.299 * p.badge_color.r() as f32
+                            + 0.587 * p.badge_color.g() as f32
+                            + 0.114 * p.badge_color.b() as f32;
+                        let badge_text_color = if fill_luminance > 140.0 {
+                            egui::Color32::BLACK
+                        } else {
+                            egui::Color32::WHITE
+                        };
+                        ui.painter().circle_filled(badge_center, 8.0, p.badge_color);
+                        ui.painter().text(
+                            badge_center,
+                            egui::Align2::CENTER_CENTER,
+                            "3",
+                            egui::FontId::proportional(9.0),
+                            badge_text_color,
+                        );
                     });
                 });
             });
