@@ -497,9 +497,17 @@ pub fn draw_item_viewer(
             let ctx = ui.ctx().clone();
             let table_rect = ui.available_rect_before_wrap();
             let left_margin = 8.0;
+            // Matches the box border's own right inset (`content_border_rect`
+            // in `explorer.rs`, `content_rect.max.x -= 6.0`) - without this,
+            // a selected row's highlight (painted across the table's own
+            // full row width by `row.set_selected`) extended all the way to
+            // the pane's true right edge, ~6px past where that border is
+            // actually drawn, reading as the highlight overflowing outside
+            // the visible box in a dual-pane split.
+            let right_margin = 6.0;
             let table_rect = egui::Rect::from_min_max(
                 egui::pos2(table_rect.left() + left_margin, table_rect.top()),
-                table_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
+                table_rect.right_bottom() - egui::vec2(right_margin, BOTTOM_PADDING),
             );
 
             ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {

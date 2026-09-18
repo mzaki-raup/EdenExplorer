@@ -149,7 +149,15 @@ pub fn draw_theme_customizer_content(
             // which silently broke both columns' `ScrollArea`/`allocate_ui_
             // with_layout` sizing (Typography rendered as a ~100px sliver with
             // hundreds of px of dead space below it).
-            let column_height = ui.available_height();
+            // Reserves room for the FOOTER row (Export/Import/Reset Theme
+            // buttons, drawn after both columns below) *before* handing the
+            // rest of the available height to those columns - otherwise
+            // `column_height` claims the page's entire remaining height for
+            // itself, leaving the footer (and its own trailing `add_space`)
+            // to render past that budget with no margin from the window's
+            // own bottom border, since nothing reserved space for it.
+            const FOOTER_RESERVED_HEIGHT: f32 = 44.0;
+            let column_height = (ui.available_height() - FOOTER_RESERVED_HEIGHT).max(0.0);
 
             ui.horizontal(|ui| {
                 ui.allocate_ui_with_layout(
