@@ -99,6 +99,7 @@ pub fn draw_theme_customizer_content(
             // would conflict with it for as long as `editing_palette` is
             // still alive, which is the whole rest of this function.
             let tab_gap_for_preview = customizer.tab_gap;
+            let min_tab_width_for_preview = customizer.min_tab_width;
 
             let editing_palette = match customizer.selected_mode {
                 ThemeMode::Dark => &mut customizer.dark_palette,
@@ -108,6 +109,7 @@ pub fn draw_theme_customizer_content(
             let mut changed = false;
             let mut sidebar_width_changed = false;
             let mut tab_gap_changed = false;
+            let mut min_tab_width_changed = false;
             let mut custom_themes_changed = false;
 
             // Two-column layout: every picker/section scrolls independently
@@ -448,6 +450,30 @@ pub fn draw_theme_customizer_content(
                                                     );
                                                     if resp.changed() {
                                                         tab_gap_changed = true;
+                                                    }
+                                                },
+                                            );
+                                            ui.end_row();
+
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_min_tab_width"),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    let resp = ui.add_sized(
+                                                        egui::vec2(90.0, 0.0),
+                                                        egui::DragValue::new(
+                                                            &mut customizer.min_tab_width,
+                                                        )
+                                                        .range(60.0..=300.0)
+                                                        .speed(1.0),
+                                                    );
+                                                    if resp.changed() {
+                                                        min_tab_width_changed = true;
                                                     }
                                                 },
                                             );
@@ -1763,7 +1789,13 @@ pub fn draw_theme_customizer_content(
                             .id_salt("theme_preview_scroll")
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
-                                draw_theme_preview(ui, editing_palette, i18n, tab_gap_for_preview);
+                                draw_theme_preview(
+                                    ui,
+                                    editing_palette,
+                                    i18n,
+                                    tab_gap_for_preview,
+                                    min_tab_width_for_preview,
+                                );
                             });
                     },
                 );
@@ -1806,6 +1838,12 @@ pub fn draw_theme_customizer_content(
 
             if tab_gap_changed {
                 action = Some(ThemeCustomizerAction::TabGapChanged(customizer.tab_gap));
+            }
+
+            if min_tab_width_changed {
+                action = Some(ThemeCustomizerAction::MinTabWidthChanged(
+                    customizer.min_tab_width,
+                ));
             }
 
             if let Some(pending_id) = customizer.custom_theme_delete_confirm {
@@ -1968,7 +2006,7 @@ fn preview_toolbar_icon(ui: &mut egui::Ui, p: &ThemePalette, icon: &str, is_acti
 /// that's where it meets the content below it), using the same active/
 /// inactive radius and fill fields so the Tab Corner Radius picker has
 /// genuine visual feedback instead of needing several real tabs open to see.
-fn preview_tab(ui: &mut egui::Ui, p: &ThemePalette, title: &str, active: bool) {
+fn preview_tab(ui: &mut egui::Ui, p: &ThemePalette, title: &str, active: bool, min_width: f32) {
     let radius = if active {
         p.tab_active_radius
     } else {
@@ -1995,10 +2033,14 @@ fn preview_tab(ui: &mut egui::Ui, p: &ThemePalette, title: &str, active: bool) {
     let galley = ui
         .painter()
         .layout_no_wrap(title.to_string(), font_id.clone(), text_color);
-    let (rect, _) = ui.allocate_exact_size(
-        galley.size() + egui::vec2(20.0, 12.0),
-        egui::Sense::hover(),
-    );
+    // Scaled down from the real tab strip's own min width (`tabs.rs`'s
+    // `min_tab_width`) to fit this compact mockup, but still proportional -
+    // widening the real setting visibly widens these preview tabs too, once
+    // it exceeds what the title text alone would need.
+    let mockup_min_width = (min_width * 0.55).max(1.0);
+    let natural_size = galley.size() + egui::vec2(20.0, 12.0);
+    let size = egui::vec2(natural_size.x.max(mockup_min_width), natural_size.y);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     ui.painter().rect_filled(rect, rounding, fill);
     ui.painter().galley(
         rect.center() - galley.size() / 2.0,
@@ -2019,7 +2061,13 @@ fn preview_tab(ui: &mut egui::Ui, p: &ThemePalette, title: &str, active: bool) {
 /// content height per row keeps them ending at the same y too, rather than
 /// each cluster's box floating at whatever size its own content happened to
 /// need.
-fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap: f32) {
+fn draw_theme_preview(
+    ui: &mut egui::Ui,
+    p: &ThemePalette,
+    i18n: &I18n,
+    tab_gap: f32,
+    min_tab_width: f32,
+) {
     const ROW1_HEIGHT: f32 = 52.0;
     const ROW2_HEIGHT: f32 = 26.0;
 
@@ -2324,9 +2372,10 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap:
 
             ui.add_space(12.0);
 
-            // --- Row 3: Tabs (full width) - reflects both Tab Corner Radius
-            // and Tab Gap live, since neither previously had any visual
-            // feedback short of actually opening several real tabs.
+            // --- Row 3: Tabs (full width) - reflects Tab Corner Radius, Tab
+            // Gap, and Minimum Tab Width live, since none of these
+            // previously had any visual feedback short of actually opening
+            // several real tabs.
             ui.vertical(|ui| {
                 preview_caption(ui, p, "Tabs");
                 ui.horizontal(|ui| {
@@ -2342,7 +2391,7 @@ fn draw_theme_preview(ui: &mut egui::Ui, p: &ThemePalette, i18n: &I18n, tab_gap:
                     for (title, active) in
                         [("Downloads", true), ("Documents", false), ("Pictures", false)]
                     {
-                        preview_tab(ui, p, title, active);
+                        preview_tab(ui, p, title, active, min_tab_width);
                     }
                 });
             });

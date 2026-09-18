@@ -388,6 +388,7 @@ launch-window-rejected =
     The running EdenExplorer window did not accept the request.
 theme_sidebar_item_spacing_y = Sidebar Item Vertical Spacing
 theme_tab_gap = Tab Gap
+theme_min_tab_width = Minimum Tab Width
 theme_tab_corner_radius = Tab Corner Radius
 restore = Restore
 maximize = Maximize

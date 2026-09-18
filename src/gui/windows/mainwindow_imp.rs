@@ -5099,7 +5099,19 @@ impl MainWindow {
             ThemeCustomizerAction::TabGapChanged(gap) => {
                 self.tab_gap = gap;
                 crate::core::indexer::save_tab_layout(
-                    &crate::core::indexer::TabLayoutSnapshot { tab_gap: gap },
+                    &crate::core::indexer::TabLayoutSnapshot {
+                        tab_gap: gap,
+                        min_tab_width: self.min_tab_width,
+                    },
+                );
+            }
+            ThemeCustomizerAction::MinTabWidthChanged(width) => {
+                self.min_tab_width = width;
+                crate::core::indexer::save_tab_layout(
+                    &crate::core::indexer::TabLayoutSnapshot {
+                        tab_gap: self.tab_gap,
+                        min_tab_width: width,
+                    },
                 );
             }
         }

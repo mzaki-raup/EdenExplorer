@@ -560,6 +560,8 @@ pub fn save_sidebar_sections(snapshot: &SidebarSectionsSnapshot) {
 #[derive(Serialize, Deserialize)]
 pub struct TabLayoutSnapshot {
     pub tab_gap: f32,
+    #[serde(default = "default_min_tab_width")]
+    pub min_tab_width: f32,
 }
 
 fn default_tab_gap() -> f32 {
@@ -569,10 +571,28 @@ fn default_tab_gap() -> f32 {
     8.0
 }
 
+fn default_min_tab_width() -> f32 {
+    // Matches `tabs.rs`'s own previous hardcoded `MIN_TAB_WIDTH` constant -
+    // zero visual change for anyone until they touch the new Appearance >
+    // Layout setting. Per CLAUDE.md's own documented finding, appending
+    // this field still means an *existing* `tab_layout.bin` (one that only
+    // has `tab_gap`) fails to decode outright - `#[serde(default = ...)]`
+    // doesn't rescue a trailing field even via the safe `take_from_bytes`
+    // pattern below, it's `load_tab_layout`'s own `.unwrap_or_default()`
+    // fallback that saves it. That means a user who already customized
+    // `tab_gap` loses that customization too, once, on the first launch
+    // after this field is added - contained to just this small file
+    // (unlike an equivalent `ThemePalette` field, which would reset the
+    // user's entire color palette) rather than something this addition
+    // avoids entirely.
+    110.0
+}
+
 impl Default for TabLayoutSnapshot {
     fn default() -> Self {
         Self {
             tab_gap: default_tab_gap(),
+            min_tab_width: default_min_tab_width(),
         }
     }
 }

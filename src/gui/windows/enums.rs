@@ -15,6 +15,10 @@ pub enum ThemeCustomizerAction {
     /// field to `ThemePalette` resets every existing user's saved colors on
     /// next load, see `CLAUDE.md`'s documented finding on this).
     TabGapChanged(f32),
+    /// The Layout section's minimum-tab-width control changed - same
+    /// reasoning/persistence as `TabGapChanged` (own small file, not
+    /// `ThemePalette`).
+    MinTabWidthChanged(f32),
     /// The customizer's own Dark/Light toggle was clicked - switches which
     /// palette is being *edited*, but previously never touched the live
     /// app theme (`MainWindow::theme`), so editing the mode that wasn't

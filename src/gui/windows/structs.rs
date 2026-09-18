@@ -28,6 +28,10 @@ pub struct ThemeCustomizer {
     /// that struct resets every existing user's saved colors on next load
     /// (see `CLAUDE.md`).
     pub tab_gap: f32,
+    /// Draft copy of the tab strip's persisted minimum tab width (see
+    /// `core::indexer::TabLayoutSnapshot::min_tab_width`) - same file as
+    /// `tab_gap` above, for the same reason.
+    pub min_tab_width: f32,
     /// User-created named themes (name + accent + secondary, like a
     /// built-in `ThemePresetDef`) - persisted in their own file via
     /// `core::indexer::{load_custom_themes, save_custom_themes}`, not part
@@ -62,6 +66,7 @@ impl Default for ThemeCustomizer {
             dark_palette,
             sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
             tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
+            min_tab_width: crate::core::indexer::load_tab_layout().min_tab_width,
             custom_themes: custom_themes_snapshot
                 .as_ref()
                 .map(|s| s.items.clone())
