@@ -113,13 +113,23 @@ pub fn draw_favorites_settings(
                             {
                                 ui.add(egui::Image::new(&texture).fit_to_exact_size(ICON_ROW_SIZE));
                             } else if let Some(glyph) = &icon_glyph {
-                                ui.label(RichText::new(glyph.as_str()).size(16.0));
+                                ui.add(
+                                    egui::Label::new(RichText::new(glyph.as_str()).size(16.0))
+                                        .selectable(false),
+                                );
                             } else if let Some(texture) = icon_cache.get(&path_for_icon, true) {
                                 ui.add(egui::Image::new(&texture).fit_to_exact_size(ICON_ROW_SIZE));
                             } else {
-                                ui.label(regular::FOLDER);
+                                // `.selectable(false)` - a plain `ui.label` is
+                                // selectable text by default in this app's
+                                // style, which registers its own click sense
+                                // *after* the row's own background sense and
+                                // would otherwise steal a click meant to
+                                // select the row (see `list_row`'s own doc
+                                // comment on background-sensed-first).
+                                ui.add(egui::Label::new(regular::FOLDER).selectable(false));
                             }
-                            ui.label(RichText::new(&label).strong());
+                            ui.add(egui::Label::new(RichText::new(&label).strong()).selectable(false));
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {
@@ -352,6 +362,14 @@ fn list_row(
     selected: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    // Pin this row's own automatic between-widget spacing so the gap between
+    // rows is fully controlled by the trailing `add_space` below, regardless
+    // of whatever ambient item_spacing this page's earlier buttons left the
+    // `ui` in - see the identical comment in `context_menu_settings_ui.rs`'s
+    // `list_row` for why that ambient state isn't reliable across pages that
+    // otherwise share this exact helper.
+    ui.spacing_mut().item_spacing.y = 0.0;
+
     let row_height = ui.spacing().interact_size.y + 20.0;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
@@ -380,7 +398,7 @@ fn list_row(
         ui.horizontal_centered(|ui| add_contents(ui));
     });
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     response
 }

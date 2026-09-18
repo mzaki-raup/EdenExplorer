@@ -497,6 +497,9 @@ theme_colors_navigation_toast = Navigation Toast
 theme_colors_navigation_toast_border = Toast Border
 theme_colors_navigation_toast_bg = Toast Background
 
+theme_colors_badge = Badge
+theme_colors_badge_color = Badge Color
+
 theme_colors_primary_button_text = Primary Button Text
 theme_colors_button_disabled_bg = Disabled Button Background
 theme_colors_button_disabled_text = Disabled Button Text

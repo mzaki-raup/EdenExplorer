@@ -19,8 +19,8 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::settings::{
-    empty_state_hint, entry_card, master_detail_column_size, no_selection_hint, reorder_buttons,
-    setting_checkbox, setting_label, setting_row, settings_section,
+    count_badge, empty_state_hint, entry_card, master_detail_column_size, no_selection_hint,
+    reorder_buttons, setting_checkbox, setting_label, setting_row, settings_section,
 };
 use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
@@ -167,8 +167,18 @@ pub fn draw_custom_context_menu_settings(
                         let is_selected = Some(entry.id) == settings.selected_context_menu_id;
 
                         let row = list_row(ui, palette, is_selected, |ui| {
-                            ui.label(&icon);
-                            ui.label(egui::RichText::new(&label).strong());
+                            // `.selectable(false)` on both - a plain
+                            // `ui.label` is selectable text by default in
+                            // this app's style, which registers its own
+                            // click sense *after* the row's own background
+                            // sense and would otherwise steal a click meant
+                            // to select the row (see `list_row`'s own doc
+                            // comment on background-sensed-first).
+                            ui.add(egui::Label::new(&icon).selectable(false));
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&label).strong())
+                                    .selectable(false),
+                            );
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {
@@ -181,10 +191,7 @@ pub fn draw_custom_context_menu_settings(
                                     remove_index = Some(index);
                                 }
                                 if entry.is_submenu {
-                                    ui.label(
-                                        egui::RichText::new(format!("({})", entry.children.len()))
-                                            .color(palette.tooltip_text_color),
-                                    );
+                                    count_badge(ui, palette, entry.children.len());
                                 }
                             });
                         });
@@ -385,6 +392,18 @@ fn list_row(
     selected: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    // Pin this row's own automatic between-widget spacing rather than
+    // trusting whatever this page's earlier buttons happened to leave it at
+    // - `eden_button`'s style override only survives on whichever `Ui` it
+    // was actually called on, so a button wrapped in its own nested
+    // `ui.horizontal(|ui| ...)` (as this page's Add/Export/Import buttons
+    // are) never leaks that override back out to the list's own `ui`, while
+    // another page calling a button directly on its outer `ui` does - two
+    // pages sharing this exact `list_row` source can otherwise render a
+    // visibly different gap between rows for that reason alone. The
+    // trailing `add_space` below is what actually controls the gap now.
+    ui.spacing_mut().item_spacing.y = 0.0;
+
     let row_height = ui.spacing().interact_size.y + 20.0;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
@@ -413,7 +432,7 @@ fn list_row(
         ui.horizontal_centered(|ui| add_contents(ui));
     });
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     response
 }

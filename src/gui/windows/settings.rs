@@ -406,6 +406,27 @@ pub(crate) fn no_selection_hint(ui: &mut egui::Ui, palette: &ThemePalette, icon:
     });
 }
 
+/// A small circular count badge - the same soft-fill/colored-text look as
+/// the Tags page's own per-group item count, but rounded far enough (a
+/// corner radius past the badge's own half-height, which egui clamps down
+/// to the actual max it can draw) to read as a circle for a single digit and
+/// a pill for two or more - there's no fixed width to clip a wider count
+/// against in the first place, unlike trying to force a literal fixed-size
+/// circle. Used by Custom Context Menu/Tab Groups' child-item counts.
+pub(crate) fn count_badge(ui: &mut egui::Ui, palette: &ThemePalette, count: usize) {
+    egui::Frame::NONE
+        .fill(palette.badge_color.linear_multiply(0.18))
+        .corner_radius(egui::CornerRadius::same(255))
+        .inner_margin(egui::Margin::symmetric(7, 2))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new(count.to_string())
+                    .size(palette.text_size - 1.0)
+                    .color(palette.badge_color),
+            );
+        });
+}
+
 /// Draws small up/down move buttons for reordering `index` within a list of
 /// `len` items - disabled at whichever end doesn't apply. Returns
 /// `Some((from, to))` for the caller to `.swap(from, to)` on click.

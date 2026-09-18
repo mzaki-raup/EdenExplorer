@@ -102,13 +102,29 @@ pub fn draw_tags(
                             // with no family override silently draws the
                             // outline glyph anyway. Matches the sidebar's own
                             // solid-filled tag icon (`sidebar.rs`).
-                            ui.label(
-                                egui::RichText::new(egui_phosphor::fill::TAG)
-                                    .family(egui::FontFamily::Name("phosphor_fill".into()))
-                                    .size(palette.text_size + 3.0)
-                                    .color(group_color),
+                            // `.selectable(false)` on both - a plain `ui.label`
+                            // is selectable text by default in this app's
+                            // style, which registers its own click-and-drag
+                            // sense *after* the row's own background sense
+                            // (`list_row`'s `allocate_exact_size` call) - per
+                            // egui's later-registered-sense-wins rule (already
+                            // relied on deliberately for this row's own
+                            // reorder/delete buttons), an unselectable label
+                            // would otherwise silently steal a click meant to
+                            // select the row instead of the text.
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(egui_phosphor::fill::TAG)
+                                        .family(egui::FontFamily::Name("phosphor_fill".into()))
+                                        .size(palette.text_size + 3.0)
+                                        .color(group_color),
+                                )
+                                .selectable(false),
                             );
-                            ui.label(egui::RichText::new(&group_name).strong());
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&group_name).strong())
+                                    .selectable(false),
+                            );
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) =
@@ -125,7 +141,17 @@ pub fn draw_tags(
                                 }
                                 egui::Frame::NONE
                                     .fill(group_color.linear_multiply(0.18))
-                                    .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                    // A corner radius past the badge's own
+                                    // half-height (egui clamps it down to the
+                                    // actual max it can draw) reads as a
+                                    // circle for a single digit and a pill
+                                    // for two-plus - matches the circular
+                                    // badge used for Custom Context Menu/Tab
+                                    // Groups' own counts (`count_badge` in
+                                    // `settings.rs`), just keeping this
+                                    // badge's own per-group tag color instead
+                                    // of the shared `badge_color` field.
+                                    .corner_radius(egui::CornerRadius::same(255))
                                     .inner_margin(egui::Margin::symmetric(7, 2))
                                     .show(ui, |ui| {
                                         ui.label(
@@ -444,6 +470,14 @@ fn list_row(
     selected: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    // Pin this row's own automatic between-widget spacing so the gap between
+    // rows is fully controlled by the trailing `add_space` below, regardless
+    // of whatever ambient item_spacing this page's earlier buttons left the
+    // `ui` in - see the identical comment in `context_menu_settings_ui.rs`'s
+    // `list_row` for why that ambient state isn't reliable across pages that
+    // otherwise share this exact helper.
+    ui.spacing_mut().item_spacing.y = 0.0;
+
     let row_height = ui.spacing().interact_size.y + 20.0;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
@@ -472,7 +506,7 @@ fn list_row(
         ui.horizontal_centered(|ui| add_contents(ui));
     });
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     response
 }

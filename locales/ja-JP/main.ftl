@@ -501,6 +501,9 @@ theme_colors_navigation_toast = ナビゲーショントースト
 theme_colors_navigation_toast_border = トースト枠線
 theme_colors_navigation_toast_bg = トースト背景
 
+theme_colors_badge = バッジ
+theme_colors_badge_color = バッジの色
+
 theme_colors_primary_button_text = 主要ボタンのテキスト
 theme_colors_button_disabled_bg = 無効ボタンの背景
 theme_colors_button_disabled_text = 無効ボタンのテキスト

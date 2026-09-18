@@ -1,5 +1,5 @@
 use crate::core::robocopy::{RoboFinish, RobocopyHandle, RobocopyUpdate};
-use crate::core::utils::widgets::{clickable_icon, eden_button};
+use crate::core::utils::widgets::{clickable_icon, clickable_icon_sized, eden_button};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use eframe::egui;
@@ -17,6 +17,10 @@ const PANEL_MAX_HEIGHT: f32 = 480.0;
 /// to pre-reserve room for the rows about to be drawn, not as an exact
 /// measurement.
 const ROW_HEIGHT_ESTIMATE: f32 = 46.0;
+/// The bell icon's own glyph size - bumped up from the previous default
+/// (`clickable_icon`'s plain `FontId::default().size`) so it reads clearly
+/// at a glance next to the window controls, rather than blending in.
+const BELL_ICON_SIZE: f32 = 20.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileOpKind {
@@ -359,7 +363,7 @@ pub fn draw_notifications_button(
     // right of this widget (the window's minimize button, in practice).
     ui.add_space(4.0);
 
-    let resp = clickable_icon(ui, icon, palette)
+    let resp = clickable_icon_sized(ui, icon, palette, BELL_ICON_SIZE)
         .on_hover_text(
             RichText::new(i18n.tr("tooltip_notifications"))
                 .size(palette.tooltip_text_size)
@@ -367,27 +371,31 @@ pub fn draw_notifications_button(
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    if in_progress > 0 {
-        // The badge fills with the user's own accent color rather than a
-        // fixed red, so it follows their chosen theme like the rest of the
-        // app - the text color is then picked for contrast against
-        // whatever that accent turns out to be (same luminance check used
-        // for selection text in `itemviewer_preview.rs`).
+    // The badge shows the total notification count (not just in-progress
+    // ones) - "how many are in the panel" rather than "how many are still
+    // running" - using the user's own themeable `badge_color` rather than
+    // the accent, since the accent is used for so many other things already
+    // that a badge sharing it can blend in instead of standing out; the text
+    // color is then picked for contrast against whatever that badge color
+    // turns out to be (same luminance check used for selection text in
+    // `itemviewer_preview.rs`).
+    let badge_count = state.operations.len();
+    if badge_count > 0 {
         let badge_center = resp.rect.right_top() + egui::vec2(-2.0, 2.0);
-        let fill_luminance = 0.299 * palette.primary.r() as f32
-            + 0.587 * palette.primary.g() as f32
-            + 0.114 * palette.primary.b() as f32;
+        let fill_luminance = 0.299 * palette.badge_color.r() as f32
+            + 0.587 * palette.badge_color.g() as f32
+            + 0.114 * palette.badge_color.b() as f32;
         let badge_text_color = if fill_luminance > 140.0 {
             Color32::BLACK
         } else {
             Color32::WHITE
         };
         ui.painter()
-            .circle_filled(badge_center, 7.0, palette.primary);
+            .circle_filled(badge_center, 8.0, palette.badge_color);
         ui.painter().text(
             badge_center,
             Align2::CENTER_CENTER,
-            in_progress.to_string(),
+            badge_count.to_string(),
             FontId::proportional(9.0),
             badge_text_color,
         );

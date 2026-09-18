@@ -501,6 +501,9 @@ theme_colors_navigation_toast = 导航提示
 theme_colors_navigation_toast_border = 提示边框
 theme_colors_navigation_toast_bg = 提示背景
 
+theme_colors_badge = 徽章
+theme_colors_badge_color = 徽章颜色
+
 theme_colors_primary_button_text = 主按钮文字
 theme_colors_button_disabled_bg = 禁用按钮背景
 theme_colors_button_disabled_text = 禁用按钮文字

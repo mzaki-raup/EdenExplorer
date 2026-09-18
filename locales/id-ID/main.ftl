@@ -500,6 +500,9 @@ theme_colors_navigation_toast = Notifikasi Sembulan Navigasi
 theme_colors_navigation_toast_border = Batas Notifikasi Sembulan
 theme_colors_navigation_toast_bg = Latar Belakang Notifikasi Sembulan
 
+theme_colors_badge = Lencana
+theme_colors_badge_color = Warna Lencana
+
 theme_colors_primary_button_text = Teks Tombol Utama
 theme_colors_button_disabled_bg = Latar Belakang Tombol Nonaktif
 theme_colors_button_disabled_text = Teks Tombol Nonaktif

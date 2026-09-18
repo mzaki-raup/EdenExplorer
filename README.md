@@ -231,6 +231,8 @@
 - [x] **Live Preview panel in Settings → Appearance** - a mockup of every major themed surface (sidebar, toolbar, address bar, preview pane, buttons, notifications, status bar) that updates instantly as you edit a color, including a genuinely interactive "View Layout" row you can hover over to see the real configured hover color live, without leaving the settings page to go check
 - [x] **Custom themes now save everything, not just the accent pair** - saving or updating a custom theme captures your *entire* current palette, so reselecting it later (including after restarting the app) restores every color you'd customized instead of only the two-color accent/secondary pair and re-deriving the rest from scratch
 - [x] **Clearer borders and search affordances on every type-to-filter/find box** - the item viewer's type-to-filter box and the preview pane's Find bar both gained a real, clearly visible border, a leading magnifying-glass icon, and an inline close (✕) button next to the input; the preview pane's Find bar and the navbar's search box both now auto-focus the moment they open, ready to type into immediately
+- [x] **Multi-row tab strip** - when there are too many tabs to fit at a comfortable width on one row, the strip automatically wraps onto additional rows below (shrinking tab width down to a minimum first) instead of squeezing tabs unreadably thin or scrolling off-screen; the window's own topbar grows to fit however many rows are currently needed
+- [x] **Configurable tab gap** - a "Tab Gap" control in Appearance → Layout sets the horizontal spacing between tabs (0-24px), which also affects how many tabs fit per row before the strip wraps onto a new one
 
 
 ## Bulk Rename Guide
