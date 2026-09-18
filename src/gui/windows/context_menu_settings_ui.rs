@@ -167,8 +167,18 @@ pub fn draw_custom_context_menu_settings(
                         let is_selected = Some(entry.id) == settings.selected_context_menu_id;
 
                         let row = list_row(ui, palette, is_selected, |ui| {
-                            ui.label(&icon);
-                            ui.label(egui::RichText::new(&label).strong());
+                            // `.selectable(false)` on both - a plain
+                            // `ui.label` is selectable text by default in
+                            // this app's style, which registers its own
+                            // click sense *after* the row's own background
+                            // sense and would otherwise steal a click meant
+                            // to select the row (see `list_row`'s own doc
+                            // comment on background-sensed-first).
+                            ui.add(egui::Label::new(&icon).selectable(false));
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&label).strong())
+                                    .selectable(false),
+                            );
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {

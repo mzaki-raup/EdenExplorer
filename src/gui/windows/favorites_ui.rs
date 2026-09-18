@@ -113,13 +113,23 @@ pub fn draw_favorites_settings(
                             {
                                 ui.add(egui::Image::new(&texture).fit_to_exact_size(ICON_ROW_SIZE));
                             } else if let Some(glyph) = &icon_glyph {
-                                ui.label(RichText::new(glyph.as_str()).size(16.0));
+                                ui.add(
+                                    egui::Label::new(RichText::new(glyph.as_str()).size(16.0))
+                                        .selectable(false),
+                                );
                             } else if let Some(texture) = icon_cache.get(&path_for_icon, true) {
                                 ui.add(egui::Image::new(&texture).fit_to_exact_size(ICON_ROW_SIZE));
                             } else {
-                                ui.label(regular::FOLDER);
+                                // `.selectable(false)` - a plain `ui.label` is
+                                // selectable text by default in this app's
+                                // style, which registers its own click sense
+                                // *after* the row's own background sense and
+                                // would otherwise steal a click meant to
+                                // select the row (see `list_row`'s own doc
+                                // comment on background-sensed-first).
+                                ui.add(egui::Label::new(regular::FOLDER).selectable(false));
                             }
-                            ui.label(RichText::new(&label).strong());
+                            ui.add(egui::Label::new(RichText::new(&label).strong()).selectable(false));
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) = reorder_buttons(ui, palette, index, total_len) {

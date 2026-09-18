@@ -102,13 +102,29 @@ pub fn draw_tags(
                             // with no family override silently draws the
                             // outline glyph anyway. Matches the sidebar's own
                             // solid-filled tag icon (`sidebar.rs`).
-                            ui.label(
-                                egui::RichText::new(egui_phosphor::fill::TAG)
-                                    .family(egui::FontFamily::Name("phosphor_fill".into()))
-                                    .size(palette.text_size + 3.0)
-                                    .color(group_color),
+                            // `.selectable(false)` on both - a plain `ui.label`
+                            // is selectable text by default in this app's
+                            // style, which registers its own click-and-drag
+                            // sense *after* the row's own background sense
+                            // (`list_row`'s `allocate_exact_size` call) - per
+                            // egui's later-registered-sense-wins rule (already
+                            // relied on deliberately for this row's own
+                            // reorder/delete buttons), an unselectable label
+                            // would otherwise silently steal a click meant to
+                            // select the row instead of the text.
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(egui_phosphor::fill::TAG)
+                                        .family(egui::FontFamily::Name("phosphor_fill".into()))
+                                        .size(palette.text_size + 3.0)
+                                        .color(group_color),
+                                )
+                                .selectable(false),
                             );
-                            ui.label(egui::RichText::new(&group_name).strong());
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&group_name).strong())
+                                    .selectable(false),
+                            );
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if let Some(swap) =
