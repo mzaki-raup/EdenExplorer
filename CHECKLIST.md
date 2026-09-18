@@ -355,6 +355,11 @@ Rationale and detail for each item is in `PRD.md` §9.
 |---|---|
 | Completed | **Clicking directly on a row's icon or title text in the left-column list (Favorites/Custom Context Menu/Tab Groups/Tags) silently failed to select that row - only clicking genuinely empty background space within the row worked.** Root cause: a plain `ui.label(...)` is selectable text by default under this app's style, which registers its own click-and-drag sense *after* `list_row`'s own background click sense (`allocate_exact_size`, computed before content is drawn) - per egui's later-registered-sense-wins rule (already relied on deliberately so the row's own reorder/delete buttons work), the label's selection sense silently won the click for its own pixels instead of letting it fall through to the row. Fixed in all four files' row-content closures (`favorites_ui.rs`, `context_menu_settings_ui.rs`, `tab_groups_ui.rs`, `containers/tags.rs`) by switching every icon/title `ui.label(...)` call to `ui.add(egui::Label::new(...).selectable(false))`, matching the `.selectable(false)` pattern this codebase already used elsewhere (Favorites/Custom Context Menu's icon-path row) for exactly this reason. Live-verified on all four pages: clicking directly on an icon or its title text now correctly selects that row and updates the right-hand detail panel, matching a click on the row's own background. |
 
+### Live Preview: give Notifications & Status its own row
+| State | Item |
+|---|---|
+| Completed | **Settings → Appearance's Live Preview panel had "Buttons" and "Notifications & Status" sharing one row side-by-side, which crowded the notification/toast/status-dot/bell cluster into a narrow column.** Split into two separate full-width rows (`draw_theme_preview`, `customizetheme.rs`) - "Buttons" first, "Notifications & Status" directly below it - each with its own `preview_caption` label, matching the layout of every other cluster in the panel (Tabs, Status Bar) that already gets a full row to itself. No field/behavior changes, purely a layout split. Live-verified via screenshot: Notifications & Status now renders on its own row beneath Buttons. |
+
 ### Accessibility & input
 | State | Item |
 |---|---|
