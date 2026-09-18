@@ -614,7 +614,8 @@ pub fn draw_item_viewer(
                     table = table.column(Column::exact(16.0));
                 }
 
-                for &column in &column_layout.ordered_columns {
+                let last_column_index = column_layout.ordered_columns.len().saturating_sub(1);
+                for (column_index, &column) in column_layout.ordered_columns.iter().enumerate() {
                     let column = match column {
                         ItemViewerHeaderColumn::Name => Column::initial(column_layout.name_width)
                             .at_least(180.0)
@@ -659,6 +660,20 @@ pub fn draw_item_viewer(
                         ItemViewerHeaderColumn::Tags => Column::initial(column_layout.tags_width)
                             .at_least(100.0)
                             .resizable(true),
+                    };
+
+                    // The last visible column (whichever one that is - column
+                    // order is user-reorderable) doesn't need a resize handle,
+                    // since there's nothing to its right to resize against -
+                    // but `.resizable(true)` still draws one, rendering as a
+                    // stray vertical line trailing after the last column's own
+                    // content with empty space beyond it before the pane's
+                    // real right edge. Only a column with a following sibling
+                    // needs its own resize handle.
+                    let column = if column_index == last_column_index {
+                        column.resizable(false)
+                    } else {
+                        column
                     };
 
                     table = table.column(column);

@@ -82,26 +82,27 @@ pub fn draw_gallery_view(
         sort_ascending,
     );
 
+    // Gap between the toolbar row and the divider below it, so the two
+    // don't sit flush together - mirrors the gap added below the divider
+    // (see `ui.add_space` right after the `hline` call).
+    ui.add_space(6.0);
+
     // Separates the sort/thumbnail-size toolbar from the file grid below
     // it, matching the same technique already used to separate the tab
     // strip from the item viewer (`mainwindow.rs`) and the navbar from the
     // table (`explorer.rs`) - a plain `hline` at the row's own bottom edge
-    // rather than leaving the two visually blended together. Unlike those
-    // two (which span their own container edge-to-edge), this pane's own
-    // left/right bounds can coincide with the sidebar's right border and
-    // the app's own outer window border (see the `content_border_rect`
-    // inset in `explorer.rs` for the same reasoning) - inset both ends so
-    // the line reads as a deliberate divider with its own margin rather
-    // than running flush into either border.
-    // The right inset needs to be larger than the left: pixel-sampling a
-    // live screenshot showed a flat 6.0 on the right left only ~3px of
-    // real clearance before the outer window border's own painted band
-    // (that border is a ~3-4px stroke, not a hairline - see the matching
-    // `ACTIVE_PANE_INDICATOR_THICKNESS` finding in `CLAUDE.md`), which
-    // read as touching rather than a deliberate gap.
+    // rather than leaving the two visually blended together. This pane's
+    // own left/right bounds are the same ones `explorer.rs`'s own
+    // `content_border_rect` box border uses (`content_rect.right() -=
+    // 6.0`, left untouched - see that comment for why only the right side
+    // needs pulling in) - matching those same bounds here means the
+    // divider's ends align with that box border rather than either
+    // overshooting it (touching the sidebar/outer window border) or
+    // falling short of it (a gap of dead space past the divider's own
+    // end before the box border).
     let divider_bounds = ui.available_rect_before_wrap();
     ui.painter().hline(
-        egui::Rangef::new(divider_bounds.left() + 6.0, divider_bounds.right() - 10.0),
+        egui::Rangef::new(divider_bounds.left(), divider_bounds.right() - 6.0),
         ui.cursor().top(),
         egui::Stroke::new(1.5, palette.borders_default),
     );
