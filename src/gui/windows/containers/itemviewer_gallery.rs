@@ -86,12 +86,29 @@ pub fn draw_gallery_view(
     // it, matching the same technique already used to separate the tab
     // strip from the item viewer (`mainwindow.rs`) and the navbar from the
     // table (`explorer.rs`) - a plain `hline` at the row's own bottom edge
-    // rather than leaving the two visually blended together.
+    // rather than leaving the two visually blended together. Unlike those
+    // two (which span their own container edge-to-edge), this pane's own
+    // left/right bounds can coincide with the sidebar's right border and
+    // the app's own outer window border (see the `content_border_rect`
+    // inset in `explorer.rs` for the same reasoning) - inset both ends so
+    // the line reads as a deliberate divider with its own margin rather
+    // than running flush into either border.
+    // The right inset needs to be larger than the left: pixel-sampling a
+    // live screenshot showed a flat 6.0 on the right left only ~3px of
+    // real clearance before the outer window border's own painted band
+    // (that border is a ~3-4px stroke, not a hairline - see the matching
+    // `ACTIVE_PANE_INDICATOR_THICKNESS` finding in `CLAUDE.md`), which
+    // read as touching rather than a deliberate gap.
+    let divider_bounds = ui.available_rect_before_wrap();
     ui.painter().hline(
-        ui.available_rect_before_wrap().x_range(),
+        egui::Rangef::new(divider_bounds.left() + 6.0, divider_bounds.right() - 10.0),
         ui.cursor().top(),
         egui::Stroke::new(1.5, palette.borders_default),
     );
+
+    // Bottom padding so the file grid doesn't sit flush against the
+    // divider line, mirroring the top padding added above it.
+    ui.add_space(6.0);
 
     if filtered_indices.is_empty() {
         let empty_rect = ui.available_rect_before_wrap();
