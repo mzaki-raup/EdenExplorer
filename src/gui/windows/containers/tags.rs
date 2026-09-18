@@ -444,6 +444,14 @@ fn list_row(
     selected: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    // Pin this row's own automatic between-widget spacing so the gap between
+    // rows is fully controlled by the trailing `add_space` below, regardless
+    // of whatever ambient item_spacing this page's earlier buttons left the
+    // `ui` in - see the identical comment in `context_menu_settings_ui.rs`'s
+    // `list_row` for why that ambient state isn't reliable across pages that
+    // otherwise share this exact helper.
+    ui.spacing_mut().item_spacing.y = 0.0;
+
     let row_height = ui.spacing().interact_size.y + 20.0;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
@@ -472,7 +480,7 @@ fn list_row(
         ui.horizontal_centered(|ui| add_contents(ui));
     });
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     response
 }

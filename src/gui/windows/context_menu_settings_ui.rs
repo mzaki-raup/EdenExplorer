@@ -385,6 +385,18 @@ fn list_row(
     selected: bool,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) -> egui::Response {
+    // Pin this row's own automatic between-widget spacing rather than
+    // trusting whatever this page's earlier buttons happened to leave it at
+    // - `eden_button`'s style override only survives on whichever `Ui` it
+    // was actually called on, so a button wrapped in its own nested
+    // `ui.horizontal(|ui| ...)` (as this page's Add/Export/Import buttons
+    // are) never leaks that override back out to the list's own `ui`, while
+    // another page calling a button directly on its outer `ui` does - two
+    // pages sharing this exact `list_row` source can otherwise render a
+    // visibly different gap between rows for that reason alone. The
+    // trailing `add_space` below is what actually controls the gap now.
+    ui.spacing_mut().item_spacing.y = 0.0;
+
     let row_height = ui.spacing().interact_size.y + 20.0;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_height),
@@ -413,7 +425,7 @@ fn list_row(
         ui.horizontal_centered(|ui| add_contents(ui));
     });
 
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     response
 }
