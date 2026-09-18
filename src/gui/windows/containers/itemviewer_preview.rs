@@ -36,6 +36,7 @@ pub fn draw_preview_view(
     icon_cache: &IconCache,
     palette: &ThemePalette,
     rename_state: &mut Option<RenameState>,
+    is_loading: bool,
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
 
@@ -87,7 +88,19 @@ pub fn draw_preview_view(
                                         explorer_state.selected_paths.insert(file.path.clone());
                                         explorer_state.selection_anchor = Some(idx);
                                         explorer_state.selection_focus = Some(idx);
-                                        explorer_state.pending_selection_paths = None;
+                                        // See the matching comment in
+                                        // itemviewer.rs's own pending-
+                                        // selection handling - only clear
+                                        // once the directory scan has
+                                        // actually finished, or a large
+                                        // folder's still-incomplete,
+                                        // still-resorting file list makes
+                                        // this one-shot scroll land
+                                        // somewhere that's stale a frame
+                                        // later.
+                                        if !is_loading {
+                                            explorer_state.pending_selection_paths = None;
+                                        }
                                     }
 
                                     let is_selected =

@@ -338,6 +338,7 @@ pub fn draw_item_viewer(
             icon_cache,
             palette,
             rename_state,
+            is_loading,
         )
         .or(action);
     }
@@ -374,6 +375,7 @@ pub fn draw_item_viewer(
             is_focused,
             active_tab_id,
             current_dir,
+            is_loading,
         )
         .or(action);
     }
@@ -556,7 +558,27 @@ pub fn draw_item_viewer(
                         }
                         explorer_state.selection_anchor = Some(selected_indices[0]);
                         explorer_state.selection_focus = Some(*selected_indices.last().unwrap());
-                        explorer_state.pending_selection_paths = None;
+
+                        // Only clear the pending marker once the directory
+                        // scan itself has actually finished (`!is_loading`,
+                        // i.e. `view.rx` has disconnected) - a large folder
+                        // streams its contents in over many frames
+                        // (`handle_directory_batch_recieve_for`, up to 128
+                        // items per frame) and re-sorts the whole list after
+                        // every batch, so a brand-new item's row *index*
+                        // keeps shifting as more items arrive. Clearing this
+                        // the first time the item is merely *found* meant
+                        // the one-shot `scroll_to_row` above landed at
+                        // whatever position it happened to occupy in a
+                        // still-incomplete, still-resorting list - correct
+                        // for that instant, stale a frame later. Re-running
+                        // this same scroll/select every frame until loading
+                        // finishes is cheap and self-correcting, and
+                        // guarantees the *last* one lands against the final,
+                        // fully-settled sort order.
+                        if !is_loading {
+                            explorer_state.pending_selection_paths = None;
+                        }
                     }
                 }
 

@@ -62,9 +62,16 @@ pub fn draw_gallery_view(
     is_focused: bool,
     active_tab_id: u64,
     current_dir: PathBuf,
+    is_loading: bool,
 ) -> Option<ItemViewerAction> {
     let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
+
+    // Top padding so the Sort By/thumbnail-size row doesn't sit flush
+    // against the pane's own top edge - every other view's own toolbar/
+    // navbar row keeps a small margin from its container's top border,
+    // this one had none of its own.
+    ui.add_space(6.0);
 
     let mut action = draw_gallery_toolbar(
         ui,
@@ -73,6 +80,17 @@ pub fn draw_gallery_view(
         gallery_state,
         sort_column,
         sort_ascending,
+    );
+
+    // Separates the sort/thumbnail-size toolbar from the file grid below
+    // it, matching the same technique already used to separate the tab
+    // strip from the item viewer (`mainwindow.rs`) and the navbar from the
+    // table (`explorer.rs`) - a plain `hline` at the row's own bottom edge
+    // rather than leaving the two visually blended together.
+    ui.painter().hline(
+        ui.available_rect_before_wrap().x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(1.5, palette.borders_default),
     );
 
     if filtered_indices.is_empty() {
@@ -213,7 +231,22 @@ pub fn draw_gallery_view(
                             explorer_state.selection_focus = Some(item_index);
                         }
                     }
-                    explorer_state.pending_selection_paths = None;
+                    // Only clear the pending marker once the directory scan
+                    // has actually finished (`!is_loading`) - a large folder
+                    // streams its contents in over many frames and re-sorts
+                    // after every batch, so clearing this the moment the
+                    // item is first found (the previous behavior) landed the
+                    // one-shot `scroll_to_rect` against a still-incomplete,
+                    // still-resorting list; worse, clearing it *unconditionally*
+                    // here even when the item hadn't been found yet meant a
+                    // large folder's new item was never scrolled to at all,
+                    // since this ran and gave up on literally the first
+                    // frame. Retrying every frame while loading is cheap and
+                    // self-correcting, and guarantees the *last* attempt
+                    // lands against the final, fully-settled sort order.
+                    if !is_loading {
+                        explorer_state.pending_selection_paths = None;
+                    }
                 }
 
                 let bg_rect = egui::Rect::from_min_size(
