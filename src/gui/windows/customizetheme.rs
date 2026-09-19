@@ -928,47 +928,7 @@ pub fn draw_theme_customizer_content(
                                             changed = true;
                                         }
                                     });
-                                    // More space above the swap button than below it -
-                                    // groups it visually with the Secondary row it sits
-                                    // directly on top of, rather than floating equidistant
-                                    // between the two (a symmetric 4px/4px gap read as
-                                    // "belonging to neither" per direct user feedback).
-                                    ui.add_space(10.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                // Swaps the Primary/Secondary rows around
-                                                // it rather than requiring the user to
-                                                // re-pick both colors by hand to try the
-                                                // opposite pairing - re-derives immediately
-                                                // afterward, same as either row's own
-                                                // picker. Right-aligned, on top of the
-                                                // Secondary row right below it, per direct
-                                                // user feedback.
-                                                if eden_button(
-                                                    ui,
-                                                    palette,
-                                                    &i18n.tr("theme_custom_theme_swap"),
-                                                )
-                                                .clicked()
-                                                {
-                                                    std::mem::swap(
-                                                        &mut editing_palette.primary,
-                                                        &mut editing_palette.secondary_accent,
-                                                    );
-                                                    regenerate_base_derived_colors(
-                                                        editing_palette,
-                                                        customizer.selected_mode
-                                                            == ThemeMode::Dark,
-                                                    );
-                                                    changed = true;
-                                                }
-                                            },
-                                        );
-                                    });
-                                    ui.add_space(2.0);
+                                    ui.add_space(4.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
                                         // `secondary_accent` has no Core Colors picker of
@@ -1003,6 +963,41 @@ pub fn draw_theme_customizer_content(
                                             );
                                             changed = true;
                                         }
+                                        // On the Secondary row itself (not a separate row
+                                        // above/below it) so it reads unambiguously as
+                                        // belonging to Secondary rather than floating
+                                        // between the two rows - a prior attempt at
+                                        // unequal spacing above/below a standalone row
+                                        // still read as ambiguous per direct user
+                                        // feedback ("still not fix"). Pushed to the row's
+                                        // right edge, swaps the Primary/Secondary rows
+                                        // rather than requiring the user to re-pick both
+                                        // colors by hand to try the opposite pairing -
+                                        // re-derives immediately afterward, same as
+                                        // either row's own picker.
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if eden_button(
+                                                    ui,
+                                                    palette,
+                                                    &i18n.tr("theme_custom_theme_swap"),
+                                                )
+                                                .clicked()
+                                                {
+                                                    std::mem::swap(
+                                                        &mut editing_palette.primary,
+                                                        &mut editing_palette.secondary_accent,
+                                                    );
+                                                    regenerate_base_derived_colors(
+                                                        editing_palette,
+                                                        customizer.selected_mode
+                                                            == ThemeMode::Dark,
+                                                    );
+                                                    changed = true;
+                                                }
+                                            },
+                                        );
                                     });
                                     ui.add_space(14.0);
                                     ui.horizontal(|ui| {
