@@ -105,6 +105,17 @@ impl NotificationsState {
     /// reaching a terminal state resets `active_toast`'s timer again (see
     /// `poll_robocopy_jobs`), giving a second, separate "it's done" toast
     /// rather than leaving the user with no completion signal at all.
+    ///
+    /// Also opens the bell's dropdown panel itself (`panel_open`), not just
+    /// the toast - the toast is a compact, auto-dismissing summary with no
+    /// progress bar or Pause/Resume/Cancel controls, while the panel shows
+    /// the operation's live progress fraction and those controls for as
+    /// long as the user wants to watch it. Requested directly: a copy/
+    /// delete/rename/paste-conflict-replace starting should make that
+    /// detail visible without the user having to remember to click the
+    /// bell. The panel still closes the normal way (clicking elsewhere, or
+    /// clicking the bell again - see the `clicked_elsewhere` handling in
+    /// `draw_notifications_button`), so this doesn't pin it open forever.
     pub fn start_operation(
         &mut self,
         kind: FileOpKind,
@@ -130,6 +141,7 @@ impl NotificationsState {
             op_id: id,
             shown_at: Instant::now(),
         });
+        self.panel_open = true;
         id
     }
 
