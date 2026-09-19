@@ -35,6 +35,14 @@ const COLOR_SCHEME_PRESETS: &[(&str, egui::Color32)] = &[
     ("theme_scheme_purple", egui::Color32::from_rgb(136, 23, 152)),
     ("theme_scheme_cyan", egui::Color32::from_rgb(0, 153, 188)),
     ("theme_scheme_gray", egui::Color32::from_rgb(93, 90, 88)),
+    ("theme_scheme_indigo", egui::Color32::from_rgb(61, 51, 224)),
+    ("theme_scheme_lime", egui::Color32::from_rgb(122, 165, 25)),
+    ("theme_scheme_brown", egui::Color32::from_rgb(139, 94, 60)),
+    ("theme_scheme_amber", egui::Color32::from_rgb(255, 185, 0)),
+    ("theme_scheme_slate", egui::Color32::from_rgb(81, 92, 107)),
+    ("theme_scheme_coral", egui::Color32::from_rgb(250, 115, 90)),
+    ("theme_scheme_mint", egui::Color32::from_rgb(0, 178, 148)),
+    ("theme_scheme_lavender", egui::Color32::from_rgb(150, 130, 230)),
 ];
 
 fn selectable_mode(
