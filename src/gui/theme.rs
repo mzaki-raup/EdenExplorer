@@ -1029,10 +1029,13 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     // every theme instead, per that same requirement.
     let secondary = palette.secondary_accent;
     palette.pinned_tab_color = secondary;
+    // 130 (up from the initial 60) per direct user feedback - applies to
+    // every theme, prebuilt and custom, since this function is the only
+    // place either border color is ever set.
     palette.notification_border_color =
-        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 60);
+        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 130);
     palette.navigation_toast_border_color =
-        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 60);
+        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 130);
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to
@@ -1256,7 +1259,7 @@ mod regenerate_base_derived_colors_tests {
             palette.secondary_accent.r(),
             palette.secondary_accent.g(),
             palette.secondary_accent.b(),
-            60,
+            130,
         );
         assert_eq!(palette.notification_border_color, expected_border);
         assert_eq!(palette.navigation_toast_border_color, expected_border);
