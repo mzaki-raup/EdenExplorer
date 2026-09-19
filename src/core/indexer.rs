@@ -117,6 +117,63 @@ pub struct CustomThemesSnapshot {
     pub items: Vec<CustomThemeEntry>,
 }
 
+/// What Settings > Appearance's own "Export Theme"/"Import Theme" buttons
+/// read and write - the currently-edited palette for the selected mode,
+/// plus every saved custom theme, so importing this file elsewhere (or
+/// after a reinstall) restores the whole Custom Themes list too, not just
+/// the one active palette. `#[serde(default)]` on `custom_themes` means a
+/// file exported *before* this field existed still imports cleanly (just
+/// with no custom themes to merge) rather than failing to parse outright -
+/// unlike `postcard`, `serde_json` genuinely does rescue a missing trailing
+/// field this way, so this one case doesn't need the `*Legacy`-struct
+/// pattern `CustomThemeEntry` above needed for its own `postcard` file.
+#[derive(Serialize, Deserialize)]
+pub struct ThemeFileExportBundle {
+    pub palette: ThemePalette,
+    #[serde(default)]
+    pub custom_themes: Vec<CustomThemeEntry>,
+}
+
+/// Merges an imported custom-themes list into the user's existing one, for
+/// Settings > Appearance's "Import Theme" button. A name match (case-
+/// insensitive, matching the same convention "Save Current Colors"/"Update
+/// Theme" already uses) overwrites that entry's colors/palette in place -
+/// its `id` is left untouched, so anything still pointing at it (the
+/// persisted "last selected custom theme") keeps resolving correctly -
+/// rather than appending a same-named duplicate. An imported entry with no
+/// name match is appended as a brand-new entry with a fresh id. Returns
+/// whether anything actually changed, so the caller only re-saves the file
+/// when it needs to.
+pub fn merge_imported_custom_themes(
+    existing: &mut Vec<CustomThemeEntry>,
+    next_id: &mut u64,
+    imported: Vec<CustomThemeEntry>,
+) -> bool {
+    let mut changed = false;
+    for entry in imported {
+        if let Some(existing_entry) = existing
+            .iter_mut()
+            .find(|e| e.name.eq_ignore_ascii_case(&entry.name))
+        {
+            existing_entry.accent = entry.accent;
+            existing_entry.secondary = entry.secondary;
+            existing_entry.palette = entry.palette;
+        } else {
+            let id = *next_id;
+            *next_id += 1;
+            existing.push(CustomThemeEntry {
+                id,
+                name: entry.name,
+                accent: entry.accent,
+                secondary: entry.secondary,
+                palette: entry.palette,
+            });
+        }
+        changed = true;
+    }
+    changed
+}
+
 /// The pre-`palette`-field shape of `CustomThemeEntry`/`CustomThemesSnapshot`
 /// - kept only as a decode fallback in `load_custom_themes`. Postcard's
 /// format has no per-field rescue for an appended field (confirmed
@@ -1521,5 +1578,127 @@ mod tests {
 
         // Running it again must be a no-op - nothing left to migrate.
         assert!(!migrate_custom_theme_border_alpha(&mut snapshot));
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_overwrites_a_same_name_entry_in_place() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let imported = vec![CustomThemeEntry {
+            // A different id on the imported side (e.g. from a different
+            // machine's own next_id counter) must not matter - the match
+            // is by name, and the existing entry's own id must survive.
+            id: 999,
+            name: "midnight".to_string(), // case-insensitive match
+            accent: Color32::from_rgb(200, 200, 200),
+            secondary: Color32::from_rgb(210, 210, 210),
+            palette: None,
+        }];
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, imported);
+
+        assert!(changed);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(existing[0].id, 1); // unchanged
+        assert_eq!(existing[0].name, "Midnight"); // unchanged casing
+        assert_eq!(existing[0].accent, Color32::from_rgb(200, 200, 200));
+        assert_eq!(existing[0].secondary, Color32::from_rgb(210, 210, 210));
+        assert_eq!(next_id, 2); // no new id consumed
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_appends_a_new_name_with_a_fresh_id() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let imported = vec![CustomThemeEntry {
+            id: 999,
+            name: "Sunrise".to_string(),
+            accent: Color32::from_rgb(255, 200, 0),
+            secondary: Color32::from_rgb(255, 100, 0),
+            palette: None,
+        }];
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, imported);
+
+        assert!(changed);
+        assert_eq!(existing.len(), 2);
+        assert_eq!(existing[0].id, 1); // original untouched
+        assert_eq!(existing[1].id, 2); // new entry got the local next_id, not 999
+        assert_eq!(existing[1].name, "Sunrise");
+        assert_eq!(next_id, 3);
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_empty_import_is_a_no_op() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, Vec::new());
+
+        assert!(!changed);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(next_id, 2);
+    }
+
+    #[test]
+    fn theme_file_export_bundle_roundtrips_through_json() {
+        let palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        let bundle = ThemeFileExportBundle {
+            palette: palette.clone(),
+            custom_themes: vec![CustomThemeEntry {
+                id: 5,
+                name: "Exported Theme".to_string(),
+                accent: Color32::from_rgb(1, 2, 3),
+                secondary: Color32::from_rgb(4, 5, 6),
+                palette: Some(palette),
+            }],
+        };
+
+        let json = serde_json::to_string(&bundle).unwrap();
+        let decoded: ThemeFileExportBundle = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded.custom_themes.len(), 1);
+        assert_eq!(decoded.custom_themes[0].name, "Exported Theme");
+        assert_eq!(decoded.custom_themes[0].accent, Color32::from_rgb(1, 2, 3));
+        assert!(decoded.custom_themes[0].palette.is_some());
+    }
+
+    #[test]
+    fn theme_file_export_bundle_accepts_a_pre_feature_file_with_no_custom_themes_field() {
+        // Simulates a file exported before this feature existed - just a
+        // bare palette, no `custom_themes` key at all. `#[serde(default)]`
+        // (unlike postcard's whole-struct decode failure documented
+        // elsewhere in this file) genuinely rescues a missing JSON field.
+        let palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        #[derive(Serialize)]
+        struct OldExportShape {
+            palette: ThemePalette,
+        }
+        let old = OldExportShape { palette };
+
+        let json = serde_json::to_string(&old).unwrap();
+        let decoded: ThemeFileExportBundle = serde_json::from_str(&json).unwrap();
+
+        assert!(decoded.custom_themes.is_empty());
     }
 }
