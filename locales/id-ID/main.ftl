@@ -516,6 +516,7 @@ theme_custom_theme_delete_title = Hapus Tema Kustom
 theme_custom_theme_delete_confirm = Nama tema
 
 theme_custom_theme_secondary = Warna Kedua
+theme_custom_theme_swap = Tukar Warna
 theme_custom_theme_update = Perbarui Tema
 
 custom_context_menu_export = Ekspor

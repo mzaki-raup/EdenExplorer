@@ -513,6 +513,7 @@ theme_custom_theme_delete_title = Delete Custom Theme
 theme_custom_theme_delete_confirm = Theme name
 
 theme_custom_theme_secondary = Secondary
+theme_custom_theme_swap = Swap Colors
 theme_custom_theme_update = Update Theme
 
 custom_context_menu_export = Export

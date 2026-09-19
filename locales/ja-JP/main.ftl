@@ -517,6 +517,7 @@ theme_custom_theme_delete_title = カスタムテーマの削除
 theme_custom_theme_delete_confirm = テーマ名
 
 theme_custom_theme_secondary = セカンダリカラー
+theme_custom_theme_swap = 色を入れ替え
 theme_custom_theme_update = テーマを更新
 
 custom_context_menu_export = エクスポート

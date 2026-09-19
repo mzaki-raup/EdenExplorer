@@ -517,6 +517,7 @@ theme_custom_theme_delete_title = 删除自定义主题
 theme_custom_theme_delete_confirm = 主题名称
 
 theme_custom_theme_secondary = 第二色
+theme_custom_theme_swap = 交换颜色
 theme_custom_theme_update = 更新主题
 
 custom_context_menu_export = 导出

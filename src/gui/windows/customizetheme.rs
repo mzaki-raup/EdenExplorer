@@ -649,6 +649,20 @@ pub fn draw_theme_customizer_content(
                                         // Every other wrapped swatch row in this file
                                         // (Prebuilt Themes, Color Scheme) is a single
                                         // flat widget per entry for the same reason.
+                                        //
+                                        // Wider spacing than the ambient default - this
+                                        // is the only wrapped swatch row with a name
+                                        // label under each entry, so the default gap
+                                        // (tuned for the plain, label-less Prebuilt
+                                        // Themes/Color Scheme swatches above) reads as
+                                        // cramped against that extra line of text, both
+                                        // between entries in a row and between wrapped
+                                        // rows themselves (reported directly: "gap
+                                        // between list" / "gap between first row and
+                                        // second row"). Set on this closure's own child
+                                        // `ui` only, so it doesn't leak spacing into
+                                        // anything drawn after this block.
+                                        ui.spacing_mut().item_spacing = egui::vec2(10.0, 14.0);
                                         const SWATCH_W: f32 = 64.0;
                                         const GAP: f32 = 6.0;
                                         const TRASH_W: f32 = 24.0;
@@ -893,6 +907,28 @@ pub fn draw_theme_customizer_content(
                                             // `button_favorite_fill` is deliberately NOT
                                             // secondary-derived (fixed default, user-editable
                                             // independently per its own row below).
+                                            regenerate_base_derived_colors(
+                                                editing_palette,
+                                                customizer.selected_mode == ThemeMode::Dark,
+                                            );
+                                            changed = true;
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.horizontal(|ui| {
+                                        apply_eden_visual_overrides(ui, palette);
+                                        // Swaps the two rows right above rather than
+                                        // requiring the user to re-pick both colors by
+                                        // hand to try the opposite pairing - re-derives
+                                        // immediately afterward, same as either row's
+                                        // own picker.
+                                        if eden_button(ui, palette, &i18n.tr("theme_custom_theme_swap"))
+                                            .clicked()
+                                        {
+                                            std::mem::swap(
+                                                &mut editing_palette.primary,
+                                                &mut editing_palette.secondary_accent,
+                                            );
                                             regenerate_base_derived_colors(
                                                 editing_palette,
                                                 customizer.selected_mode == ThemeMode::Dark,
