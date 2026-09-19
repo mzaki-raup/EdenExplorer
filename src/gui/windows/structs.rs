@@ -40,13 +40,6 @@ pub struct ThemeCustomizer {
     pub custom_themes_next_id: u64,
     /// Draft text for the "save current colors as a new theme" input.
     pub new_custom_theme_name: String,
-    /// Draft secondary color for the theme about to be saved - `secondary_
-    /// accent` itself has no direct Core Colors picker (it's normally only
-    /// set as a side effect of clicking a whole prebuilt preset), so saving
-    /// a custom theme needs its own explicit, editable secondary swatch
-    /// rather than silently capturing whatever `secondary_accent` currently
-    /// happens to be.
-    pub new_custom_theme_secondary: eframe::egui::Color32,
     /// Id of the custom theme pending a delete confirmation, if any.
     pub custom_theme_delete_confirm: Option<u64>,
 }
@@ -57,10 +50,6 @@ impl Default for ThemeCustomizer {
         let dark_palette = crate::gui::theme::get_palette(ThemeMode::Dark);
         let light_palette = crate::gui::theme::get_palette(ThemeMode::Light);
         Self {
-            // Starting point for the draft secondary swatch below - the
-            // mode selected first (Dark) own current `secondary_accent`,
-            // so it isn't an arbitrary unrelated color on first open.
-            new_custom_theme_secondary: dark_palette.secondary_accent,
             selected_mode: ThemeMode::Dark,
             light_palette,
             dark_palette,

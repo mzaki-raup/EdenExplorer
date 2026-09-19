@@ -756,17 +756,18 @@ pub fn draw_theme_customizer_content(
                                                     );
                                                 }
                                                 changed = true;
-                                                // Pre-fill the save controls with this
-                                                // theme's own name/secondary, so tweaking
-                                                // the Secondary swatch below and clicking
+                                                // Pre-fill the name field with this theme's
+                                                // own name, so tweaking a color and clicking
                                                 // the button (now reading "Update Theme")
-                                                // saves back into this same entry instead
-                                                // of requiring the name to be retyped
-                                                // from scratch.
+                                                // saves back into this same entry instead of
+                                                // requiring the name to be retyped from
+                                                // scratch. Secondary needs no equivalent
+                                                // pre-fill - the swatch click above (either
+                                                // branch) already set `editing_palette.
+                                                // secondary_accent` directly, which is what
+                                                // its own picker now edits live.
                                                 customizer.new_custom_theme_name =
                                                     entry.name.clone();
-                                                customizer.new_custom_theme_secondary =
-                                                    entry.secondary;
                                             }
 
                                             let trash_resp = ui.interact(
@@ -839,22 +840,60 @@ pub fn draw_theme_customizer_content(
                                     ui.add_space(6.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
+                                        // Editing primary right here (not just up in Core
+                                        // Colors) means both halves of a new custom theme
+                                        // can be chosen together in one place. Mirrors
+                                        // Core Colors' own Primary row exactly - same
+                                        // field, same `regenerate_base_derived_colors`
+                                        // call on change - so the Live Preview updates
+                                        // immediately and stays in sync no matter which of
+                                        // the two pickers was actually used.
+                                        eden_text_label(
+                                            ui,
+                                            palette,
+                                            &i18n.tr("theme_colors_primary"),
+                                        );
+                                        if color_picker_control(ui, &mut editing_palette.primary)
+                                        {
+                                            regenerate_base_derived_colors(
+                                                editing_palette,
+                                                customizer.selected_mode == ThemeMode::Dark,
+                                            );
+                                            changed = true;
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.horizontal(|ui| {
+                                        apply_eden_visual_overrides(ui, palette);
                                         // `secondary_accent` has no Core Colors picker of
-                                        // its own (see its doc comment in `theme.rs`) -
-                                        // without this, saving a custom theme would
-                                        // silently capture whatever that field last
-                                        // happened to be (only ever set as a side effect
-                                        // of clicking a whole prebuilt preset), with no
-                                        // way to actually choose it.
+                                        // its own (see its doc comment in `theme.rs`) - this
+                                        // is its only editable home. Edits `editing_palette`
+                                        // directly (not a separate staging value) and
+                                        // re-derives immediately, the same way choosing a
+                                        // whole prebuilt preset already does via
+                                        // `apply_theme_preset` - previously this only wrote
+                                        // into a draft variable applied at Save time, so
+                                        // picking a secondary here had no visible effect on
+                                        // the Live Preview until after saving.
                                         eden_text_label(
                                             ui,
                                             palette,
                                             &i18n.tr("theme_custom_theme_secondary"),
                                         );
-                                        color_picker_control(
+                                        if color_picker_control(
                                             ui,
-                                            &mut customizer.new_custom_theme_secondary,
-                                        );
+                                            &mut editing_palette.secondary_accent,
+                                        ) {
+                                            editing_palette.pinned_tab_color =
+                                                editing_palette.secondary_accent;
+                                            editing_palette.button_favorite_fill =
+                                                editing_palette.secondary_accent;
+                                            regenerate_base_derived_colors(
+                                                editing_palette,
+                                                customizer.selected_mode == ThemeMode::Dark,
+                                            );
+                                            changed = true;
+                                        }
                                     });
                                     ui.add_space(4.0);
                                     ui.horizontal(|ui| {
@@ -893,20 +932,13 @@ pub fn draw_theme_customizer_content(
                                             // palette, not just accent/secondary - the
                                             // button reads "Save Current Colors", so it
                                             // should actually save all of them (see
-                                            // `CustomThemeEntry`'s doc comment). The
-                                            // Secondary picker above lets the user choose
-                                            // a secondary the palette doesn't currently
-                                            // have without needing a whole preset click
-                                            // first, so it's applied on top of the clone
-                                            // before saving, alongside the two derived
-                                            // fields a real preset apply also sets.
-                                            let mut snapshot_palette = editing_palette.clone();
-                                            snapshot_palette.secondary_accent =
-                                                customizer.new_custom_theme_secondary;
-                                            snapshot_palette.pinned_tab_color =
-                                                customizer.new_custom_theme_secondary;
-                                            snapshot_palette.button_favorite_fill =
-                                                customizer.new_custom_theme_secondary;
+                                            // `CustomThemeEntry`'s doc comment). Primary/
+                                            // secondary (and their derived fields) are
+                                            // already live-correct in `editing_palette` by
+                                            // this point - both pickers above apply
+                                            // immediately - so no separate override is
+                                            // needed here the way there used to be.
+                                            let snapshot_palette = editing_palette.clone();
 
                                             if let Some(id) = existing_id {
                                                 if let Some(existing) = customizer
