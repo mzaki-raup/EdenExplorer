@@ -469,19 +469,26 @@ pub fn handle_context_menu_actions(
         i18n.tr("open_files_default_program")
     };
 
+    // "Add Tag" always opens the picker (existing groups to toggle
+    // membership in, or create a new one) regardless of whether the
+    // selection is already tagged - an item belonging to one tag group is
+    // not exclusive with belonging to another, so being tagged shouldn't
+    // hide the only way to add a second tag. "Remove Tag" (clears every
+    // group membership at once) is a separate, additional entry shown only
+    // when at least one of the selected items actually has a tag.
     let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
-    let tag_label = if has_tag {
-        i18n.tr("tag_remove")
-    } else {
-        i18n.tr("tag_add")
-    };
 
-    if menu_item_button(ui, regular::TAG, &tag_label).clicked() {
-        *action = Some(ItemViewerAction::Context(if has_tag {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
-        } else {
-            ItemViewerContextAction::AddTag(context_paths.clone())
-        }));
+    if menu_item_button(ui, regular::TAG, &i18n.tr("tag_add")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::AddTag(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
+    if has_tag && menu_item_button(ui, regular::TAG, &i18n.tr("tag_remove")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::RemoveTag(context_paths.clone()),
+        ));
         ui.close();
     }
 
