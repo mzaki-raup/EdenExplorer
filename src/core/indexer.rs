@@ -856,9 +856,62 @@ pub fn save_recent_locations(snapshot: &RecentLocationsSnapshot) {
     }
 }
 
+/// A custom theme's own saved `notification_border_color`/`navigation_
+/// toast_border_color` are baked into its `palette` snapshot at whatever
+/// alpha `regenerate_base_derived_colors` used at the moment the theme was
+/// saved - raising that alpha in `theme.rs` only affects newly-derived
+/// palettes (a fresh preset click, a live Secondary edit), never an
+/// already-saved custom theme, since selecting one restores its snapshot
+/// verbatim rather than re-deriving it. Only rewrites a field that still
+/// exactly matches the *previous* alpha's own derivation - both fields also
+/// have their own manual picker row in the customizer, so a genuine
+/// per-theme override must be left alone rather than silently overwritten
+/// by a blanket update. Returns whether anything actually changed, so the
+/// caller only re-saves the file when it needs to.
+fn migrate_custom_theme_border_alpha(snapshot: &mut CustomThemesSnapshot) -> bool {
+    const OLD_ALPHA: u8 = 60;
+    const NEW_ALPHA: u8 = 130;
+    let mut changed = false;
+    for entry in &mut snapshot.items {
+        let Some(palette) = &mut entry.palette else {
+            continue;
+        };
+        let secondary = palette.secondary_accent;
+        let old_border = Color32::from_rgba_unmultiplied(
+            secondary.r(),
+            secondary.g(),
+            secondary.b(),
+            OLD_ALPHA,
+        );
+        if palette.notification_border_color == old_border {
+            palette.notification_border_color = Color32::from_rgba_unmultiplied(
+                secondary.r(),
+                secondary.g(),
+                secondary.b(),
+                NEW_ALPHA,
+            );
+            changed = true;
+        }
+        if palette.navigation_toast_border_color == old_border {
+            palette.navigation_toast_border_color = Color32::from_rgba_unmultiplied(
+                secondary.r(),
+                secondary.g(),
+                secondary.b(),
+                NEW_ALPHA,
+            );
+            changed = true;
+        }
+    }
+    changed
+}
+
 pub fn load_custom_themes() -> Option<CustomThemesSnapshot> {
     let path = custom_themes_cache_path()?;
-    if let Some(snapshot) = load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path) {
+    if let Some(mut snapshot) = load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path)
+    {
+        if migrate_custom_theme_border_alpha(&mut snapshot) {
+            save_custom_themes(&snapshot);
+        }
         return Some(snapshot);
     }
 
@@ -1404,5 +1457,69 @@ mod tests {
             .unwrap_or_default();
 
         assert_eq!(decoded.id, None);
+    }
+
+    #[test]
+    fn migrate_custom_theme_border_alpha_rewrites_an_old_derivation_but_not_a_manual_override() {
+        let secondary = Color32::from_rgb(255, 214, 64);
+        let old_border = Color32::from_rgba_unmultiplied(
+            secondary.r(),
+            secondary.g(),
+            secondary.b(),
+            60,
+        );
+        let manual_override = Color32::from_rgba_unmultiplied(10, 20, 30, 200);
+
+        let mut auto_derived_palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        auto_derived_palette.secondary_accent = secondary;
+        auto_derived_palette.notification_border_color = old_border;
+        auto_derived_palette.navigation_toast_border_color = old_border;
+
+        let mut manually_customized_palette =
+            get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        manually_customized_palette.secondary_accent = secondary;
+        manually_customized_palette.notification_border_color = manual_override;
+        manually_customized_palette.navigation_toast_border_color = manual_override;
+
+        let mut snapshot = CustomThemesSnapshot {
+            next_id: 3,
+            items: vec![
+                CustomThemeEntry {
+                    id: 1,
+                    name: "Auto-derived".to_string(),
+                    accent: Color32::from_rgb(0, 120, 215),
+                    secondary,
+                    palette: Some(auto_derived_palette),
+                },
+                CustomThemeEntry {
+                    id: 2,
+                    name: "Manually customized".to_string(),
+                    accent: Color32::from_rgb(0, 120, 215),
+                    secondary,
+                    palette: Some(manually_customized_palette),
+                },
+            ],
+        };
+
+        let changed = migrate_custom_theme_border_alpha(&mut snapshot);
+        assert!(changed);
+
+        let expected_new_border =
+            Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 130);
+        let auto_derived = snapshot.items[0].palette.as_ref().unwrap();
+        assert_eq!(auto_derived.notification_border_color, expected_new_border);
+        assert_eq!(
+            auto_derived.navigation_toast_border_color,
+            expected_new_border
+        );
+
+        // The manual override must survive untouched - it doesn't match the
+        // old derivation, so the migration has no business rewriting it.
+        let manual = snapshot.items[1].palette.as_ref().unwrap();
+        assert_eq!(manual.notification_border_color, manual_override);
+        assert_eq!(manual.navigation_toast_border_color, manual_override);
+
+        // Running it again must be a no-op - nothing left to migrate.
+        assert!(!migrate_custom_theme_border_alpha(&mut snapshot));
     }
 }
