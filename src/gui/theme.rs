@@ -948,7 +948,13 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         // needs to actually read as present, rather than a token accent
         // touch nobody notices.
         palette.icon_color = tint(Color32::WHITE, base, 0.15);
-        palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.55);
+        // 0.85, not the original 0.55 - live-sampled proof the 0.55 blend
+        // produced (240,218,143) from a (255,214,64) secondary, a washed
+        // cream that reads as "barely tinted" next to `pinned_tab_color`'s
+        // full-strength gold right above it - not actually broken, just too
+        // subtle to register as "following secondary" at a glance/at icon
+        // size, per direct user feedback.
+        palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.85);
 
         // Buttons tint from `secondary_accent`, not the primary accent -
         // this is the same "30% tier" as the toolbar icons, so a theme's
@@ -974,8 +980,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         palette.tab_inactive_bg_color = tint(Color32::from_rgb(233, 235, 239), base, 0.10);
 
         palette.icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.15);
+        // See the dark-branch comment above - bumped to 0.85 for the same
+        // reason, same live-sampled evidence.
         palette.toolbar_icon_color =
-            tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.55);
+            tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.85);
 
         let neutral = Color32::from_rgb(160, 170, 180);
         palette.button_background = tint_alpha(neutral, palette.secondary_accent, 0.16, 95);
@@ -1252,11 +1260,28 @@ mod regenerate_base_derived_colors_tests {
         );
         assert_eq!(palette.notification_border_color, expected_border);
         assert_eq!(palette.navigation_toast_border_color, expected_border);
-        // Pre-existing derivation (not touched by this task) - asserted
-        // explicitly since a user report asked whether this one was really
-        // wired up; it is, and always was.
+        // Derivation was already wired up (a user report asked whether it
+        // was) - but live pixel-sampling showed the original 0.55 blend
+        // weight produced a color close enough to white/neutral that it
+        // read as "not following" next to `pinned_tab_color`'s full-strength
+        // secondary right above it. Now blended much closer to the raw
+        // secondary (within 40 per channel) while still not identical to it
+        // (a pure white/dark-neutral base still shows through slightly, for
+        // icon legibility).
         assert_ne!(palette.toolbar_icon_color, Color32::WHITE);
         assert_ne!(palette.toolbar_icon_color, palette.secondary_accent);
+        assert!(
+            (palette.toolbar_icon_color.r() as i32 - palette.secondary_accent.r() as i32).abs()
+                <= 40
+        );
+        assert!(
+            (palette.toolbar_icon_color.g() as i32 - palette.secondary_accent.g() as i32).abs()
+                <= 40
+        );
+        assert!(
+            (palette.toolbar_icon_color.b() as i32 - palette.secondary_accent.b() as i32).abs()
+                <= 40
+        );
 
         // Search active icon bg must be darker still than a first pass at
         // "darker" - re-tuned after direct feedback that 0.55 still read as
