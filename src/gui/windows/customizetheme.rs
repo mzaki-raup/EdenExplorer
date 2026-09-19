@@ -667,23 +667,47 @@ pub fn draw_theme_customizer_content(
                                         // between entries in a row and between wrapped
                                         // rows themselves (reported directly: "gap
                                         // between list" / "gap between first row and
-                                        // second row"). Set on this closure's own child
-                                        // `ui` only, so it doesn't leak spacing into
-                                        // anything drawn after this block.
-                                        ui.spacing_mut().item_spacing = egui::vec2(10.0, 14.0);
+                                        // second row" - then again, more: "so user can
+                                        // differentiate the delete button... is for that
+                                        // particular custom theme"). Set on this
+                                        // closure's own child `ui` only, so it doesn't
+                                        // leak spacing into anything drawn after this
+                                        // block.
+                                        ui.spacing_mut().item_spacing = egui::vec2(24.0, 20.0);
                                         const SWATCH_W: f32 = 64.0;
                                         const GAP: f32 = 6.0;
                                         const TRASH_W: f32 = 24.0;
                                         const ROW_H: f32 = 32.0;
                                         const NAME_GAP: f32 = 3.0;
                                         const NAME_H: f32 = 15.0;
-                                        let entry_w = SWATCH_W + GAP + TRASH_W;
+                                        const MIN_ENTRY_W: f32 = SWATCH_W + GAP + TRASH_W;
+                                        let name_font =
+                                            egui::FontId::proportional(palette.tooltip_text_size);
 
                                         for entry in &customizer.custom_themes {
                                             let is_selected = editing_palette.primary
                                                 == entry.accent
                                                 && editing_palette.secondary_accent
                                                     == entry.secondary;
+
+                                            // The card widens to fit the theme's full
+                                            // name (left-aligned under the swatch+trash
+                                            // row) rather than truncating it - measured
+                                            // directly rather than through `truncate_
+                                            // item_text`, since that helper's whole job
+                                            // is finding the longest string that fits a
+                                            // *fixed* width, the opposite of what's
+                                            // needed here.
+                                            let name_width = ui
+                                                .painter()
+                                                .layout_no_wrap(
+                                                    entry.name.clone(),
+                                                    name_font.clone(),
+                                                    palette.text_normal,
+                                                )
+                                                .size()
+                                                .x;
+                                            let entry_w = MIN_ENTRY_W.max(name_width);
 
                                             // Full block (swatch+trash row, plus the
                                             // theme's own name underneath) is one atomic
@@ -842,34 +866,22 @@ pub fn draw_theme_customizer_content(
                                                     Some(entry.id);
                                             }
 
-                                            // The name itself, not just a hover tooltip -
-                                            // truncated to fit the swatch's own width via
-                                            // the same helper the sidebar uses for its
-                                            // item labels, rather than overflowing into
-                                            // the next entry.
-                                            let name_font = egui::FontId::proportional(
-                                                palette.tooltip_text_size,
-                                            );
-                                            let (display_name, _truncated) =
-                                                crate::gui::utils::truncate_item_text(
-                                                    ui,
-                                                    &entry.name,
-                                                    entry_w,
-                                                    &name_font,
-                                                    palette.text_normal,
-                                                );
+                                            // The full name, left-aligned under the
+                                            // swatch's own left edge - `entry_w` above
+                                            // already widened the card to fit it, so
+                                            // there's nothing left to truncate.
                                             if ui.is_rect_visible(rect) {
                                                 ui.painter().text(
                                                     egui::pos2(
-                                                        rect.min.x + entry_w / 2.0,
+                                                        rect.min.x,
                                                         rect.min.y
                                                             + ROW_H
                                                             + NAME_GAP
                                                             + NAME_H / 2.0,
                                                     ),
-                                                    egui::Align2::CENTER_CENTER,
-                                                    display_name,
-                                                    name_font,
+                                                    egui::Align2::LEFT_CENTER,
+                                                    &entry.name,
+                                                    name_font.clone(),
                                                     palette.text_normal,
                                                 );
                                             }
