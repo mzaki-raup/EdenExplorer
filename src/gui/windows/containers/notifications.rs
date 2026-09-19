@@ -92,7 +92,19 @@ pub struct NotificationsState {
 
 impl NotificationsState {
     /// Records a new operation as `InProgress` and returns its id, to be
-    /// passed to `finish_operation` once it completes.
+    /// passed to `finish_operation` once it completes. Also surfaces the
+    /// transient toast immediately (previously only shown on completion via
+    /// `finish_operation`/`poll_robocopy_jobs`'s terminal-state handling) -
+    /// a copy/move that's just been started (via the robocopy-backed
+    /// engine, `mainwindow_imp.rs::start_robocopy_paste`) otherwise gave no
+    /// visible sign anything was happening beyond a small badge count on
+    /// the bell icon, which is easy to miss. `draw_toast` re-reads the
+    /// operation's live status/progress by id every frame, so this same
+    /// toast instance naturally updates in place as the copy progresses;
+    /// if the operation outlives the toast's own 4-second display window,
+    /// reaching a terminal state resets `active_toast`'s timer again (see
+    /// `poll_robocopy_jobs`), giving a second, separate "it's done" toast
+    /// rather than leaving the user with no completion signal at all.
     pub fn start_operation(
         &mut self,
         kind: FileOpKind,
@@ -114,6 +126,10 @@ impl NotificationsState {
                 progress: None,
             },
         );
+        self.active_toast = Some(ActiveToast {
+            op_id: id,
+            shown_at: Instant::now(),
+        });
         id
     }
 
