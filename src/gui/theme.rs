@@ -499,7 +499,11 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         tab_close_hover: Color32::from_rgb(200, 52, 52),
         tab_close_active: Color32::WHITE,
         tab_close_normal: Color32::from_rgb(160, 170, 180),
-        tab_add_hover: Color32::from_rgb(54, 168, 82),
+        // Fixed across every theme (not accent/secondary-derived) per the
+        // user's explicit requirement - white at zero alpha rather than
+        // `Color32::TRANSPARENT` directly, so the RGB a picker shows before
+        // the user raises opacity is white, not black.
+        tab_add_hover: Color32::from_rgba_unmultiplied(255, 255, 255, 0),
         pinned_tab_color: Color32::from_rgb(242, 201, 76),
 
         // 🎯 Drive usage colors
@@ -518,7 +522,10 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔘 Buttons
         button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 20),
         button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
-        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+        // Fixed across every theme (not secondary-derived) per the user's
+        // explicit requirement, unlike `pinned_tab_color` just above which
+        // is a genuine secondary-tier echo.
+        button_favorite_fill: Color32::from_rgb(232, 156, 57),
 
         // 🎯 Corner radius values
         small_radius: 2,
@@ -637,7 +644,11 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         tab_close_hover: Color32::from_rgb(200, 52, 52),
         tab_close_active: Color32::WHITE,
         tab_close_normal: Color32::from_rgb(40, 40, 40),
-        tab_add_hover: Color32::from_rgb(54, 168, 82),
+        // Fixed across every theme (not accent/secondary-derived) per the
+        // user's explicit requirement - white at zero alpha rather than
+        // `Color32::TRANSPARENT` directly, so the RGB a picker shows before
+        // the user raises opacity is white, not black.
+        tab_add_hover: Color32::from_rgba_unmultiplied(255, 255, 255, 0),
         pinned_tab_color: Color32::from_rgb(242, 201, 76),
 
         // 🎯 Drive usage colors
@@ -656,7 +667,10 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔘 Buttons
         button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 95),
         button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
-        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+        // Fixed across every theme (not secondary-derived) per the user's
+        // explicit requirement, unlike `pinned_tab_color` just above which
+        // is a genuine secondary-tier echo.
+        button_favorite_fill: Color32::from_rgb(232, 156, 57),
 
         // 🎯 Corner radius values
         small_radius: 2,
@@ -873,6 +887,20 @@ fn tint_alpha(base_rgb: Color32, accent: Color32, t: f32, alpha: u8) -> Color32 
     Color32::from_rgba_unmultiplied(tinted.r(), tinted.g(), tinted.b(), alpha)
 }
 
+/// Scale `color`'s RGB channels down toward black by `factor` (1.0 = no
+/// change, 0.0 = black) while keeping its own alpha - used for "a darker
+/// variation of this color" rather than blending toward a different hue.
+fn darken(color: Color32, factor: f32) -> Color32 {
+    let factor = factor.clamp(0.0, 1.0);
+    let scale = |c: u8| (c as f32 * factor).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        scale(color.r()),
+        scale(color.g()),
+        scale(color.b()),
+        color.a(),
+    )
+}
+
 /// Blend `base` toward `accent` by `t` (0 = pure `base`, 1 = pure `accent`).
 /// Used to give neutral surfaces/icons a subtle hint of the accent color
 /// without losing contrast, rather than painting them the raw accent.
@@ -920,7 +948,13 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         // needs to actually read as present, rather than a token accent
         // touch nobody notices.
         palette.icon_color = tint(Color32::WHITE, base, 0.15);
-        palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.55);
+        // 0.85, not the original 0.55 - live-sampled proof the 0.55 blend
+        // produced (240,218,143) from a (255,214,64) secondary, a washed
+        // cream that reads as "barely tinted" next to `pinned_tab_color`'s
+        // full-strength gold right above it - not actually broken, just too
+        // subtle to register as "following secondary" at a glance/at icon
+        // size, per direct user feedback.
+        palette.toolbar_icon_color = tint(Color32::WHITE, palette.secondary_accent, 0.85);
 
         // Buttons tint from `secondary_accent`, not the primary accent -
         // this is the same "30% tier" as the toolbar icons, so a theme's
@@ -946,8 +980,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
         palette.tab_inactive_bg_color = tint(Color32::from_rgb(233, 235, 239), base, 0.10);
 
         palette.icon_color = tint(Color32::from_rgb(40, 40, 40), base, 0.15);
+        // See the dark-branch comment above - bumped to 0.85 for the same
+        // reason, same live-sampled evidence.
         palette.toolbar_icon_color =
-            tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.55);
+            tint(Color32::from_rgb(40, 40, 40), palette.secondary_accent, 0.85);
 
         let neutral = Color32::from_rgb(160, 170, 180);
         palette.button_background = tint_alpha(neutral, palette.secondary_accent, 0.16, 95);
@@ -959,23 +995,44 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     palette.borders_active = base;
     palette.checkbox_bg_hover = base;
     palette.checkbox_bg_active = base;
-    // Kept in sync with `primary_hover` (the field this one now stands in
-    // for, so an accent/preset change still updates it automatically) while
-    // still being directly editable on its own, like every other field here.
-    palette.search_active_icon_bg = palette.primary_hover;
+    // A genuinely darker shade of primary (not just primary at lower alpha,
+    // which is what this used to alias to `primary_hover` for) - per the
+    // user's explicit requirement that the active-search icon background
+    // read as darker than the primary color itself, not merely translucent.
+    // 0.3 (30% of primary's own brightness) rather than the initial 0.55 -
+    // the first pass still read as too close to primary itself per direct
+    // user feedback ("please have more darker than current for all themes").
+    palette.search_active_icon_bg = darken(base, 0.3);
     // Same reasoning: previously a disabled `eden_button` looked identical
     // to an enabled one (just faded by egui's own opacity multiply), so
     // these default to matching `button_background`/`button_text_color`
     // exactly, tracking the accent/preset the same way those two do.
     palette.button_disabled_bg = palette.button_background;
     palette.button_disabled_text = palette.button_text_color;
-    // These three previously just read `palette.primary` directly at their
-    // call sites, so default to tracking it the same way, staying in sync
-    // with an accent/preset change while still being directly editable.
-    palette.settings_nav_selected_text_color = base;
-    palette.settings_nav_selected_icon_color = base;
+    // Lighter/whiter variation of primary (not primary itself) per the
+    // user's explicit requirement - a selected settings-nav row needs to
+    // stay readable against its own selection background regardless of how
+    // dark the chosen primary is.
+    let lighter_primary = tint(base, Color32::WHITE, 0.55);
+    palette.settings_nav_selected_text_color = lighter_primary;
+    palette.settings_nav_selected_icon_color = lighter_primary;
     palette.toolbar_icon_active_color = base;
     palette.toolbar_icon_hover_color = base;
+    // Tied to primary per the user's explicit requirement - previously a
+    // fixed red with no relation to the theme's own accent color.
+    palette.badge_color = base;
+
+    // Secondary-driven per the user's explicit requirement -
+    // `toolbar_icon_color` above already tints from `secondary_accent`;
+    // these three now do too. `button_favorite_fill`/`tab_add_hover` are
+    // deliberately left untouched here - both have a fixed default across
+    // every theme instead, per that same requirement.
+    let secondary = palette.secondary_accent;
+    palette.pinned_tab_color = secondary;
+    palette.notification_border_color =
+        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 60);
+    palette.navigation_toast_border_color =
+        Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 60);
 }
 
 /// A named, color-only theme preset - the "bigger-grained" alternative to
@@ -1102,8 +1159,11 @@ pub static PALETTE_PRESETS: &[ThemePresetDef] = &[
 pub fn apply_theme_preset(palette: &mut ThemePalette, preset: &ThemePresetDef, is_dark: bool) {
     palette.primary = preset.accent;
     palette.secondary_accent = preset.secondary;
-    palette.pinned_tab_color = preset.secondary;
-    palette.button_favorite_fill = preset.secondary;
+    // `pinned_tab_color` is derived from `secondary_accent` inside
+    // `regenerate_base_derived_colors` below - no need to set it here too.
+    // `button_favorite_fill`/`tab_add_hover` are deliberately NOT
+    // accent/secondary-derived (fixed across every preset per the user's
+    // own requirement) - a preset must never touch them.
     regenerate_base_derived_colors(palette, is_dark);
 }
 
@@ -1142,4 +1202,126 @@ pub fn apply_font_to_context(ctx: &egui::Context, palette: &ThemePalette) {
 
     ctx.set_fonts(fonts);
     ctx.request_repaint();
+}
+
+#[cfg(test)]
+mod regenerate_base_derived_colors_tests {
+    use super::*;
+
+    // Verifies the primary/secondary -> component wiring the user explicitly
+    // asked for, since none of it can be safely live-clicked in this
+    // environment (editing the live theme's own primary/secondary swatches
+    // has previously left the user's real running theme in a state this
+    // session couldn't revert - see CLAUDE.md). Exercising
+    // `regenerate_base_derived_colors` directly proves the derivation logic
+    // is correct without touching any real, persisted settings.
+    #[test]
+    fn primary_drives_its_documented_components_and_secondary_drives_its_own() {
+        let mut palette = get_default_palette(ThemeMode::Dark);
+        palette.primary = Color32::from_rgb(200, 40, 40);
+        palette.secondary_accent = Color32::from_rgb(40, 120, 200);
+
+        regenerate_base_derived_colors(&mut palette, true);
+
+        // Primary-driven
+        assert_eq!(palette.checkbox_bg_hover, palette.primary);
+        assert_eq!(palette.checkbox_bg_active, palette.primary);
+        assert_eq!(palette.toolbar_icon_active_color, palette.primary);
+        assert_eq!(palette.toolbar_icon_hover_color, palette.primary);
+        assert_eq!(palette.badge_color, palette.primary);
+        // Search active icon bg must be a genuinely darker shade of
+        // primary, not just primary at reduced alpha.
+        assert!(palette.search_active_icon_bg.r() < palette.primary.r());
+        assert!(palette.search_active_icon_bg.g() < palette.primary.g());
+        assert!(palette.search_active_icon_bg.b() < palette.primary.b());
+        assert_eq!(palette.search_active_icon_bg.a(), 255);
+        // Settings-nav selected text/icon must be lighter (whiter) than
+        // primary, not equal to it.
+        assert_ne!(palette.settings_nav_selected_text_color, palette.primary);
+        assert!(palette.settings_nav_selected_text_color.r() >= palette.primary.r());
+        assert!(palette.settings_nav_selected_text_color.g() >= palette.primary.g());
+        assert!(palette.settings_nav_selected_text_color.b() >= palette.primary.b());
+        assert_eq!(
+            palette.settings_nav_selected_text_color,
+            palette.settings_nav_selected_icon_color
+        );
+
+        // Secondary-driven
+        assert_eq!(palette.pinned_tab_color, palette.secondary_accent);
+        // `Color32` stores premultiplied alpha internally, so `.r()`/`.g()`/
+        // `.b()` on a translucent color aren't directly comparable to the
+        // opaque `secondary_accent` they were built from - compare against
+        // the same `from_rgba_unmultiplied` construction instead.
+        let expected_border = Color32::from_rgba_unmultiplied(
+            palette.secondary_accent.r(),
+            palette.secondary_accent.g(),
+            palette.secondary_accent.b(),
+            60,
+        );
+        assert_eq!(palette.notification_border_color, expected_border);
+        assert_eq!(palette.navigation_toast_border_color, expected_border);
+        // Derivation was already wired up (a user report asked whether it
+        // was) - but live pixel-sampling showed the original 0.55 blend
+        // weight produced a color close enough to white/neutral that it
+        // read as "not following" next to `pinned_tab_color`'s full-strength
+        // secondary right above it. Now blended much closer to the raw
+        // secondary (within 40 per channel) while still not identical to it
+        // (a pure white/dark-neutral base still shows through slightly, for
+        // icon legibility).
+        assert_ne!(palette.toolbar_icon_color, Color32::WHITE);
+        assert_ne!(palette.toolbar_icon_color, palette.secondary_accent);
+        assert!(
+            (palette.toolbar_icon_color.r() as i32 - palette.secondary_accent.r() as i32).abs()
+                <= 40
+        );
+        assert!(
+            (palette.toolbar_icon_color.g() as i32 - palette.secondary_accent.g() as i32).abs()
+                <= 40
+        );
+        assert!(
+            (palette.toolbar_icon_color.b() as i32 - palette.secondary_accent.b() as i32).abs()
+                <= 40
+        );
+
+        // Search active icon bg must be darker still than a first pass at
+        // "darker" - re-tuned after direct feedback that 0.55 still read as
+        // too close to primary itself.
+        assert!(
+            (palette.search_active_icon_bg.r() as f32) < (palette.primary.r() as f32) * 0.4
+        );
+
+        // Deliberately NOT derived from either accent - fixed per-theme
+        // defaults the user can still edit independently.
+        assert_ne!(palette.button_favorite_fill, palette.primary);
+        assert_ne!(palette.button_favorite_fill, palette.secondary_accent);
+        assert_ne!(palette.tab_add_hover, palette.primary);
+        assert_ne!(palette.tab_add_hover, palette.secondary_accent);
+    }
+
+    #[test]
+    fn favorite_star_and_tab_add_hover_keep_their_fixed_defaults_across_presets() {
+        let dark = get_default_palette(ThemeMode::Dark);
+        assert_eq!(dark.button_favorite_fill, Color32::from_rgb(232, 156, 57));
+        assert_eq!(
+            dark.tab_add_hover,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 0)
+        );
+
+        let mut palette = get_default_palette(ThemeMode::Dark);
+        let preset = ThemePresetDef {
+            name_key: "test_preset",
+            accent: Color32::from_rgb(10, 200, 90),
+            secondary: Color32::from_rgb(230, 30, 150),
+        };
+        apply_theme_preset(&mut palette, &preset, true);
+
+        // A preset only ever touches accent/secondary + their derived
+        // fields - it must never move the fixed-default fields.
+        assert_eq!(palette.button_favorite_fill, Color32::from_rgb(232, 156, 57));
+        assert_eq!(
+            palette.tab_add_hover,
+            Color32::from_rgba_unmultiplied(255, 255, 255, 0)
+        );
+        assert_eq!(palette.pinned_tab_color, preset.secondary);
+    }
 }

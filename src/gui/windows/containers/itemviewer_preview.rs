@@ -36,6 +36,7 @@ pub fn draw_preview_view(
     icon_cache: &IconCache,
     palette: &ThemePalette,
     rename_state: &mut Option<RenameState>,
+    is_loading: bool,
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
 
@@ -56,15 +57,54 @@ pub fn draw_preview_view(
                         ui.horizontal_top(|ui| {
                             ui.add_space(8.0);
                             ui.vertical(|ui| {
+                                // Set right after creating a new file/folder
+                                // (`create_new_folder`/`create_new_file` in
+                                // `mainwindow_imp.rs`) so the user can
+                                // immediately see and rename it - only the
+                                // Details table view actually consumed this
+                                // before, so a new item created while in
+                                // Preview mode never scrolled into view or
+                                // got selected. Every row here renders every
+                                // frame (no virtualization, unlike Gallery),
+                                // so the matching response's own
+                                // `scroll_to_me` is enough.
+                                let pending_scroll_path = explorer_state
+                                    .pending_selection_paths
+                                    .as_ref()
+                                    .filter(|paths| paths.len() == 1)
+                                    .and_then(|paths| paths.first().cloned());
+
                                 for &idx in filtered_indices {
                                     let file = &files[idx];
-                                    let is_selected =
-                                        explorer_state.selected_paths.contains(&file.path);
 
                                     let (rect, resp) = ui.allocate_exact_size(
                                         egui::vec2(ui.available_width(), ROW_HEIGHT),
                                         egui::Sense::click(),
                                     );
+
+                                    if pending_scroll_path.as_ref() == Some(&file.path) {
+                                        resp.scroll_to_me(Some(egui::Align::Center));
+                                        explorer_state.selected_paths.clear();
+                                        explorer_state.selected_paths.insert(file.path.clone());
+                                        explorer_state.selection_anchor = Some(idx);
+                                        explorer_state.selection_focus = Some(idx);
+                                        // See the matching comment in
+                                        // itemviewer.rs's own pending-
+                                        // selection handling - only clear
+                                        // once the directory scan has
+                                        // actually finished, or a large
+                                        // folder's still-incomplete,
+                                        // still-resorting file list makes
+                                        // this one-shot scroll land
+                                        // somewhere that's stale a frame
+                                        // later.
+                                        if !is_loading {
+                                            explorer_state.pending_selection_paths = None;
+                                        }
+                                    }
+
+                                    let is_selected =
+                                        explorer_state.selected_paths.contains(&file.path);
 
                                     if is_selected {
                                         ui.painter().rect_filled(

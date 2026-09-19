@@ -496,6 +496,75 @@ pub fn eden_text_label(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) ->
     )
 }
 
+/// Paints a themed, fixed-size button by hand - allocate a rect once, then
+/// only ever repaint its fill/stroke/text color depending on hover/disabled
+/// state, never its size.
+///
+/// This exists because egui 0.35's built-in `Button` visibly grows/shrinks
+/// by a couple of pixels on hover even when every color passed to it is
+/// held constant across states. `Button::atom_ui` computes its frame's
+/// `inner_margin` from `button_padding + state.expansion - state.bg_stroke.
+/// width` using each interaction state's own *default* `bg_stroke.width`
+/// from `Widgets::dark()`/`light()` (`inactive` = 0.0, `hovered` = 1.0) -
+/// and it reads that default *before* this app's own `.stroke(...)` call
+/// ever gets applied, so the override changes what's *painted* but not the
+/// margin math that already ran. The net effect: switching from `inactive`
+/// to `hovered` shrinks the button's own inner margin by ~1px per side
+/// purely because of that ambient default, with no way to cancel it out
+/// through the builder API - reported by the user as buttons visibly
+/// resizing on hover across every themed button in the app. Building the
+/// button by hand instead (the same technique `clickable_icon_sized_with_
+/// base_color` above already uses successfully) sidesteps this class of
+/// bug entirely: the rect is allocated once from the text's own measured
+/// size, and hovering only ever swaps which precomputed colors get painted
+/// into that same rect.
+#[allow(clippy::too_many_arguments)]
+fn draw_themed_button(
+    ui: &mut Ui,
+    palette: &ThemePalette,
+    text: &str,
+    fill: Color32,
+    hover_fill: Color32,
+    text_color: Color32,
+    hover_text_color: Color32,
+    stroke: Stroke,
+) -> Response {
+    let font_id = FontId::proportional(palette.text_size);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font_id.clone(), text_color);
+
+    let padding = ui.spacing().button_padding;
+    let min_height = ui.spacing().interact_size.y;
+    let desired_size = egui::vec2(
+        galley.size().x + padding.x * 2.0,
+        (galley.size().y + padding.y * 2.0).max(min_height),
+    );
+
+    let (rect, response) = ui.allocate_exact_size(desired_size, Sense::click());
+
+    if ui.is_rect_visible(rect) {
+        let hovered = ui.is_enabled() && response.hovered();
+        let (fill, text_color) = if hovered {
+            (hover_fill, hover_text_color)
+        } else {
+            (fill, text_color)
+        };
+
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(palette.medium_radius),
+            fill,
+            stroke,
+            StrokeKind::Inside,
+        );
+        ui.painter()
+            .text(rect.center(), Align2::CENTER_CENTER, text, font_id, text_color);
+    }
+
+    response
+}
+
 /// The app's general-purpose button (Export/Import/Reset theme, and every
 /// other plain action button that isn't a dialog's primary/secondary/ghost
 /// choice). Explicitly filled/stroked from `palette.button_background`/
@@ -505,10 +574,12 @@ pub fn eden_text_label(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) ->
 /// them, so editing them (or switching presets) had no visible effect at
 /// all. `regenerate_base_derived_colors` accent-tints both from a preset's
 /// `primary`, so this button's resting color now genuinely follows the
-/// active accent/preset instead of only reacting to it on hover.
+/// active accent/preset instead of only reacting to it on hover. On hover,
+/// only the fill/text color change (to the same accent-tinted pair used
+/// elsewhere for "this is clickable") - see `draw_themed_button`'s own doc
+/// comment for why the button's size never does.
 pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egui::Response {
     apply_eden_visual_overrides(ui, palette);
-    apply_eden_text_overrides(ui, palette);
     // `ui.is_enabled()` reflects a caller wrapping this in `ui.add_enabled(_ui)`
     // (e.g. a "Create" button gated on a non-empty name) - egui's own
     // automatic disabled-opacity fade still applies on top of whichever pair
@@ -518,51 +589,65 @@ pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egu
     } else {
         (palette.button_disabled_bg, palette.button_disabled_text)
     };
-    ui.add(
-        Button::new(RichText::new(text).color(text_color))
-            .fill(fill)
-            .stroke(Stroke::new(1.0, palette.button_stroke))
-            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    draw_themed_button(
+        ui,
+        palette,
+        text,
+        fill,
+        palette.primary_hover,
+        text_color,
+        palette.primary_button_text_color,
+        Stroke::new(1.0, palette.button_stroke),
     )
 }
 
 /// A dialog's single highlighted/recommended action - filled with the
 /// user's accent color so it reads as the default choice at a glance.
 pub fn primary_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
-    apply_eden_text_overrides(ui, palette);
     let (fill, text_color) = if ui.is_enabled() {
         (palette.primary, palette.primary_button_text_color)
     } else {
         (palette.button_disabled_bg, palette.button_disabled_text)
     };
-    ui.add(
-        Button::new(RichText::new(text).color(text_color))
-            .fill(fill)
-            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    draw_themed_button(
+        ui,
+        palette,
+        text,
+        fill,
+        palette.primary_hover,
+        text_color,
+        palette.primary_button_text_color,
+        Stroke::NONE,
     )
 }
 
 /// A dialog action that's valid but not the recommended one - outlined
 /// rather than filled, so it doesn't compete with the primary button.
 pub fn secondary_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
-    apply_eden_text_overrides(ui, palette);
-    ui.add(
-        Button::new(RichText::new(text).color(palette.text_normal))
-            .stroke(Stroke::new(1.0, palette.borders_default))
-            .fill(Color32::TRANSPARENT)
-            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    draw_themed_button(
+        ui,
+        palette,
+        text,
+        Color32::TRANSPARENT,
+        palette.primary_hover.linear_multiply(0.15),
+        palette.text_normal,
+        palette.text_normal,
+        Stroke::new(1.0, palette.borders_default),
     )
 }
 
 /// A dialog's lowest-emphasis action (Cancel) - text only, no fill or
 /// border, so it doesn't visually compete with the real choices.
 pub fn ghost_dialog_button(ui: &mut Ui, palette: &ThemePalette, text: &str) -> Response {
-    apply_eden_text_overrides(ui, palette);
-    ui.add(
-        Button::new(RichText::new(text).color(palette.text_normal.gamma_multiply(0.7)))
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::NONE)
-            .corner_radius(CornerRadius::same(palette.medium_radius)),
+    draw_themed_button(
+        ui,
+        palette,
+        text,
+        Color32::TRANSPARENT,
+        palette.primary_hover.linear_multiply(0.12),
+        palette.text_normal.gamma_multiply(0.7),
+        palette.text_normal,
+        Stroke::NONE,
     )
 }
 

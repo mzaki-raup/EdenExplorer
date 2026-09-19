@@ -105,6 +105,12 @@ pub struct MainWindow {
     /// a modal from the update loop.
     pub(crate) pending_paste_conflict:
         Option<crate::gui::windows::mainwindow_imp::PasteConflictPrompt>,
+    /// A paste-conflict resolution (Replace/Skip/Rename) running on a
+    /// background thread - see `handle_paste_conflict_resolution`'s doc
+    /// comment for why this can't just run inline on the UI thread.
+    /// Polled once per frame by `poll_pending_conflict_resolution`.
+    pub(crate) pending_conflict_resolution:
+        Option<crossbeam_channel::Receiver<crate::gui::windows::mainwindow_imp::ResolvedConflictPaste>>,
     /// A bulk-rename dialog open over a multi-item selection - see
     /// `bulk_rename::BulkRenameState`'s doc comment. Drawn as a modal from
     /// the update loop, alongside `pending_paste_conflict`.
@@ -362,6 +368,7 @@ impl Default for MainWindow {
             pending_command_refreshes: Vec::new(),
             pending_robocopy_pastes: HashMap::new(),
             pending_paste_conflict: None,
+            pending_conflict_resolution: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,
@@ -1623,6 +1630,7 @@ impl eframe::App for MainWindow {
             tags_changed = true;
         }
         self.poll_pending_paste();
+        self.poll_pending_conflict_resolution();
         self.poll_pending_compress();
         self.poll_pending_checksum();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);

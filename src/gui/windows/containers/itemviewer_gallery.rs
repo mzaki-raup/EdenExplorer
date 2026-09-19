@@ -11,8 +11,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    handle_context_menu_actions, handle_editing_file_name, handle_keyboard_navigation,
-    handle_row_click,
+    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
+    handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -62,9 +62,16 @@ pub fn draw_gallery_view(
     is_focused: bool,
     active_tab_id: u64,
     current_dir: PathBuf,
+    is_loading: bool,
 ) -> Option<ItemViewerAction> {
     let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
+
+    // Top padding so the Sort By/thumbnail-size row doesn't sit flush
+    // against the pane's own top edge - every other view's own toolbar/
+    // navbar row keeps a small margin from its container's top border,
+    // this one had none of its own.
+    ui.add_space(6.0);
 
     let mut action = draw_gallery_toolbar(
         ui,
@@ -75,10 +82,61 @@ pub fn draw_gallery_view(
         sort_ascending,
     );
 
+    // Gap between the toolbar row and the divider below it, so the two
+    // don't sit flush together - mirrors the gap added below the divider
+    // (see `ui.add_space` right after the `hline` call).
+    ui.add_space(6.0);
+
+    // Separates the sort/thumbnail-size toolbar from the file grid below
+    // it, matching the same technique already used to separate the tab
+    // strip from the item viewer (`mainwindow.rs`) and the navbar from the
+    // table (`explorer.rs`) - a plain `hline` at the row's own bottom edge
+    // rather than leaving the two visually blended together. This pane's
+    // own left/right bounds are the same ones `explorer.rs`'s own
+    // `content_border_rect` box border uses (`content_rect.right() -=
+    // 6.0`, left untouched - see that comment for why only the right side
+    // needs pulling in) - matching those same bounds here means the
+    // divider's ends align with that box border rather than either
+    // overshooting it (touching the sidebar/outer window border) or
+    // falling short of it (a gap of dead space past the divider's own
+    // end before the box border).
+    let divider_bounds = ui.available_rect_before_wrap();
+    ui.painter().hline(
+        egui::Rangef::new(divider_bounds.left(), divider_bounds.right() - 6.0),
+        ui.cursor().top(),
+        egui::Stroke::new(1.5, palette.borders_default),
+    );
+
+    // Bottom padding so the file grid doesn't sit flush against the
+    // divider line, mirroring the top padding added above it.
+    ui.add_space(6.0);
+
     if filtered_indices.is_empty() {
+        let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
             ui.label(i18n.tr("folder_is_empty"));
         });
+
+        // See the matching comment in itemviewer.rs's own empty-folder
+        // handling - the populated-folder background context menu below
+        // never reaches an empty folder, since it's wired through a
+        // background `Response` only computed once there's an actual grid
+        // of tiles to lay out.
+        if !modal_input_blocked {
+            let empty_resp =
+                ui.interact(empty_rect, ui.id().with("empty_gallery_bg"), egui::Sense::click());
+            draw_empty_folder_context_menu(
+                i18n,
+                palette,
+                &empty_resp,
+                &current_dir,
+                paste_enabled,
+                settings_window,
+                explorer_state,
+                hwnd,
+                &mut action,
+            );
+        }
         return action;
     }
 
@@ -153,6 +211,61 @@ pub fn draw_gallery_view(
                 }
 
                 let content_origin = ui.min_rect().min;
+
+                // A pending selection (set right after creating a new file/
+                // folder, so the user can immediately see and rename it -
+                // `create_new_folder`/`create_new_file` in `mainwindow_imp.
+                // rs`) only actually scrolled/selected in the Details table
+                // view, since that's the only place that read it - Gallery
+                // never consumed it at all, so a new item created while in
+                // Gallery mode could render far outside the current scroll
+                // position (or, worse, outside this virtualized view's
+                // "nearby rows" draw window entirely) with no indication
+                // anything happened. The target rect is computed directly
+                // from the item's index rather than waiting for it to
+                // actually render this frame, since `scroll_to_rect` only
+                // needs a valid rect to schedule the scroll - not one that
+                // was actually painted.
+                if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
+                    if let (Some(target_path), true) =
+                        (pending_paths.first(), pending_paths.len() == 1)
+                    {
+                        if let Some(item_index) = filtered_indices
+                            .iter()
+                            .position(|&file_index| &files[file_index].path == target_path)
+                        {
+                            let row = item_index / columns;
+                            let col = item_index % columns;
+                            let target_rect = egui::Rect::from_min_size(
+                                content_origin
+                                    + egui::vec2(col as f32 * col_pitch, row as f32 * row_pitch),
+                                egui::vec2(tile_width, tile_height),
+                            );
+                            ui.scroll_to_rect(target_rect, Some(egui::Align::Center));
+
+                            explorer_state.selected_paths.clear();
+                            explorer_state.selected_paths.insert(target_path.clone());
+                            explorer_state.selection_anchor = Some(item_index);
+                            explorer_state.selection_focus = Some(item_index);
+                        }
+                    }
+                    // Only clear the pending marker once the directory scan
+                    // has actually finished (`!is_loading`) - a large folder
+                    // streams its contents in over many frames and re-sorts
+                    // after every batch, so clearing this the moment the
+                    // item is first found (the previous behavior) landed the
+                    // one-shot `scroll_to_rect` against a still-incomplete,
+                    // still-resorting list; worse, clearing it *unconditionally*
+                    // here even when the item hadn't been found yet meant a
+                    // large folder's new item was never scrolled to at all,
+                    // since this ran and gave up on literally the first
+                    // frame. Retrying every frame while loading is cheap and
+                    // self-correcting, and guarantees the *last* attempt
+                    // lands against the final, fully-settled sort order.
+                    if !is_loading {
+                        explorer_state.pending_selection_paths = None;
+                    }
+                }
 
                 let bg_rect = egui::Rect::from_min_size(
                     content_origin,

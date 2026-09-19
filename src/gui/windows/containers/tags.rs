@@ -1392,23 +1392,23 @@ fn handle_context_menu_actions_tags(
         ui.close();
     }
 
-    let tag_label = if is_tagged {
-        i18n.tr("tag_remove")
-    } else {
-        i18n.tr("tag_add")
-    };
+    // "Add Tag" is always offered, even for an item already tagged - being
+    // in one group doesn't preclude being added to another, so already
+    // being tagged shouldn't hide the only way to add a second tag (see
+    // the matching fix in `itemviewer_helper.rs`'s own context menu).
+    if ui.button(i18n.tr("tag_add")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::AddTag(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
 
-    if ui.button(tag_label).clicked() {
-        *action = Some(ItemViewerAction::Context(if is_tagged {
-            match current_group_id {
-                Some(group_id) => ItemViewerContextAction::RemoveTagFromGroup(
-                    group_id,
-                    context_paths.clone(),
-                ),
-                None => ItemViewerContextAction::RemoveTag(context_paths.clone()),
+    if is_tagged && ui.button(i18n.tr("tag_remove")).clicked() {
+        *action = Some(ItemViewerAction::Context(match current_group_id {
+            Some(group_id) => {
+                ItemViewerContextAction::RemoveTagFromGroup(group_id, context_paths.clone())
             }
-        } else {
-            ItemViewerContextAction::AddTag(context_paths.clone())
+            None => ItemViewerContextAction::RemoveTag(context_paths.clone()),
         }));
         ui.close();
     }

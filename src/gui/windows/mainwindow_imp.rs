@@ -421,6 +421,156 @@ pub struct ChecksumDialogState {
     pub compare_input: String,
 }
 
+/// Everything `MainWindow::finish_robocopy_paste` needs to start tracking a
+/// paste-conflict resolution's robocopy jobs, computed entirely on a
+/// background thread by `handle_paste_conflict_resolution` - see that
+/// method's doc comment for why. `jobs`/`total_bytes` are the direct
+/// output of `core::robocopy::build_jobs`, already run off the UI thread.
+pub struct ResolvedConflictPaste {
+    jobs: Vec<crate::core::robocopy::RobocopyJobSpec>,
+    total_bytes: u64,
+    paths: Vec<PathBuf>,
+    target_dir: PathBuf,
+    before_entries: HashSet<PathBuf>,
+    is_cut: bool,
+    side: SplitSide,
+    renames: HashMap<PathBuf, String>,
+    replaced: HashMap<PathBuf, Vec<u8>>,
+}
+
+/// Free-function core of `MainWindow::delete_paths_native` - pulled out so
+/// a background thread (the paste-conflict modal's Replace resolution, see
+/// `handle_paste_conflict_resolution`) can call it without needing a
+/// `MainWindow` reference, which can't cross a thread boundary. The method
+/// never actually read `self` for anything besides the receiver syntax, so
+/// this is a pure extraction, not a behavior change.
+fn delete_paths_native_standalone(
+    paths: Vec<PathBuf>,
+    allow_undo: bool,
+    silent: bool,
+) -> windows::core::Result<()> {
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::Win32::UI::Shell::{
+        FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+    };
+    use windows::core::HSTRING;
+
+    unsafe {
+        let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+        // Recycle-bin view needs permanent delete; normal view keeps undo.
+        let flags = match (allow_undo, silent) {
+            (true, true) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
+            (true, false) => FOF_ALLOWUNDO | FOF_WANTNUKEWARNING,
+            (false, true) => FOF_NOCONFIRMATION | FOF_SILENT,
+            (false, false) => FOF_WANTNUKEWARNING,
+        };
+        file_op.SetOperationFlags(flags)?;
+
+        for path in paths {
+            let item: IShellItem = SHCreateItemFromParsingName(
+                &HSTRING::from(path.to_string_lossy().to_string()),
+                None,
+            )?;
+
+            file_op.DeleteItem(&item, None)?;
+        }
+
+        file_op.PerformOperations()?;
+    }
+
+    Ok(())
+}
+
+/// Free-function core of `MainWindow::find_recycled_pidl` - pulled out for
+/// the same reason as `delete_paths_native_standalone` above (a background
+/// thread can't hold a `MainWindow` reference). `get_shell_item_metadata`
+/// needs date/time-formatting settings only to build the *formatted*
+/// strings this function immediately discards (it reads only the raw
+/// `deleted_time_raw`/`original_object_name`/`original_directory` fields),
+/// so passing `DateStyle::default()`/arbitrary formatting args here is
+/// safe - the discarded output never reaches anything user-visible.
+///
+/// This enumerates the *entire* Recycle Bin looking for a name+directory
+/// match, which is genuinely slow on a machine whose Recycle Bin has
+/// accumulated many items - exactly why callers on the paste-conflict
+/// modal's Replace path (`handle_paste_conflict_resolution`) must run this
+/// on a background thread rather than the UI thread, where it would
+/// otherwise freeze that frame (and the still-visible modal) until this
+/// finishes.
+fn find_recycled_pidl_standalone(original_dir: &Path, name: &str) -> Option<Vec<u8>> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{
+        BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize, IShellItem,
+        SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
+    };
+
+    let original_dir_str = original_dir.to_string_lossy().to_string();
+    let mut best: Option<(i64, Vec<u8>)> = None;
+
+    unsafe {
+        let recycle_pidl = SHGetKnownFolderIDList(&FOLDERID_RecycleBinFolder, 0, None).ok()?;
+        let recycle_item: IShellItem = match SHCreateItemFromIDList(recycle_pidl) {
+            Ok(item) => item,
+            Err(_) => {
+                CoTaskMemFree(Some(recycle_pidl as _));
+                return None;
+            }
+        };
+
+        let enum_items: IEnumShellItems = match recycle_item.BindToHandler(None, &BHID_EnumItems) {
+            Ok(items) => items,
+            Err(_) => {
+                CoTaskMemFree(Some(recycle_pidl as _));
+                return None;
+            }
+        };
+
+        loop {
+            let mut fetched_items: [Option<IShellItem>; 1] = [None];
+            if enum_items.Next(&mut fetched_items, None).is_err() {
+                break;
+            }
+            let Some(item) = fetched_items[0].take() else {
+                break;
+            };
+
+            let (_, _, _, _, _, _, deleted_time_raw, original_object_name, original_directory) =
+                crate::core::fs::get_shell_item_metadata(
+                    &item,
+                    crate::core::fs::DateStyle::default(),
+                    false,
+                    "",
+                );
+
+            let matches = original_object_name.as_deref() == Some(name)
+                && original_directory.as_deref() == Some(original_dir_str.as_str());
+
+            if matches
+                && let Ok(pidl) = SHGetIDListFromObject(&item)
+            {
+                let pidl_size = ILGetSize(Some(pidl as _)) as usize;
+                let mut pidl_bytes = vec![0u8; pidl_size];
+                std::ptr::copy_nonoverlapping(pidl as *const u8, pidl_bytes.as_mut_ptr(), pidl_size);
+                ILFree(Some(pidl as _));
+
+                let deleted_time = deleted_time_raw.unwrap_or(0);
+                let is_better = match &best {
+                    Some((t, _)) => deleted_time > *t,
+                    None => true,
+                };
+                if is_better {
+                    best = Some((deleted_time, pidl_bytes));
+                }
+            }
+        }
+
+        CoTaskMemFree(Some(recycle_pidl as _));
+    }
+
+    best.map(|(_, pidl)| pidl)
+}
+
 impl Drop for MainWindow {
     fn drop(&mut self) {
         self.cleanup_resources();
@@ -1427,6 +1577,17 @@ impl MainWindow {
                                 new_path: target.clone(),
                             });
                         }
+
+                        self.notifications_state.record_finished(
+                            crate::gui::windows::containers::notifications::FileOpKind::Rename,
+                            1,
+                            String::new(),
+                            if renamed_ok {
+                                crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                            } else {
+                                crate::gui::windows::containers::notifications::FileOpStatus::Failed
+                            },
+                        );
                     }
                 }
 
@@ -1674,6 +1835,44 @@ impl MainWindow {
         let (jobs, total_bytes) =
             crate::core::robocopy::build_jobs(&paths, &target_dir, is_cut, &renames);
 
+        self.finish_robocopy_paste(
+            jobs,
+            total_bytes,
+            paths,
+            target_dir,
+            before_entries,
+            is_cut,
+            side,
+            renames,
+            replaced,
+            origin,
+        );
+    }
+
+    /// The lightweight back half of `start_robocopy_paste` - actually kicks
+    /// off the background robocopy job and its notification/bookkeeping
+    /// entries, once `jobs`/`total_bytes` already exist. Split out so
+    /// `poll_pending_conflict_resolution` can call it directly with jobs a
+    /// background thread already built, without redoing (or blocking the
+    /// UI thread on) `core::robocopy::build_jobs`'s own work.
+    #[allow(clippy::too_many_arguments)]
+    fn finish_robocopy_paste(
+        &mut self,
+        jobs: Vec<crate::core::robocopy::RobocopyJobSpec>,
+        total_bytes: u64,
+        paths: Vec<PathBuf>,
+        target_dir: PathBuf,
+        before_entries: HashSet<PathBuf>,
+        is_cut: bool,
+        side: SplitSide,
+        renames: HashMap<PathBuf, String>,
+        replaced: HashMap<PathBuf, Vec<u8>>,
+        origin: PasteOrigin,
+    ) {
+        if jobs.is_empty() {
+            return;
+        }
+
         let notification_id = self.notifications_state.start_operation(
             if is_cut {
                 crate::gui::windows::containers::notifications::FileOpKind::Move
@@ -1704,81 +1903,160 @@ impl MainWindow {
     }
 
     /// Applies the user's Replace/Skip/Rename choice from the paste-conflict
-    /// modal and starts the (possibly filtered/renamed) paste.
+    /// modal and starts the (possibly filtered/renamed) paste. The actual
+    /// resolution work runs entirely on a background thread rather than
+    /// inline here - `PasteConflictAction::Replace` recycles the colliding
+    /// item via `delete_paths_native_standalone` and then searches for its
+    /// Recycle Bin pidl via `find_recycled_pidl_standalone`, which
+    /// enumerates the *entire* Recycle Bin and can take a very noticeable
+    /// amount of time on a machine that's accumulated many recycled items;
+    /// separately, `core::robocopy::build_jobs` (needed for every action,
+    /// not just Replace) synchronously walks and sums the size of any
+    /// pasted *folder* via `calculate_folder_size_fast`, which is slow for
+    /// a large tree. Running either of those directly in this method - the
+    /// click handler for the modal's Replace/Rename buttons - blocked the
+    /// whole frame from finishing until they completed, and since egui is
+    /// immediate-mode, this frame's modal draw calls (queued *before* this
+    /// handler ran) don't actually reach the screen until the frame
+    /// finishes - so the modal visibly stayed frozen on screen for however
+    /// long this took, reported by the user as Replace/Rename "taking a
+    /// while before the dialog box hides." Clearing `pending_paste_conflict`
+    /// immediately (already the first thing this function does) doesn't
+    /// help by itself, since that only changes what the *next* frame draws.
+    /// Deferring the slow work to a background thread lets this function
+    /// return immediately, so the very next frame already has no modal to
+    /// draw; `poll_pending_conflict_resolution` picks up the result once
+    /// the thread finishes and starts the actual paste then.
+    ///
     /// `Skip` drops every source item whose name collided - if that empties
-    /// the list entirely, `start_robocopy_paste` is a no-op, matching "Skip
-    /// Existing" when literally everything was a duplicate. `Rename` keeps
-    /// every item, computing a fresh `<name>-001`-style name (see
+    /// the list entirely, the resulting job list is empty and
+    /// `finish_robocopy_paste` is a no-op, matching "Skip Existing" when
+    /// literally everything was a duplicate. `Rename` keeps every item,
+    /// computing a fresh `<name>-001`-style name (see
     /// `core::robocopy::next_available_name`) for each one that collided.
     pub fn handle_paste_conflict_resolution(&mut self, action: PasteConflictAction) {
         let Some(prompt) = self.pending_paste_conflict.take() else {
             return;
         };
 
-        let is_conflicting = |p: &Path| {
-            p.file_name()
-                .map(|n| {
-                    prompt
-                        .conflicting_names
-                        .iter()
-                        .any(|c| c == n.to_string_lossy().as_ref())
-                })
-                .unwrap_or(false)
-        };
+        let (tx, rx) = crossbeam_channel::bounded(1);
 
-        let mut renames = HashMap::new();
-        let mut replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
-        let paths = match action {
-            PasteConflictAction::Replace => {
-                // Make Replace non-destructive: recycle the item that's
-                // about to be overwritten first (instead of letting
-                // robocopy overwrite it directly, which would be permanent
-                // data loss with no undo), stashing its Recycle Bin pidl so
-                // undo/redo can restore or re-recycle it later - see
-                // `find_recycled_pidl`'s doc comment.
-                for path in &prompt.paths {
-                    if is_conflicting(path)
-                        && let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string())
-                    {
-                        let existing_path = prompt.target_dir.join(&name);
-                        if self
-                            .delete_paths_native(vec![existing_path.clone()], true, true)
-                            .is_ok()
-                            && let Some(pidl) = self.find_recycled_pidl(&prompt.target_dir, &name)
+        std::thread::spawn(move || {
+            let is_conflicting = |p: &Path| {
+                p.file_name()
+                    .map(|n| {
+                        prompt
+                            .conflicting_names
+                            .iter()
+                            .any(|c| c == n.to_string_lossy().as_ref())
+                    })
+                    .unwrap_or(false)
+            };
+
+            let mut renames = HashMap::new();
+            let mut replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+            let paths = match action {
+                PasteConflictAction::Replace => {
+                    // Make Replace non-destructive: recycle the item that's
+                    // about to be overwritten first (instead of letting
+                    // robocopy overwrite it directly, which would be
+                    // permanent data loss with no undo), stashing its
+                    // Recycle Bin pidl so undo/redo can restore or
+                    // re-recycle it later - see
+                    // `find_recycled_pidl_standalone`'s doc comment.
+                    for path in &prompt.paths {
+                        if is_conflicting(path)
+                            && let Some(name) =
+                                path.file_name().map(|n| n.to_string_lossy().to_string())
                         {
-                            replaced.insert(existing_path, pidl);
+                            let existing_path = prompt.target_dir.join(&name);
+                            if delete_paths_native_standalone(
+                                vec![existing_path.clone()],
+                                true,
+                                true,
+                            )
+                            .is_ok()
+                                && let Some(pidl) =
+                                    find_recycled_pidl_standalone(&prompt.target_dir, &name)
+                            {
+                                replaced.insert(existing_path, pidl);
+                            }
                         }
                     }
+                    prompt.paths
                 }
-                prompt.paths
-            }
-            PasteConflictAction::Skip => prompt
-                .paths
-                .into_iter()
-                .filter(|p| !is_conflicting(p))
-                .collect(),
-            PasteConflictAction::Rename => {
-                for path in &prompt.paths {
-                    if is_conflicting(path) {
-                        if let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) {
-                            let new_name =
-                                crate::core::robocopy::next_available_name(&prompt.target_dir, &name);
-                            renames.insert(path.clone(), new_name);
+                PasteConflictAction::Skip => prompt
+                    .paths
+                    .into_iter()
+                    .filter(|p| !is_conflicting(p))
+                    .collect(),
+                PasteConflictAction::Rename => {
+                    for path in &prompt.paths {
+                        if is_conflicting(path) {
+                            if let Some(name) =
+                                path.file_name().map(|n| n.to_string_lossy().to_string())
+                            {
+                                let new_name = crate::core::robocopy::next_available_name(
+                                    &prompt.target_dir,
+                                    &name,
+                                );
+                                renames.insert(path.clone(), new_name);
+                            }
                         }
                     }
+                    prompt.paths
                 }
-                prompt.paths
-            }
+            };
+
+            let (jobs, total_bytes) = crate::core::robocopy::build_jobs(
+                &paths,
+                &prompt.target_dir,
+                prompt.is_cut,
+                &renames,
+            );
+
+            let _ = tx.send(ResolvedConflictPaste {
+                jobs,
+                total_bytes,
+                paths,
+                target_dir: prompt.target_dir,
+                before_entries: prompt.before_entries,
+                is_cut: prompt.is_cut,
+                side: prompt.side,
+                renames,
+                replaced,
+            });
+        });
+
+        self.pending_conflict_resolution = Some(rx);
+    }
+
+    /// Picks up a paste-conflict resolution's result once the background
+    /// thread `handle_paste_conflict_resolution` spawned finishes, and
+    /// starts the actual robocopy job - called once per frame from the
+    /// update loop, same shape as `poll_pending_compress`/
+    /// `poll_pending_checksum`. A still-running resolution is left alone
+    /// for the next frame to check again.
+    pub fn poll_pending_conflict_resolution(&mut self) {
+        let Some(rx) = &self.pending_conflict_resolution else {
+            return;
         };
 
-        self.start_robocopy_paste(
-            paths,
-            prompt.target_dir,
-            prompt.before_entries,
-            prompt.is_cut,
-            prompt.side,
-            renames,
-            replaced,
+        let Ok(resolved) = rx.try_recv() else {
+            return;
+        };
+
+        self.pending_conflict_resolution = None;
+        self.finish_robocopy_paste(
+            resolved.jobs,
+            resolved.total_bytes,
+            resolved.paths,
+            resolved.target_dir,
+            resolved.before_entries,
+            resolved.is_cut,
+            resolved.side,
+            resolved.renames,
+            resolved.replaced,
             PasteOrigin::UserAction,
         );
     }
@@ -2380,37 +2658,7 @@ impl MainWindow {
         allow_undo: bool,
         silent: bool,
     ) -> windows::core::Result<()> {
-        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-        use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
-        };
-        use windows::core::HSTRING;
-
-        unsafe {
-            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
-
-            // Recycle-bin view needs permanent delete; normal view keeps undo.
-            let flags = match (allow_undo, silent) {
-                (true, true) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
-                (true, false) => FOF_ALLOWUNDO | FOF_WANTNUKEWARNING,
-                (false, true) => FOF_NOCONFIRMATION | FOF_SILENT,
-                (false, false) => FOF_WANTNUKEWARNING,
-            };
-            file_op.SetOperationFlags(flags)?;
-
-            for path in paths {
-                let item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(path.to_string_lossy().to_string()),
-                    None,
-                )?;
-
-                file_op.DeleteItem(&item, None)?;
-            }
-
-            file_op.PerformOperations()?;
-        }
-
-        Ok(())
+        delete_paths_native_standalone(paths, allow_undo, silent)
     }
 
     /// Records a freshly-completed, reversible operation on `undo_stack`,
@@ -2814,77 +3062,7 @@ impl MainWindow {
     /// recently deleted match (by `deleted_time_raw`) is the best available
     /// tie-break.
     fn find_recycled_pidl(&self, original_dir: &Path, name: &str) -> Option<Vec<u8>> {
-        use windows::Win32::System::Com::CoTaskMemFree;
-        use windows::Win32::UI::Shell::{
-            BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize,
-            IShellItem, SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
-        };
-
-        let original_dir_str = original_dir.to_string_lossy().to_string();
-        let mut best: Option<(i64, Vec<u8>)> = None;
-
-        unsafe {
-            let recycle_pidl = SHGetKnownFolderIDList(&FOLDERID_RecycleBinFolder, 0, None).ok()?;
-            let recycle_item: IShellItem = match SHCreateItemFromIDList(recycle_pidl) {
-                Ok(item) => item,
-                Err(_) => {
-                    CoTaskMemFree(Some(recycle_pidl as _));
-                    return None;
-                }
-            };
-
-            let enum_items: IEnumShellItems =
-                match recycle_item.BindToHandler(None, &BHID_EnumItems) {
-                    Ok(items) => items,
-                    Err(_) => {
-                        CoTaskMemFree(Some(recycle_pidl as _));
-                        return None;
-                    }
-                };
-
-            loop {
-                let mut fetched_items: [Option<IShellItem>; 1] = [None];
-                if enum_items.Next(&mut fetched_items, None).is_err() {
-                    break;
-                }
-                let Some(item) = fetched_items[0].take() else {
-                    break;
-                };
-
-                let (_, _, _, _, _, _, deleted_time_raw, original_object_name, original_directory) =
-                    crate::core::fs::get_shell_item_metadata(
-                        &item,
-                        self.settings_window.current_settings.date_style,
-                        self.settings_window.current_settings.time_format_24h,
-                        &self.settings_window.current_settings.custom_date_format,
-                    );
-
-                let matches = original_object_name.as_deref() == Some(name)
-                    && original_directory.as_deref() == Some(original_dir_str.as_str());
-
-                if matches
-                    && let Ok(pidl) = SHGetIDListFromObject(&item)
-                {
-                    let pidl_size = ILGetSize(Some(pidl as _)) as usize;
-                    let mut pidl_bytes = vec![0u8; pidl_size];
-                    std::ptr::copy_nonoverlapping(pidl as *const u8, pidl_bytes.as_mut_ptr(), pidl_size);
-                    ILFree(Some(pidl as _));
-
-                    let deleted_time = deleted_time_raw.unwrap_or(0);
-                    let is_better = match &best {
-                        Some((t, _)) => deleted_time > *t,
-                        None => true,
-                    };
-                    if is_better {
-                        best = Some((deleted_time, pidl_bytes));
-                    }
-                }
-            }
-
-            CoTaskMemFree(Some(recycle_pidl as _));
-        }
-
-        best.map(|(_, pidl)| pidl)
+        find_recycled_pidl_standalone(original_dir, name)
     }
 
     pub fn open_properties_multi(&self, paths: &[PathBuf]) {

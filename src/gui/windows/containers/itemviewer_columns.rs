@@ -8,7 +8,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    handle_context_menu_actions, handle_editing_file_name,
+    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
 };
 use crate::gui::windows::containers::itemviewer_preview::{PREVIEW_PANE_WIDTH, draw_preview_pane};
 use crate::gui::windows::containers::structs::{
@@ -250,6 +250,28 @@ fn draw_columns_core(
                                             egui::Sense::click(),
                                         );
 
+                                        // Set right after creating a new
+                                        // file/folder so the user can
+                                        // immediately see and rename it -
+                                        // this view's own selection concept
+                                        // (`selected_next_path`/`columns_
+                                        // state.selected_file`) doesn't
+                                        // apply cleanly to a just-created,
+                                        // not-yet-drilled-into folder, so
+                                        // this only scrolls it into view
+                                        // and leaves the rename box (driven
+                                        // by `rename_state` regardless of
+                                        // selection) to provide the actual
+                                        // focus.
+                                        if explorer_state
+                                            .pending_selection_paths
+                                            .as_deref()
+                                            == Some(std::slice::from_ref(&item.path))
+                                        {
+                                            resp.scroll_to_me(Some(egui::Align::Center));
+                                            explorer_state.pending_selection_paths = None;
+                                        }
+
                                         if is_selected || resp.hovered() {
                                             ui.painter().rect_filled(
                                                 rect,
@@ -426,6 +448,36 @@ fn draw_columns_core(
                                     if column.items.is_empty() {
                                         ui.add_space(8.0);
                                         ui.weak(i18n.tr("folder_is_empty"));
+
+                                        // This column has no items to
+                                        // right-click, and (unlike every
+                                        // other view) the column browser
+                                        // never had a background right-click
+                                        // menu at all, even for a non-empty
+                                        // column - only per-item ones. Give
+                                        // an empty column the same New
+                                        // Folder/New File/Open Terminal/
+                                        // Properties/Windows-menu affordance
+                                        // every other empty-folder view now
+                                        // has, scoped to *this* column's own
+                                        // directory.
+                                        let empty_rect = ui.available_rect_before_wrap();
+                                        let empty_resp = ui.interact(
+                                            empty_rect,
+                                            ui.id().with(("empty_column_bg", col_idx)),
+                                            egui::Sense::click(),
+                                        );
+                                        draw_empty_folder_context_menu(
+                                            i18n,
+                                            palette,
+                                            &empty_resp,
+                                            &column.path,
+                                            paste_enabled,
+                                            settings_window,
+                                            explorer_state,
+                                            hwnd,
+                                            &mut context_menu_action,
+                                        );
                                     }
 
                                     // Bottom padding so the last item isn't

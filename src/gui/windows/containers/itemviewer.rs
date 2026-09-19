@@ -208,6 +208,9 @@ pub fn draw_item_viewer(
             }
         });
 
+        let empty_resp =
+            ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
+
         // The populated-folder double-click-to-go-up handler below lives
         // inside the `!visible_items_empty` table-drawing branch (it's
         // wired through `table_background_response`, which only makes
@@ -218,12 +221,39 @@ pub fn draw_item_viewer(
         if !modal_input_blocked
             && !is_recycle_bin_view
             && settings_window.current_settings.double_click_navigates_up
+            && empty_resp.double_clicked()
         {
-            let empty_resp =
-                ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
-            if empty_resp.double_clicked() {
-                tabbar_action.get_or_insert_with(Default::default).nav =
-                    Some(ItemViewerNavAction::Up);
+            tabbar_action.get_or_insert_with(Default::default).nav = Some(ItemViewerNavAction::Up);
+        }
+
+        // Same gap as the double-click handler above: the populated-folder
+        // background right-click menu lives inside the `!visible_items_
+        // empty` branch too, so an empty folder had no right-click
+        // affordance at all in any of New Folder/New File/Open Terminal/
+        // Properties/the Windows context menu.
+        if !modal_input_blocked {
+            if !is_drive_view && !is_recycle_bin_view {
+                draw_empty_folder_context_menu(
+                    i18n,
+                    palette,
+                    &empty_resp,
+                    &current_dir,
+                    paste_enabled,
+                    settings_window,
+                    explorer_state,
+                    hwnd,
+                    &mut action,
+                );
+            } else if is_recycle_bin_view {
+                Popup::context_menu(&empty_resp)
+                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        apply_eden_text_overrides(ui, palette);
+                        if ui.button("Refresh").clicked() {
+                            action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                            ui.close();
+                        }
+                    });
             }
         }
     }
@@ -308,6 +338,7 @@ pub fn draw_item_viewer(
             icon_cache,
             palette,
             rename_state,
+            is_loading,
         )
         .or(action);
     }
@@ -344,6 +375,7 @@ pub fn draw_item_viewer(
             is_focused,
             active_tab_id,
             current_dir,
+            is_loading,
         )
         .or(action);
     }
@@ -367,22 +399,40 @@ pub fn draw_item_viewer(
                 }
             });
 
+            let empty_resp = ui.interact(
+                empty_rect,
+                ui.id().with("empty_folder_bg_detail_preview"),
+                egui::Sense::click(),
+            );
+
             // See the matching comment on the plain-Details empty case
             // above - the populated-folder handler lives inside the
             // `!visible_items_empty` branch below and never runs here.
             if !modal_input_blocked
                 && !is_recycle_bin_view
                 && settings_window.current_settings.double_click_navigates_up
+                && empty_resp.double_clicked()
             {
-                let empty_resp = ui.interact(
-                    empty_rect,
-                    ui.id().with("empty_folder_bg_detail_preview"),
-                    egui::Sense::click(),
+                tabbar_action.get_or_insert_with(Default::default).nav =
+                    Some(ItemViewerNavAction::Up);
+            }
+
+            // Same gap as the double-click handler above - see the matching
+            // comment on the plain-Details empty case for why this needs
+            // its own explicit wiring rather than reaching the populated-
+            // folder background menu further down.
+            if !modal_input_blocked {
+                draw_empty_folder_context_menu(
+                    i18n,
+                    palette,
+                    &empty_resp,
+                    &current_dir,
+                    paste_enabled,
+                    settings_window,
+                    explorer_state,
+                    hwnd,
+                    &mut action,
                 );
-                if empty_resp.double_clicked() {
-                    tabbar_action.get_or_insert_with(Default::default).nav =
-                        Some(ItemViewerNavAction::Up);
-                }
             }
         }
 
@@ -447,9 +497,17 @@ pub fn draw_item_viewer(
             let ctx = ui.ctx().clone();
             let table_rect = ui.available_rect_before_wrap();
             let left_margin = 8.0;
+            // Matches the box border's own right inset (`content_border_rect`
+            // in `explorer.rs`, `content_rect.max.x -= 6.0`) - without this,
+            // a selected row's highlight (painted across the table's own
+            // full row width by `row.set_selected`) extended all the way to
+            // the pane's true right edge, ~6px past where that border is
+            // actually drawn, reading as the highlight overflowing outside
+            // the visible box in a dual-pane split.
+            let right_margin = 6.0;
             let table_rect = egui::Rect::from_min_max(
                 egui::pos2(table_rect.left() + left_margin, table_rect.top()),
-                table_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
+                table_rect.right_bottom() - egui::vec2(right_margin, BOTTOM_PADDING),
             );
 
             ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
@@ -508,7 +566,27 @@ pub fn draw_item_viewer(
                         }
                         explorer_state.selection_anchor = Some(selected_indices[0]);
                         explorer_state.selection_focus = Some(*selected_indices.last().unwrap());
-                        explorer_state.pending_selection_paths = None;
+
+                        // Only clear the pending marker once the directory
+                        // scan itself has actually finished (`!is_loading`,
+                        // i.e. `view.rx` has disconnected) - a large folder
+                        // streams its contents in over many frames
+                        // (`handle_directory_batch_recieve_for`, up to 128
+                        // items per frame) and re-sorts the whole list after
+                        // every batch, so a brand-new item's row *index*
+                        // keeps shifting as more items arrive. Clearing this
+                        // the first time the item is merely *found* meant
+                        // the one-shot `scroll_to_row` above landed at
+                        // whatever position it happened to occupy in a
+                        // still-incomplete, still-resorting list - correct
+                        // for that instant, stale a frame later. Re-running
+                        // this same scroll/select every frame until loading
+                        // finishes is cheap and self-correcting, and
+                        // guarantees the *last* one lands against the final,
+                        // fully-settled sort order.
+                        if !is_loading {
+                            explorer_state.pending_selection_paths = None;
+                        }
                     }
                 }
 
@@ -544,7 +622,8 @@ pub fn draw_item_viewer(
                     table = table.column(Column::exact(16.0));
                 }
 
-                for &column in &column_layout.ordered_columns {
+                let last_column_index = column_layout.ordered_columns.len().saturating_sub(1);
+                for (column_index, &column) in column_layout.ordered_columns.iter().enumerate() {
                     let column = match column {
                         ItemViewerHeaderColumn::Name => Column::initial(column_layout.name_width)
                             .at_least(180.0)
@@ -589,6 +668,20 @@ pub fn draw_item_viewer(
                         ItemViewerHeaderColumn::Tags => Column::initial(column_layout.tags_width)
                             .at_least(100.0)
                             .resizable(true),
+                    };
+
+                    // The last visible column (whichever one that is - column
+                    // order is user-reorderable) doesn't need a resize handle,
+                    // since there's nothing to its right to resize against -
+                    // but `.resizable(true)` still draws one, rendering as a
+                    // stray vertical line trailing after the last column's own
+                    // content with empty space beyond it before the pane's
+                    // real right edge. Only a column with a following sibling
+                    // needs its own resize handle.
+                    let column = if column_index == last_column_index {
+                        column.resizable(false)
+                    } else {
+                        column
                     };
 
                     table = table.column(column);
