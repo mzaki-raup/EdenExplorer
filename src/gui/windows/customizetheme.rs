@@ -784,6 +784,21 @@ pub fn draw_theme_customizer_content(
                                                 // its own picker now edits live.
                                                 customizer.new_custom_theme_name =
                                                     entry.name.clone();
+                                                // Persisted immediately (not routed through
+                                                // the action system below, which only
+                                                // returns one action per frame and this
+                                                // click already needs `ThemeUpdated` for the
+                                                // palette change) so the next launch can
+                                                // restore this same selection - see
+                                                // `SelectedCustomThemeSnapshot`'s own doc
+                                                // comment.
+                                                customizer.selected_custom_theme_id =
+                                                    Some(entry.id);
+                                                crate::core::indexer::save_selected_custom_theme(
+                                                    &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                        id: Some(entry.id),
+                                                    },
+                                                );
                                             }
 
                                             let trash_resp = ui.interact(
@@ -981,7 +996,7 @@ pub fn draw_theme_customizer_content(
                                             // needed here the way there used to be.
                                             let snapshot_palette = editing_palette.clone();
 
-                                            if let Some(id) = existing_id {
+                                            let saved_id = if let Some(id) = existing_id {
                                                 if let Some(existing) = customizer
                                                     .custom_themes
                                                     .iter_mut()
@@ -992,6 +1007,7 @@ pub fn draw_theme_customizer_content(
                                                         snapshot_palette.secondary_accent;
                                                     existing.palette = Some(snapshot_palette);
                                                 }
+                                                id
                                             } else {
                                                 let id = customizer.custom_themes_next_id;
                                                 customizer.custom_themes_next_id += 1;
@@ -1002,8 +1018,20 @@ pub fn draw_theme_customizer_content(
                                                     secondary: snapshot_palette.secondary_accent,
                                                     palette: Some(snapshot_palette),
                                                 });
-                                            }
+                                                id
+                                            };
                                             customizer.new_custom_theme_name.clear();
+                                            // The name field above clears immediately (existing
+                                            // behavior, unrelated to this), but the theme just
+                                            // saved/updated is still what a restart should
+                                            // restore - see `SelectedCustomThemeSnapshot`'s own
+                                            // doc comment.
+                                            customizer.selected_custom_theme_id = Some(saved_id);
+                                            crate::core::indexer::save_selected_custom_theme(
+                                                &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                    id: Some(saved_id),
+                                                },
+                                            );
                                             custom_themes_changed = true;
                                         }
                                     });
@@ -1959,6 +1987,16 @@ pub fn draw_theme_customizer_content(
                         });
                     if confirmed {
                         customizer.custom_themes.retain(|e| e.id != pending_id);
+                        // Don't leave the persisted selection pointing at a
+                        // theme that no longer exists - falls back to the
+                        // existing empty-field behavior on the next launch
+                        // instead of silently resolving to nothing.
+                        if customizer.selected_custom_theme_id == Some(pending_id) {
+                            customizer.selected_custom_theme_id = None;
+                            crate::core::indexer::save_selected_custom_theme(
+                                &crate::core::indexer::SelectedCustomThemeSnapshot { id: None },
+                            );
+                        }
                         custom_themes_changed = true;
                     }
                     if close {

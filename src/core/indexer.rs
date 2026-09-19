@@ -627,6 +627,50 @@ pub fn save_tab_layout(snapshot: &TabLayoutSnapshot) {
     }
 }
 
+/// Which `CustomThemeEntry` (by id, not name - a name can be edited later)
+/// the user most recently selected in Settings > Appearance > Custom
+/// Themes, so `ThemeCustomizer::new_custom_theme_name` can be pre-filled
+/// with it on the next launch - the user can then jump straight to
+/// "tweak a color, click Update Theme" instead of re-picking or re-typing
+/// the theme's name from scratch. A brand-new, dedicated file for the same
+/// reason `TabLayoutSnapshot` above is - this is pure UI-convenience state
+/// with no relation to `ThemePalette`/`AppSettingsSnapshot`, so it gets its
+/// own file rather than risking either of those.
+#[derive(Serialize, Deserialize, Default)]
+pub struct SelectedCustomThemeSnapshot {
+    pub id: Option<u64>,
+}
+
+fn selected_custom_theme_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("selected_custom_theme.bin"))
+}
+
+pub fn load_selected_custom_theme() -> SelectedCustomThemeSnapshot {
+    let Some(path) = selected_custom_theme_cache_path() else {
+        return SelectedCustomThemeSnapshot::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SelectedCustomThemeSnapshot::default();
+    };
+    postcard::take_from_bytes::<SelectedCustomThemeSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_selected_custom_theme(snapshot: &SelectedCustomThemeSnapshot) {
+    let Some(path) = selected_custom_theme_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 fn window_position_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("window_position.bin"))
@@ -1323,5 +1367,42 @@ mod tests {
             .unwrap_or_default();
 
         assert_eq!(decoded.sidebar_width, default_sidebar_width());
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_roundtrips_an_id() {
+        let snapshot = SelectedCustomThemeSnapshot { id: Some(42) };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SelectedCustomThemeSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.id, Some(42));
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_roundtrips_none() {
+        // The "no custom theme currently selected" case (a fresh install,
+        // or after the selected theme was deleted) - `id: None` must
+        // encode/decode cleanly, not just the `Some` case.
+        let snapshot = SelectedCustomThemeSnapshot { id: None };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SelectedCustomThemeSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.id, None);
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_falls_back_to_none_for_missing_or_corrupt_bytes() {
+        // Mirrors `load_selected_custom_theme`'s own decode path (take_from_
+        // bytes + "no bytes left over" + unwrap_or_default) directly against
+        // an empty byte slice, standing in for a missing/never-written file.
+        let decoded = postcard::take_from_bytes::<SelectedCustomThemeSnapshot>(&[])
+            .ok()
+            .filter(|(_, rest)| rest.is_empty())
+            .map(|(v, _)| v)
+            .unwrap_or_default();
+
+        assert_eq!(decoded.id, None);
     }
 }

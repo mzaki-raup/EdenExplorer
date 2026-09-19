@@ -38,8 +38,19 @@ pub struct ThemeCustomizer {
     /// of either palette above.
     pub custom_themes: Vec<crate::core::indexer::CustomThemeEntry>,
     pub custom_themes_next_id: u64,
-    /// Draft text for the "save current colors as a new theme" input.
+    /// Draft text for the "save current colors as a new theme" input -
+    /// pre-filled on startup from `selected_custom_theme_id` below (see
+    /// `core::indexer::SelectedCustomThemeSnapshot`'s own doc comment).
     pub new_custom_theme_name: String,
+    /// Id of whichever custom theme is currently considered "selected"
+    /// (last clicked, saved, or updated) - kept in sync with, and persisted
+    /// via, `core::indexer::{load_selected_custom_theme, save_selected_
+    /// custom_theme}` every time it changes, so `new_custom_theme_name` can
+    /// be restored from it on the next launch. `None` means no custom theme
+    /// is currently selected (the live colors were reached some other way -
+    /// a preset, a manual edit, Reset Theme, or the previously-selected
+    /// theme was deleted).
+    pub selected_custom_theme_id: Option<u64>,
     /// Id of the custom theme pending a delete confirmation, if any.
     pub custom_theme_delete_confirm: Option<u64>,
 }
@@ -49,6 +60,19 @@ impl Default for ThemeCustomizer {
         let custom_themes_snapshot = crate::core::indexer::load_custom_themes();
         let dark_palette = crate::gui::theme::get_palette(ThemeMode::Dark);
         let light_palette = crate::gui::theme::get_palette(ThemeMode::Light);
+        let custom_themes: Vec<crate::core::indexer::CustomThemeEntry> = custom_themes_snapshot
+            .as_ref()
+            .map(|s| s.items.clone())
+            .unwrap_or_default();
+        let selected_custom_theme_id = crate::core::indexer::load_selected_custom_theme().id;
+        // Only pre-fill the name field if the persisted id still resolves
+        // to a real entry - the theme it pointed at may have been deleted
+        // (or the file predates this feature and holds `None`), in which
+        // case this falls back to the existing empty-field behavior.
+        let new_custom_theme_name = selected_custom_theme_id
+            .and_then(|id| custom_themes.iter().find(|e| e.id == id))
+            .map(|e| e.name.clone())
+            .unwrap_or_default();
         Self {
             selected_mode: ThemeMode::Dark,
             light_palette,
@@ -56,12 +80,10 @@ impl Default for ThemeCustomizer {
             sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
             tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
             min_tab_width: crate::core::indexer::load_tab_layout().min_tab_width,
-            custom_themes: custom_themes_snapshot
-                .as_ref()
-                .map(|s| s.items.clone())
-                .unwrap_or_default(),
             custom_themes_next_id: custom_themes_snapshot.map(|s| s.next_id).unwrap_or(1),
-            new_custom_theme_name: String::new(),
+            custom_themes,
+            new_custom_theme_name,
+            selected_custom_theme_id,
             custom_theme_delete_confirm: None,
         }
     }
