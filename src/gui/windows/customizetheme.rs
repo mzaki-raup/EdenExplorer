@@ -598,6 +598,21 @@ pub fn draw_theme_customizer_content(
                                                     preset,
                                                     customizer.selected_mode == ThemeMode::Dark,
                                                 );
+                                                // A prebuilt preset isn't a custom theme -
+                                                // leaving the name field/"Update Theme"
+                                                // button pointed at whichever custom theme
+                                                // was last selected would offer to save
+                                                // this preset's colors over it by mistake.
+                                                // Clears the persisted selection too (see
+                                                // `SelectedCustomThemeSnapshot`'s own doc
+                                                // comment) so a restart doesn't restore it.
+                                                customizer.new_custom_theme_name.clear();
+                                                customizer.selected_custom_theme_id = None;
+                                                crate::core::indexer::save_selected_custom_theme(
+                                                    &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                        id: None,
+                                                    },
+                                                );
                                                 changed = true;
                                             }
                                         }
@@ -888,7 +903,7 @@ pub fn draw_theme_customizer_content(
                                         }
                                     });
 
-                                    ui.add_space(6.0);
+                                    ui.add_space(14.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
                                         // Editing primary right here (not just up in Core
@@ -913,7 +928,47 @@ pub fn draw_theme_customizer_content(
                                             changed = true;
                                         }
                                     });
-                                    ui.add_space(4.0);
+                                    // More space above the swap button than below it -
+                                    // groups it visually with the Secondary row it sits
+                                    // directly on top of, rather than floating equidistant
+                                    // between the two (a symmetric 4px/4px gap read as
+                                    // "belonging to neither" per direct user feedback).
+                                    ui.add_space(10.0);
+                                    ui.horizontal(|ui| {
+                                        apply_eden_visual_overrides(ui, palette);
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                // Swaps the Primary/Secondary rows around
+                                                // it rather than requiring the user to
+                                                // re-pick both colors by hand to try the
+                                                // opposite pairing - re-derives immediately
+                                                // afterward, same as either row's own
+                                                // picker. Right-aligned, on top of the
+                                                // Secondary row right below it, per direct
+                                                // user feedback.
+                                                if eden_button(
+                                                    ui,
+                                                    palette,
+                                                    &i18n.tr("theme_custom_theme_swap"),
+                                                )
+                                                .clicked()
+                                                {
+                                                    std::mem::swap(
+                                                        &mut editing_palette.primary,
+                                                        &mut editing_palette.secondary_accent,
+                                                    );
+                                                    regenerate_base_derived_colors(
+                                                        editing_palette,
+                                                        customizer.selected_mode
+                                                            == ThemeMode::Dark,
+                                                    );
+                                                    changed = true;
+                                                }
+                                            },
+                                        );
+                                    });
+                                    ui.add_space(2.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
                                         // `secondary_accent` has no Core Colors picker of
@@ -949,29 +1004,7 @@ pub fn draw_theme_customizer_content(
                                             changed = true;
                                         }
                                     });
-                                    ui.add_space(4.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        // Swaps the two rows right above rather than
-                                        // requiring the user to re-pick both colors by
-                                        // hand to try the opposite pairing - re-derives
-                                        // immediately afterward, same as either row's
-                                        // own picker.
-                                        if eden_button(ui, palette, &i18n.tr("theme_custom_theme_swap"))
-                                            .clicked()
-                                        {
-                                            std::mem::swap(
-                                                &mut editing_palette.primary,
-                                                &mut editing_palette.secondary_accent,
-                                            );
-                                            regenerate_base_derived_colors(
-                                                editing_palette,
-                                                customizer.selected_mode == ThemeMode::Dark,
-                                            );
-                                            changed = true;
-                                        }
-                                    });
-                                    ui.add_space(4.0);
+                                    ui.add_space(14.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
                                         ui.add(
