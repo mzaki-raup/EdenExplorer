@@ -746,10 +746,12 @@ pub fn draw_theme_customizer_content(
                                                     editing_palette.primary = entry.accent;
                                                     editing_palette.secondary_accent =
                                                         entry.secondary;
-                                                    editing_palette.pinned_tab_color =
-                                                        entry.secondary;
-                                                    editing_palette.button_favorite_fill =
-                                                        entry.secondary;
+                                                    // `pinned_tab_color` is re-derived from
+                                                    // `secondary_accent` below;
+                                                    // `button_favorite_fill` is deliberately
+                                                    // NOT secondary-derived (fixed default,
+                                                    // user-editable independently), so it's
+                                                    // left untouched here.
                                                     regenerate_base_derived_colors(
                                                         editing_palette,
                                                         customizer.selected_mode == ThemeMode::Dark,
@@ -884,10 +886,13 @@ pub fn draw_theme_customizer_content(
                                             ui,
                                             &mut editing_palette.secondary_accent,
                                         ) {
-                                            editing_palette.pinned_tab_color =
-                                                editing_palette.secondary_accent;
-                                            editing_palette.button_favorite_fill =
-                                                editing_palette.secondary_accent;
+                                            // `pinned_tab_color`/`toolbar_icon_color`/the
+                                            // notification+toast border colors are all
+                                            // re-derived from `secondary_accent` inside
+                                            // `regenerate_base_derived_colors` itself now -
+                                            // `button_favorite_fill` is deliberately NOT
+                                            // secondary-derived (fixed default, user-editable
+                                            // independently per its own row below).
                                             regenerate_base_derived_colors(
                                                 editing_palette,
                                                 customizer.selected_mode == ThemeMode::Dark,
