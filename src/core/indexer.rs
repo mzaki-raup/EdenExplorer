@@ -117,6 +117,63 @@ pub struct CustomThemesSnapshot {
     pub items: Vec<CustomThemeEntry>,
 }
 
+/// What Settings > Appearance's own "Export Theme"/"Import Theme" buttons
+/// read and write - the currently-edited palette for the selected mode,
+/// plus every saved custom theme, so importing this file elsewhere (or
+/// after a reinstall) restores the whole Custom Themes list too, not just
+/// the one active palette. `#[serde(default)]` on `custom_themes` means a
+/// file exported *before* this field existed still imports cleanly (just
+/// with no custom themes to merge) rather than failing to parse outright -
+/// unlike `postcard`, `serde_json` genuinely does rescue a missing trailing
+/// field this way, so this one case doesn't need the `*Legacy`-struct
+/// pattern `CustomThemeEntry` above needed for its own `postcard` file.
+#[derive(Serialize, Deserialize)]
+pub struct ThemeFileExportBundle {
+    pub palette: ThemePalette,
+    #[serde(default)]
+    pub custom_themes: Vec<CustomThemeEntry>,
+}
+
+/// Merges an imported custom-themes list into the user's existing one, for
+/// Settings > Appearance's "Import Theme" button. A name match (case-
+/// insensitive, matching the same convention "Save Current Colors"/"Update
+/// Theme" already uses) overwrites that entry's colors/palette in place -
+/// its `id` is left untouched, so anything still pointing at it (the
+/// persisted "last selected custom theme") keeps resolving correctly -
+/// rather than appending a same-named duplicate. An imported entry with no
+/// name match is appended as a brand-new entry with a fresh id. Returns
+/// whether anything actually changed, so the caller only re-saves the file
+/// when it needs to.
+pub fn merge_imported_custom_themes(
+    existing: &mut Vec<CustomThemeEntry>,
+    next_id: &mut u64,
+    imported: Vec<CustomThemeEntry>,
+) -> bool {
+    let mut changed = false;
+    for entry in imported {
+        if let Some(existing_entry) = existing
+            .iter_mut()
+            .find(|e| e.name.eq_ignore_ascii_case(&entry.name))
+        {
+            existing_entry.accent = entry.accent;
+            existing_entry.secondary = entry.secondary;
+            existing_entry.palette = entry.palette;
+        } else {
+            let id = *next_id;
+            *next_id += 1;
+            existing.push(CustomThemeEntry {
+                id,
+                name: entry.name,
+                accent: entry.accent,
+                secondary: entry.secondary,
+                palette: entry.palette,
+            });
+        }
+        changed = true;
+    }
+    changed
+}
+
 /// The pre-`palette`-field shape of `CustomThemeEntry`/`CustomThemesSnapshot`
 /// - kept only as a decode fallback in `load_custom_themes`. Postcard's
 /// format has no per-field rescue for an appended field (confirmed
@@ -627,6 +684,50 @@ pub fn save_tab_layout(snapshot: &TabLayoutSnapshot) {
     }
 }
 
+/// Which `CustomThemeEntry` (by id, not name - a name can be edited later)
+/// the user most recently selected in Settings > Appearance > Custom
+/// Themes, so `ThemeCustomizer::new_custom_theme_name` can be pre-filled
+/// with it on the next launch - the user can then jump straight to
+/// "tweak a color, click Update Theme" instead of re-picking or re-typing
+/// the theme's name from scratch. A brand-new, dedicated file for the same
+/// reason `TabLayoutSnapshot` above is - this is pure UI-convenience state
+/// with no relation to `ThemePalette`/`AppSettingsSnapshot`, so it gets its
+/// own file rather than risking either of those.
+#[derive(Serialize, Deserialize, Default)]
+pub struct SelectedCustomThemeSnapshot {
+    pub id: Option<u64>,
+}
+
+fn selected_custom_theme_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("selected_custom_theme.bin"))
+}
+
+pub fn load_selected_custom_theme() -> SelectedCustomThemeSnapshot {
+    let Some(path) = selected_custom_theme_cache_path() else {
+        return SelectedCustomThemeSnapshot::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SelectedCustomThemeSnapshot::default();
+    };
+    postcard::take_from_bytes::<SelectedCustomThemeSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_selected_custom_theme(snapshot: &SelectedCustomThemeSnapshot) {
+    let Some(path) = selected_custom_theme_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 fn window_position_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("window_position.bin"))
@@ -812,9 +913,62 @@ pub fn save_recent_locations(snapshot: &RecentLocationsSnapshot) {
     }
 }
 
+/// A custom theme's own saved `notification_border_color`/`navigation_
+/// toast_border_color` are baked into its `palette` snapshot at whatever
+/// alpha `regenerate_base_derived_colors` used at the moment the theme was
+/// saved - raising that alpha in `theme.rs` only affects newly-derived
+/// palettes (a fresh preset click, a live Secondary edit), never an
+/// already-saved custom theme, since selecting one restores its snapshot
+/// verbatim rather than re-deriving it. Only rewrites a field that still
+/// exactly matches the *previous* alpha's own derivation - both fields also
+/// have their own manual picker row in the customizer, so a genuine
+/// per-theme override must be left alone rather than silently overwritten
+/// by a blanket update. Returns whether anything actually changed, so the
+/// caller only re-saves the file when it needs to.
+fn migrate_custom_theme_border_alpha(snapshot: &mut CustomThemesSnapshot) -> bool {
+    const OLD_ALPHA: u8 = 60;
+    const NEW_ALPHA: u8 = 130;
+    let mut changed = false;
+    for entry in &mut snapshot.items {
+        let Some(palette) = &mut entry.palette else {
+            continue;
+        };
+        let secondary = palette.secondary_accent;
+        let old_border = Color32::from_rgba_unmultiplied(
+            secondary.r(),
+            secondary.g(),
+            secondary.b(),
+            OLD_ALPHA,
+        );
+        if palette.notification_border_color == old_border {
+            palette.notification_border_color = Color32::from_rgba_unmultiplied(
+                secondary.r(),
+                secondary.g(),
+                secondary.b(),
+                NEW_ALPHA,
+            );
+            changed = true;
+        }
+        if palette.navigation_toast_border_color == old_border {
+            palette.navigation_toast_border_color = Color32::from_rgba_unmultiplied(
+                secondary.r(),
+                secondary.g(),
+                secondary.b(),
+                NEW_ALPHA,
+            );
+            changed = true;
+        }
+    }
+    changed
+}
+
 pub fn load_custom_themes() -> Option<CustomThemesSnapshot> {
     let path = custom_themes_cache_path()?;
-    if let Some(snapshot) = load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path) {
+    if let Some(mut snapshot) = load_or_migrate_bincode_to_postcard::<CustomThemesSnapshot>(&path)
+    {
+        if migrate_custom_theme_border_alpha(&mut snapshot) {
+            save_custom_themes(&snapshot);
+        }
         return Some(snapshot);
     }
 
@@ -1323,5 +1477,228 @@ mod tests {
             .unwrap_or_default();
 
         assert_eq!(decoded.sidebar_width, default_sidebar_width());
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_roundtrips_an_id() {
+        let snapshot = SelectedCustomThemeSnapshot { id: Some(42) };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SelectedCustomThemeSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.id, Some(42));
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_roundtrips_none() {
+        // The "no custom theme currently selected" case (a fresh install,
+        // or after the selected theme was deleted) - `id: None` must
+        // encode/decode cleanly, not just the `Some` case.
+        let snapshot = SelectedCustomThemeSnapshot { id: None };
+
+        let bytes = postcard::to_allocvec(&snapshot).unwrap();
+        let decoded: SelectedCustomThemeSnapshot = postcard::from_bytes(&bytes).unwrap();
+
+        assert_eq!(decoded.id, None);
+    }
+
+    #[test]
+    fn selected_custom_theme_snapshot_falls_back_to_none_for_missing_or_corrupt_bytes() {
+        // Mirrors `load_selected_custom_theme`'s own decode path (take_from_
+        // bytes + "no bytes left over" + unwrap_or_default) directly against
+        // an empty byte slice, standing in for a missing/never-written file.
+        let decoded = postcard::take_from_bytes::<SelectedCustomThemeSnapshot>(&[])
+            .ok()
+            .filter(|(_, rest)| rest.is_empty())
+            .map(|(v, _)| v)
+            .unwrap_or_default();
+
+        assert_eq!(decoded.id, None);
+    }
+
+    #[test]
+    fn migrate_custom_theme_border_alpha_rewrites_an_old_derivation_but_not_a_manual_override() {
+        let secondary = Color32::from_rgb(255, 214, 64);
+        let old_border = Color32::from_rgba_unmultiplied(
+            secondary.r(),
+            secondary.g(),
+            secondary.b(),
+            60,
+        );
+        let manual_override = Color32::from_rgba_unmultiplied(10, 20, 30, 200);
+
+        let mut auto_derived_palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        auto_derived_palette.secondary_accent = secondary;
+        auto_derived_palette.notification_border_color = old_border;
+        auto_derived_palette.navigation_toast_border_color = old_border;
+
+        let mut manually_customized_palette =
+            get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        manually_customized_palette.secondary_accent = secondary;
+        manually_customized_palette.notification_border_color = manual_override;
+        manually_customized_palette.navigation_toast_border_color = manual_override;
+
+        let mut snapshot = CustomThemesSnapshot {
+            next_id: 3,
+            items: vec![
+                CustomThemeEntry {
+                    id: 1,
+                    name: "Auto-derived".to_string(),
+                    accent: Color32::from_rgb(0, 120, 215),
+                    secondary,
+                    palette: Some(auto_derived_palette),
+                },
+                CustomThemeEntry {
+                    id: 2,
+                    name: "Manually customized".to_string(),
+                    accent: Color32::from_rgb(0, 120, 215),
+                    secondary,
+                    palette: Some(manually_customized_palette),
+                },
+            ],
+        };
+
+        let changed = migrate_custom_theme_border_alpha(&mut snapshot);
+        assert!(changed);
+
+        let expected_new_border =
+            Color32::from_rgba_unmultiplied(secondary.r(), secondary.g(), secondary.b(), 130);
+        let auto_derived = snapshot.items[0].palette.as_ref().unwrap();
+        assert_eq!(auto_derived.notification_border_color, expected_new_border);
+        assert_eq!(
+            auto_derived.navigation_toast_border_color,
+            expected_new_border
+        );
+
+        // The manual override must survive untouched - it doesn't match the
+        // old derivation, so the migration has no business rewriting it.
+        let manual = snapshot.items[1].palette.as_ref().unwrap();
+        assert_eq!(manual.notification_border_color, manual_override);
+        assert_eq!(manual.navigation_toast_border_color, manual_override);
+
+        // Running it again must be a no-op - nothing left to migrate.
+        assert!(!migrate_custom_theme_border_alpha(&mut snapshot));
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_overwrites_a_same_name_entry_in_place() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let imported = vec![CustomThemeEntry {
+            // A different id on the imported side (e.g. from a different
+            // machine's own next_id counter) must not matter - the match
+            // is by name, and the existing entry's own id must survive.
+            id: 999,
+            name: "midnight".to_string(), // case-insensitive match
+            accent: Color32::from_rgb(200, 200, 200),
+            secondary: Color32::from_rgb(210, 210, 210),
+            palette: None,
+        }];
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, imported);
+
+        assert!(changed);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(existing[0].id, 1); // unchanged
+        assert_eq!(existing[0].name, "Midnight"); // unchanged casing
+        assert_eq!(existing[0].accent, Color32::from_rgb(200, 200, 200));
+        assert_eq!(existing[0].secondary, Color32::from_rgb(210, 210, 210));
+        assert_eq!(next_id, 2); // no new id consumed
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_appends_a_new_name_with_a_fresh_id() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let imported = vec![CustomThemeEntry {
+            id: 999,
+            name: "Sunrise".to_string(),
+            accent: Color32::from_rgb(255, 200, 0),
+            secondary: Color32::from_rgb(255, 100, 0),
+            palette: None,
+        }];
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, imported);
+
+        assert!(changed);
+        assert_eq!(existing.len(), 2);
+        assert_eq!(existing[0].id, 1); // original untouched
+        assert_eq!(existing[1].id, 2); // new entry got the local next_id, not 999
+        assert_eq!(existing[1].name, "Sunrise");
+        assert_eq!(next_id, 3);
+    }
+
+    #[test]
+    fn merge_imported_custom_themes_empty_import_is_a_no_op() {
+        let mut existing = vec![CustomThemeEntry {
+            id: 1,
+            name: "Midnight".to_string(),
+            accent: Color32::from_rgb(10, 10, 10),
+            secondary: Color32::from_rgb(20, 20, 20),
+            palette: None,
+        }];
+        let mut next_id = 2;
+
+        let changed = merge_imported_custom_themes(&mut existing, &mut next_id, Vec::new());
+
+        assert!(!changed);
+        assert_eq!(existing.len(), 1);
+        assert_eq!(next_id, 2);
+    }
+
+    #[test]
+    fn theme_file_export_bundle_roundtrips_through_json() {
+        let palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        let bundle = ThemeFileExportBundle {
+            palette: palette.clone(),
+            custom_themes: vec![CustomThemeEntry {
+                id: 5,
+                name: "Exported Theme".to_string(),
+                accent: Color32::from_rgb(1, 2, 3),
+                secondary: Color32::from_rgb(4, 5, 6),
+                palette: Some(palette),
+            }],
+        };
+
+        let json = serde_json::to_string(&bundle).unwrap();
+        let decoded: ThemeFileExportBundle = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded.custom_themes.len(), 1);
+        assert_eq!(decoded.custom_themes[0].name, "Exported Theme");
+        assert_eq!(decoded.custom_themes[0].accent, Color32::from_rgb(1, 2, 3));
+        assert!(decoded.custom_themes[0].palette.is_some());
+    }
+
+    #[test]
+    fn theme_file_export_bundle_accepts_a_pre_feature_file_with_no_custom_themes_field() {
+        // Simulates a file exported before this feature existed - just a
+        // bare palette, no `custom_themes` key at all. `#[serde(default)]`
+        // (unlike postcard's whole-struct decode failure documented
+        // elsewhere in this file) genuinely rescues a missing JSON field.
+        let palette = get_default_palette(crate::gui::theme::ThemeMode::Dark);
+        #[derive(Serialize)]
+        struct OldExportShape {
+            palette: ThemePalette,
+        }
+        let old = OldExportShape { palette };
+
+        let json = serde_json::to_string(&old).unwrap();
+        let decoded: ThemeFileExportBundle = serde_json::from_str(&json).unwrap();
+
+        assert!(decoded.custom_themes.is_empty());
     }
 }

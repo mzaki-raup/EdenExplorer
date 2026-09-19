@@ -5204,7 +5204,8 @@ impl MainWindow {
                 let palette_to_export = match mode {
                     ThemeMode::Dark => &theme_customizer.dark_palette,
                     ThemeMode::Light => &theme_customizer.light_palette,
-                };
+                }
+                .clone();
 
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("Theme JSON", &["json"])
@@ -5214,7 +5215,16 @@ impl MainWindow {
                     })
                     .save_file()
                 {
-                    if let Ok(json) = serde_json::to_string_pretty(palette_to_export) {
+                    // Bundles the Custom Themes list in alongside the active
+                    // palette (not just the one palette, like this used to)
+                    // so importing this file elsewhere restores the whole
+                    // list too - see `ThemeFileExportBundle`'s own doc
+                    // comment.
+                    let bundle = crate::core::indexer::ThemeFileExportBundle {
+                        palette: palette_to_export,
+                        custom_themes: theme_customizer.custom_themes.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string_pretty(&bundle) {
                         let _ = std::fs::write(path, json);
                     }
                 }
@@ -5225,7 +5235,26 @@ impl MainWindow {
                     .pick_file()
                 {
                     if let Ok(json) = std::fs::read_to_string(path) {
-                        if let Ok(imported) = serde_json::from_str::<ThemePalette>(&json) {
+                        // Try the current bundle shape first; fall back to a
+                        // bare `ThemePalette` for a file exported before
+                        // this feature existed (just the one palette, no
+                        // custom themes to merge) - both are real files a
+                        // user could still have on disk.
+                        let bundle = serde_json::from_str::<
+                            crate::core::indexer::ThemeFileExportBundle,
+                        >(&json)
+                        .ok()
+                        .or_else(|| {
+                            serde_json::from_str::<ThemePalette>(&json)
+                                .ok()
+                                .map(|palette| crate::core::indexer::ThemeFileExportBundle {
+                                    palette,
+                                    custom_themes: Vec::new(),
+                                })
+                        });
+
+                        if let Some(bundle) = bundle {
+                            let imported = bundle.palette;
                             match mode {
                                 ThemeMode::Dark => theme_customizer.dark_palette = imported.clone(),
                                 ThemeMode::Light => {
@@ -5243,6 +5272,19 @@ impl MainWindow {
 
                             if mode == current_mode {
                                 self.theme_dirty = true;
+                            }
+
+                            if crate::core::indexer::merge_imported_custom_themes(
+                                &mut theme_customizer.custom_themes,
+                                &mut theme_customizer.custom_themes_next_id,
+                                bundle.custom_themes,
+                            ) {
+                                crate::core::indexer::save_custom_themes(
+                                    &crate::core::indexer::CustomThemesSnapshot {
+                                        next_id: theme_customizer.custom_themes_next_id,
+                                        items: theme_customizer.custom_themes.clone(),
+                                    },
+                                );
                             }
                         }
                     }

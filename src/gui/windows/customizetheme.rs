@@ -35,6 +35,14 @@ const COLOR_SCHEME_PRESETS: &[(&str, egui::Color32)] = &[
     ("theme_scheme_purple", egui::Color32::from_rgb(136, 23, 152)),
     ("theme_scheme_cyan", egui::Color32::from_rgb(0, 153, 188)),
     ("theme_scheme_gray", egui::Color32::from_rgb(93, 90, 88)),
+    ("theme_scheme_indigo", egui::Color32::from_rgb(61, 51, 224)),
+    ("theme_scheme_lime", egui::Color32::from_rgb(122, 165, 25)),
+    ("theme_scheme_brown", egui::Color32::from_rgb(139, 94, 60)),
+    ("theme_scheme_amber", egui::Color32::from_rgb(255, 185, 0)),
+    ("theme_scheme_slate", egui::Color32::from_rgb(81, 92, 107)),
+    ("theme_scheme_coral", egui::Color32::from_rgb(250, 115, 90)),
+    ("theme_scheme_mint", egui::Color32::from_rgb(0, 178, 148)),
+    ("theme_scheme_lavender", egui::Color32::from_rgb(150, 130, 230)),
 ];
 
 fn selectable_mode(
@@ -590,6 +598,21 @@ pub fn draw_theme_customizer_content(
                                                     preset,
                                                     customizer.selected_mode == ThemeMode::Dark,
                                                 );
+                                                // A prebuilt preset isn't a custom theme -
+                                                // leaving the name field/"Update Theme"
+                                                // button pointed at whichever custom theme
+                                                // was last selected would offer to save
+                                                // this preset's colors over it by mistake.
+                                                // Clears the persisted selection too (see
+                                                // `SelectedCustomThemeSnapshot`'s own doc
+                                                // comment) so a restart doesn't restore it.
+                                                customizer.new_custom_theme_name.clear();
+                                                customizer.selected_custom_theme_id = None;
+                                                crate::core::indexer::save_selected_custom_theme(
+                                                    &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                        id: None,
+                                                    },
+                                                );
                                                 changed = true;
                                             }
                                         }
@@ -649,19 +672,57 @@ pub fn draw_theme_customizer_content(
                                         // Every other wrapped swatch row in this file
                                         // (Prebuilt Themes, Color Scheme) is a single
                                         // flat widget per entry for the same reason.
+                                        //
+                                        // Wider spacing than the ambient default - this
+                                        // is the only wrapped swatch row with a name
+                                        // label under each entry, so the default gap
+                                        // (tuned for the plain, label-less Prebuilt
+                                        // Themes/Color Scheme swatches above) reads as
+                                        // cramped against that extra line of text, both
+                                        // between entries in a row and between wrapped
+                                        // rows themselves (reported directly: "gap
+                                        // between list" / "gap between first row and
+                                        // second row" - then again, more: "so user can
+                                        // differentiate the delete button... is for that
+                                        // particular custom theme"). Set on this
+                                        // closure's own child `ui` only, so it doesn't
+                                        // leak spacing into anything drawn after this
+                                        // block.
+                                        ui.spacing_mut().item_spacing = egui::vec2(24.0, 20.0);
                                         const SWATCH_W: f32 = 64.0;
                                         const GAP: f32 = 6.0;
                                         const TRASH_W: f32 = 24.0;
                                         const ROW_H: f32 = 32.0;
                                         const NAME_GAP: f32 = 3.0;
                                         const NAME_H: f32 = 15.0;
-                                        let entry_w = SWATCH_W + GAP + TRASH_W;
+                                        const MIN_ENTRY_W: f32 = SWATCH_W + GAP + TRASH_W;
+                                        let name_font =
+                                            egui::FontId::proportional(palette.tooltip_text_size);
 
                                         for entry in &customizer.custom_themes {
                                             let is_selected = editing_palette.primary
                                                 == entry.accent
                                                 && editing_palette.secondary_accent
                                                     == entry.secondary;
+
+                                            // The card widens to fit the theme's full
+                                            // name (left-aligned under the swatch+trash
+                                            // row) rather than truncating it - measured
+                                            // directly rather than through `truncate_
+                                            // item_text`, since that helper's whole job
+                                            // is finding the longest string that fits a
+                                            // *fixed* width, the opposite of what's
+                                            // needed here.
+                                            let name_width = ui
+                                                .painter()
+                                                .layout_no_wrap(
+                                                    entry.name.clone(),
+                                                    name_font.clone(),
+                                                    palette.text_normal,
+                                                )
+                                                .size()
+                                                .x;
+                                            let entry_w = MIN_ENTRY_W.max(name_width);
 
                                             // Full block (swatch+trash row, plus the
                                             // theme's own name underneath) is one atomic
@@ -770,6 +831,21 @@ pub fn draw_theme_customizer_content(
                                                 // its own picker now edits live.
                                                 customizer.new_custom_theme_name =
                                                     entry.name.clone();
+                                                // Persisted immediately (not routed through
+                                                // the action system below, which only
+                                                // returns one action per frame and this
+                                                // click already needs `ThemeUpdated` for the
+                                                // palette change) so the next launch can
+                                                // restore this same selection - see
+                                                // `SelectedCustomThemeSnapshot`'s own doc
+                                                // comment.
+                                                customizer.selected_custom_theme_id =
+                                                    Some(entry.id);
+                                                crate::core::indexer::save_selected_custom_theme(
+                                                    &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                        id: Some(entry.id),
+                                                    },
+                                                );
                                             }
 
                                             let trash_resp = ui.interact(
@@ -805,102 +881,143 @@ pub fn draw_theme_customizer_content(
                                                     Some(entry.id);
                                             }
 
-                                            // The name itself, not just a hover tooltip -
-                                            // truncated to fit the swatch's own width via
-                                            // the same helper the sidebar uses for its
-                                            // item labels, rather than overflowing into
-                                            // the next entry.
-                                            let name_font = egui::FontId::proportional(
-                                                palette.tooltip_text_size,
-                                            );
-                                            let (display_name, _truncated) =
-                                                crate::gui::utils::truncate_item_text(
-                                                    ui,
-                                                    &entry.name,
-                                                    entry_w,
-                                                    &name_font,
-                                                    palette.text_normal,
-                                                );
+                                            // The full name, left-aligned under the
+                                            // swatch's own left edge - `entry_w` above
+                                            // already widened the card to fit it, so
+                                            // there's nothing left to truncate.
                                             if ui.is_rect_visible(rect) {
                                                 ui.painter().text(
                                                     egui::pos2(
-                                                        rect.min.x + entry_w / 2.0,
+                                                        rect.min.x,
                                                         rect.min.y
                                                             + ROW_H
                                                             + NAME_GAP
                                                             + NAME_H / 2.0,
                                                     ),
-                                                    egui::Align2::CENTER_CENTER,
-                                                    display_name,
-                                                    name_font,
+                                                    egui::Align2::LEFT_CENTER,
+                                                    &entry.name,
+                                                    name_font.clone(),
                                                     palette.text_normal,
                                                 );
                                             }
                                         }
                                     });
 
-                                    ui.add_space(6.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        // Editing primary right here (not just up in Core
-                                        // Colors) means both halves of a new custom theme
-                                        // can be chosen together in one place. Mirrors
-                                        // Core Colors' own Primary row exactly - same
-                                        // field, same `regenerate_base_derived_colors`
-                                        // call on change - so the Live Preview updates
-                                        // immediately and stays in sync no matter which of
-                                        // the two pickers was actually used.
-                                        eden_text_label(
-                                            ui,
-                                            palette,
-                                            &i18n.tr("theme_colors_primary"),
-                                        );
-                                        if color_picker_control(ui, &mut editing_palette.primary)
-                                        {
-                                            regenerate_base_derived_colors(
-                                                editing_palette,
-                                                customizer.selected_mode == ThemeMode::Dark,
+                                    ui.add_space(14.0);
+                                    // A 2-column grid rather than three separate
+                                    // horizontal rows - exact layout spelled out by the
+                                    // user after two earlier attempts (a standalone row
+                                    // with tuned spacing, then merging the button into
+                                    // Secondary's own row) both still read as
+                                    // ambiguous: row 1 is Primary's label + picker, row
+                                    // 2 is blank + the Swap Colors button (so it sits
+                                    // directly between the two color swatches, aligned
+                                    // under them rather than under either label), row 3
+                                    // is Secondary's label + picker.
+                                    // No `right_to_left` wrapper in column 2 (unlike
+                                    // this file's own `color_row` helper used by the
+                                    // full-width settings-list sections below) - that
+                                    // layout claims the rest of the row's available
+                                    // width and right-aligns within it, which is exactly
+                                    // what pushed the picker/button far from column 1's
+                                    // labels per direct user feedback. Left in normal
+                                    // flow, each column sizes to its own content's
+                                    // natural width instead, so the whole grid stays
+                                    // compact instead of spanning the panel.
+                                    egui::Grid::new("custom_theme_primary_secondary_grid")
+                                        .num_columns(2)
+                                        .spacing([12.0, 6.0])
+                                        .show(ui, |ui| {
+                                            apply_eden_visual_overrides(ui, palette);
+                                            // Editing primary right here (not just up in
+                                            // Core Colors) means both halves of a new
+                                            // custom theme can be chosen together in one
+                                            // place. Mirrors Core Colors' own Primary row
+                                            // exactly - same field, same
+                                            // `regenerate_base_derived_colors` call on
+                                            // change - so the Live Preview updates
+                                            // immediately and stays in sync no matter
+                                            // which of the two pickers was actually used.
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_colors_primary"),
                                             );
-                                            changed = true;
-                                        }
-                                    });
-                                    ui.add_space(4.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        // `secondary_accent` has no Core Colors picker of
-                                        // its own (see its doc comment in `theme.rs`) - this
-                                        // is its only editable home. Edits `editing_palette`
-                                        // directly (not a separate staging value) and
-                                        // re-derives immediately, the same way choosing a
-                                        // whole prebuilt preset already does via
-                                        // `apply_theme_preset` - previously this only wrote
-                                        // into a draft variable applied at Save time, so
-                                        // picking a secondary here had no visible effect on
-                                        // the Live Preview until after saving.
-                                        eden_text_label(
-                                            ui,
-                                            palette,
-                                            &i18n.tr("theme_custom_theme_secondary"),
-                                        );
-                                        if color_picker_control(
-                                            ui,
-                                            &mut editing_palette.secondary_accent,
-                                        ) {
-                                            // `pinned_tab_color`/`toolbar_icon_color`/the
-                                            // notification+toast border colors are all
-                                            // re-derived from `secondary_accent` inside
-                                            // `regenerate_base_derived_colors` itself now -
-                                            // `button_favorite_fill` is deliberately NOT
-                                            // secondary-derived (fixed default, user-editable
-                                            // independently per its own row below).
-                                            regenerate_base_derived_colors(
-                                                editing_palette,
-                                                customizer.selected_mode == ThemeMode::Dark,
+                                            if color_picker_control(
+                                                ui,
+                                                &mut editing_palette.primary,
+                                            ) {
+                                                regenerate_base_derived_colors(
+                                                    editing_palette,
+                                                    customizer.selected_mode
+                                                        == ThemeMode::Dark,
+                                                );
+                                                changed = true;
+                                            }
+                                            ui.end_row();
+
+                                            ui.label("");
+                                            // Swaps the two colors right above/below it
+                                            // rather than requiring the user to re-pick
+                                            // both by hand to try the opposite pairing -
+                                            // re-derives immediately afterward, same as
+                                            // either picker.
+                                            if eden_button(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_custom_theme_swap"),
+                                            )
+                                            .clicked()
+                                            {
+                                                std::mem::swap(
+                                                    &mut editing_palette.primary,
+                                                    &mut editing_palette.secondary_accent,
+                                                );
+                                                regenerate_base_derived_colors(
+                                                    editing_palette,
+                                                    customizer.selected_mode
+                                                        == ThemeMode::Dark,
+                                                );
+                                                changed = true;
+                                            }
+                                            ui.end_row();
+
+                                            // `secondary_accent` has no Core Colors
+                                            // picker of its own (see its doc comment in
+                                            // `theme.rs`) - this is its only editable
+                                            // home. Edits `editing_palette` directly (not
+                                            // a separate staging value) and re-derives
+                                            // immediately, the same way choosing a whole
+                                            // prebuilt preset already does via
+                                            // `apply_theme_preset`.
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_custom_theme_secondary"),
                                             );
-                                            changed = true;
-                                        }
-                                    });
-                                    ui.add_space(4.0);
+                                            if color_picker_control(
+                                                ui,
+                                                &mut editing_palette.secondary_accent,
+                                            ) {
+                                                // `pinned_tab_color`/
+                                                // `toolbar_icon_color`/the notification+
+                                                // toast border colors are all re-derived
+                                                // from `secondary_accent` inside
+                                                // `regenerate_base_derived_colors` itself
+                                                // now - `button_favorite_fill` is
+                                                // deliberately NOT secondary-derived
+                                                // (fixed default, user-editable
+                                                // independently per its own row below).
+                                                regenerate_base_derived_colors(
+                                                    editing_palette,
+                                                    customizer.selected_mode
+                                                        == ThemeMode::Dark,
+                                                );
+                                                changed = true;
+                                            }
+                                            ui.end_row();
+                                        });
+                                    ui.add_space(14.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
                                         ui.add(
@@ -945,7 +1062,7 @@ pub fn draw_theme_customizer_content(
                                             // needed here the way there used to be.
                                             let snapshot_palette = editing_palette.clone();
 
-                                            if let Some(id) = existing_id {
+                                            let saved_id = if let Some(id) = existing_id {
                                                 if let Some(existing) = customizer
                                                     .custom_themes
                                                     .iter_mut()
@@ -956,6 +1073,7 @@ pub fn draw_theme_customizer_content(
                                                         snapshot_palette.secondary_accent;
                                                     existing.palette = Some(snapshot_palette);
                                                 }
+                                                id
                                             } else {
                                                 let id = customizer.custom_themes_next_id;
                                                 customizer.custom_themes_next_id += 1;
@@ -966,8 +1084,20 @@ pub fn draw_theme_customizer_content(
                                                     secondary: snapshot_palette.secondary_accent,
                                                     palette: Some(snapshot_palette),
                                                 });
-                                            }
+                                                id
+                                            };
                                             customizer.new_custom_theme_name.clear();
+                                            // The name field above clears immediately (existing
+                                            // behavior, unrelated to this), but the theme just
+                                            // saved/updated is still what a restart should
+                                            // restore - see `SelectedCustomThemeSnapshot`'s own
+                                            // doc comment.
+                                            customizer.selected_custom_theme_id = Some(saved_id);
+                                            crate::core::indexer::save_selected_custom_theme(
+                                                &crate::core::indexer::SelectedCustomThemeSnapshot {
+                                                    id: Some(saved_id),
+                                                },
+                                            );
                                             custom_themes_changed = true;
                                         }
                                     });
@@ -1923,6 +2053,16 @@ pub fn draw_theme_customizer_content(
                         });
                     if confirmed {
                         customizer.custom_themes.retain(|e| e.id != pending_id);
+                        // Don't leave the persisted selection pointing at a
+                        // theme that no longer exists - falls back to the
+                        // existing empty-field behavior on the next launch
+                        // instead of silently resolving to nothing.
+                        if customizer.selected_custom_theme_id == Some(pending_id) {
+                            customizer.selected_custom_theme_id = None;
+                            crate::core::indexer::save_selected_custom_theme(
+                                &crate::core::indexer::SelectedCustomThemeSnapshot { id: None },
+                            );
+                        }
                         custom_themes_changed = true;
                     }
                     if close {
