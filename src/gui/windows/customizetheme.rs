@@ -904,101 +904,138 @@ pub fn draw_theme_customizer_content(
                                     });
 
                                     ui.add_space(14.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        // Editing primary right here (not just up in Core
-                                        // Colors) means both halves of a new custom theme
-                                        // can be chosen together in one place. Mirrors
-                                        // Core Colors' own Primary row exactly - same
-                                        // field, same `regenerate_base_derived_colors`
-                                        // call on change - so the Live Preview updates
-                                        // immediately and stays in sync no matter which of
-                                        // the two pickers was actually used.
-                                        eden_text_label(
-                                            ui,
-                                            palette,
-                                            &i18n.tr("theme_colors_primary"),
-                                        );
-                                        if color_picker_control(ui, &mut editing_palette.primary)
-                                        {
-                                            regenerate_base_derived_colors(
-                                                editing_palette,
-                                                customizer.selected_mode == ThemeMode::Dark,
+                                    // A 2-column grid rather than three separate
+                                    // horizontal rows - exact layout spelled out by the
+                                    // user after two earlier attempts (a standalone row
+                                    // with tuned spacing, then merging the button into
+                                    // Secondary's own row) both still read as
+                                    // ambiguous: row 1 is Primary's label + picker, row
+                                    // 2 is blank + the Swap Colors button (so it sits
+                                    // directly between the two color swatches, aligned
+                                    // under them rather than under either label), row 3
+                                    // is Secondary's label + picker.
+                                    egui::Grid::new("custom_theme_primary_secondary_grid")
+                                        .num_columns(2)
+                                        .spacing([12.0, 6.0])
+                                        .show(ui, |ui| {
+                                            // Editing primary right here (not just up in
+                                            // Core Colors) means both halves of a new
+                                            // custom theme can be chosen together in one
+                                            // place. Mirrors Core Colors' own Primary row
+                                            // exactly - same field, same
+                                            // `regenerate_base_derived_colors` call on
+                                            // change - so the Live Preview updates
+                                            // immediately and stays in sync no matter
+                                            // which of the two pickers was actually used.
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_colors_primary"),
                                             );
-                                            changed = true;
-                                        }
-                                    });
-                                    ui.add_space(4.0);
-                                    ui.horizontal(|ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        // `secondary_accent` has no Core Colors picker of
-                                        // its own (see its doc comment in `theme.rs`) - this
-                                        // is its only editable home. Edits `editing_palette`
-                                        // directly (not a separate staging value) and
-                                        // re-derives immediately, the same way choosing a
-                                        // whole prebuilt preset already does via
-                                        // `apply_theme_preset` - previously this only wrote
-                                        // into a draft variable applied at Save time, so
-                                        // picking a secondary here had no visible effect on
-                                        // the Live Preview until after saving.
-                                        eden_text_label(
-                                            ui,
-                                            palette,
-                                            &i18n.tr("theme_custom_theme_secondary"),
-                                        );
-                                        if color_picker_control(
-                                            ui,
-                                            &mut editing_palette.secondary_accent,
-                                        ) {
-                                            // `pinned_tab_color`/`toolbar_icon_color`/the
-                                            // notification+toast border colors are all
-                                            // re-derived from `secondary_accent` inside
-                                            // `regenerate_base_derived_colors` itself now -
-                                            // `button_favorite_fill` is deliberately NOT
-                                            // secondary-derived (fixed default, user-editable
-                                            // independently per its own row below).
-                                            regenerate_base_derived_colors(
-                                                editing_palette,
-                                                customizer.selected_mode == ThemeMode::Dark,
-                                            );
-                                            changed = true;
-                                        }
-                                        // On the Secondary row itself (not a separate row
-                                        // above/below it) so it reads unambiguously as
-                                        // belonging to Secondary rather than floating
-                                        // between the two rows - a prior attempt at
-                                        // unequal spacing above/below a standalone row
-                                        // still read as ambiguous per direct user
-                                        // feedback ("still not fix"). Pushed to the row's
-                                        // right edge, swaps the Primary/Secondary rows
-                                        // rather than requiring the user to re-pick both
-                                        // colors by hand to try the opposite pairing -
-                                        // re-derives immediately afterward, same as
-                                        // either row's own picker.
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                if eden_button(
-                                                    ui,
-                                                    palette,
-                                                    &i18n.tr("theme_custom_theme_swap"),
-                                                )
-                                                .clicked()
-                                                {
-                                                    std::mem::swap(
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(
+                                                    egui::Align::Center,
+                                                ),
+                                                |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    if color_picker_control(
+                                                        ui,
                                                         &mut editing_palette.primary,
+                                                    ) {
+                                                        regenerate_base_derived_colors(
+                                                            editing_palette,
+                                                            customizer.selected_mode
+                                                                == ThemeMode::Dark,
+                                                        );
+                                                        changed = true;
+                                                    }
+                                                },
+                                            );
+                                            ui.end_row();
+
+                                            ui.label("");
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(
+                                                    egui::Align::Center,
+                                                ),
+                                                |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    // Swaps the two colors right above/
+                                                    // below it rather than requiring the
+                                                    // user to re-pick both by hand to try
+                                                    // the opposite pairing - re-derives
+                                                    // immediately afterward, same as
+                                                    // either picker.
+                                                    if eden_button(
+                                                        ui,
+                                                        palette,
+                                                        &i18n.tr("theme_custom_theme_swap"),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        std::mem::swap(
+                                                            &mut editing_palette.primary,
+                                                            &mut editing_palette
+                                                                .secondary_accent,
+                                                        );
+                                                        regenerate_base_derived_colors(
+                                                            editing_palette,
+                                                            customizer.selected_mode
+                                                                == ThemeMode::Dark,
+                                                        );
+                                                        changed = true;
+                                                    }
+                                                },
+                                            );
+                                            ui.end_row();
+
+                                            // `secondary_accent` has no Core Colors
+                                            // picker of its own (see its doc comment in
+                                            // `theme.rs`) - this is its only editable
+                                            // home. Edits `editing_palette` directly (not
+                                            // a separate staging value) and re-derives
+                                            // immediately, the same way choosing a whole
+                                            // prebuilt preset already does via
+                                            // `apply_theme_preset`.
+                                            eden_text_label(
+                                                ui,
+                                                palette,
+                                                &i18n.tr("theme_custom_theme_secondary"),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(
+                                                    egui::Align::Center,
+                                                ),
+                                                |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    if color_picker_control(
+                                                        ui,
                                                         &mut editing_palette.secondary_accent,
-                                                    );
-                                                    regenerate_base_derived_colors(
-                                                        editing_palette,
-                                                        customizer.selected_mode
-                                                            == ThemeMode::Dark,
-                                                    );
-                                                    changed = true;
-                                                }
-                                            },
-                                        );
-                                    });
+                                                    ) {
+                                                        // `pinned_tab_color`/
+                                                        // `toolbar_icon_color`/the
+                                                        // notification+toast border colors
+                                                        // are all re-derived from
+                                                        // `secondary_accent` inside
+                                                        // `regenerate_base_derived_colors`
+                                                        // itself now -
+                                                        // `button_favorite_fill` is
+                                                        // deliberately NOT
+                                                        // secondary-derived (fixed
+                                                        // default, user-editable
+                                                        // independently per its own row
+                                                        // below).
+                                                        regenerate_base_derived_colors(
+                                                            editing_palette,
+                                                            customizer.selected_mode
+                                                                == ThemeMode::Dark,
+                                                        );
+                                                        changed = true;
+                                                    }
+                                                },
+                                            );
+                                            ui.end_row();
+                                        });
                                     ui.add_space(14.0);
                                     ui.horizontal(|ui| {
                                         apply_eden_visual_overrides(ui, palette);
