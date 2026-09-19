@@ -991,7 +991,10 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     // which is what this used to alias to `primary_hover` for) - per the
     // user's explicit requirement that the active-search icon background
     // read as darker than the primary color itself, not merely translucent.
-    palette.search_active_icon_bg = darken(base, 0.55);
+    // 0.3 (30% of primary's own brightness) rather than the initial 0.55 -
+    // the first pass still read as too close to primary itself per direct
+    // user feedback ("please have more darker than current for all themes").
+    palette.search_active_icon_bg = darken(base, 0.3);
     // Same reasoning: previously a disabled `eden_button` looked identical
     // to an enabled one (just faded by egui's own opacity multiply), so
     // these default to matching `button_background`/`button_text_color`
@@ -1249,6 +1252,18 @@ mod regenerate_base_derived_colors_tests {
         );
         assert_eq!(palette.notification_border_color, expected_border);
         assert_eq!(palette.navigation_toast_border_color, expected_border);
+        // Pre-existing derivation (not touched by this task) - asserted
+        // explicitly since a user report asked whether this one was really
+        // wired up; it is, and always was.
+        assert_ne!(palette.toolbar_icon_color, Color32::WHITE);
+        assert_ne!(palette.toolbar_icon_color, palette.secondary_accent);
+
+        // Search active icon bg must be darker still than a first pass at
+        // "darker" - re-tuned after direct feedback that 0.55 still read as
+        // too close to primary itself.
+        assert!(
+            (palette.search_active_icon_bg.r() as f32) < (palette.primary.r() as f32) * 0.4
+        );
 
         // Deliberately NOT derived from either accent - fixed per-theme
         // defaults the user can still edit independently.
