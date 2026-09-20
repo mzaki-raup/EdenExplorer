@@ -5,7 +5,7 @@ use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match};
+use crate::gui::utils::{draw_object_drag_ghost, filter_match};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -124,7 +124,7 @@ pub fn draw_item_viewer(
             .enumerate()
             .filter(|(_, f)| {
                 (show_hidden_files_folders || !f.is_hidden)
-                    && fuzzy_match(&f.name, &filter_state.query)
+                    && filter_match(&f.name, &filter_state.query)
             })
             .map(|(i, _)| i)
             .collect();
