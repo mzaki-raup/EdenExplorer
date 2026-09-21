@@ -135,12 +135,15 @@ pub struct AppSettings {
     pub default_search_scope: crate::core::everything::DefaultSearchScope,
     #[serde(default)]
     pub search_engine: crate::core::everything::SearchEngine,
-    /// Whether the notification bell (badge, auto-opening panel, and
-    /// completion toasts) shows up at all when a file operation runs. The
-    /// operations themselves are unaffected either way - this only toggles
-    /// whether the UI announces them.
+    /// Whether starting a file operation automatically opens the
+    /// notification bell's dropdown panel. The bell icon itself always
+    /// shows; this only controls the auto-open behavior.
     #[serde(default = "default_true")]
-    pub show_notification_bell: bool,
+    pub auto_open_notification_panel: bool,
+    /// Whether starting/finishing a file operation shows a transient toast
+    /// popup.
+    #[serde(default = "default_true")]
+    pub show_operation_toasts: bool,
     /// Loaded/saved separately from the rest of these fields - see
     /// `core::context_menu_settings`.
     #[serde(default)]

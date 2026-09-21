@@ -142,7 +142,8 @@ impl Default for AppSettings {
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             search_engine: crate::core::everything::SearchEngine::default(),
-            show_notification_bell: true,
+            auto_open_notification_panel: true,
+            show_operation_toasts: true,
             custom_context_menu: Vec::new(),
             tab_groups: Vec::new(),
         }
@@ -1062,16 +1063,35 @@ fn draw_behavior_section(
             if setting_checkbox(
                 ui,
                 palette,
-                &mut settings.current_settings.show_notification_bell,
-                RichText::new(i18n.tr("settings_show_notification_bell"))
+                &mut settings.current_settings.auto_open_notification_panel,
+                RichText::new(i18n.tr("settings_auto_open_notification_panel"))
                     .color(palette.text_normal),
-                "settings_show_notification_bell",
+                "settings_auto_open_notification_panel",
             ) {
                 *action = Some(SettingsAction::ApplySettings);
             }
             info_icon(
                 ui,
-                &i18n.tr("tooltip_settings_show_notification_bell"),
+                &i18n.tr("tooltip_settings_auto_open_notification_panel"),
+                palette,
+            );
+        });
+
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.show_operation_toasts,
+                RichText::new(i18n.tr("settings_show_operation_toasts"))
+                    .color(palette.text_normal),
+                "settings_show_operation_toasts",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(
+                ui,
+                &i18n.tr("tooltip_settings_show_operation_toasts"),
                 palette,
             );
         });

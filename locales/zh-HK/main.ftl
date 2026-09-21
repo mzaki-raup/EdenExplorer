@@ -375,8 +375,10 @@ tooltip_settings_middle_click_opens_new_tab = 啟用後，在檔案清單中中�
 
 settings_restore_last_session_tabs = 啟動時還原上次開啟的分頁
 tooltip_settings_restore_last_session_tabs = 啟用後，EdenExplorer 會重新開啟上次關閉時開啟的分頁（和資料夾），而不是啟動目錄或釘選的分頁。
-settings_show_notification_bell = 顯示檔案操作的通知鈴鐺
-tooltip_settings_show_notification_bell = 啟用後，複製/移動/刪除/重新命名會顯示鈴鐺圖示、進度面板和完成通知。停用後，操作仍會照常執行，只是不會顯示任何提示。
+settings_auto_open_notification_panel = 操作時自動顯示通知面板
+tooltip_settings_auto_open_notification_panel = 啟用後，開始複製/移動/刪除/重新命名時會自動開啟鈴鐺圖示的下拉面板顯示進度。停用後，只有點擊鈴鐺才會開啟面板，操作本身不受影響。
+settings_show_operation_toasts = 操作開始與完成時顯示彈出提示
+tooltip_settings_show_operation_toasts = 啟用後，複製/移動/刪除/重新命名開始及完成時會顯示小型彈出提示。停用後不會顯示提示，但鈴鐺圖示與面板仍會追蹤每項操作。
 
 preview_select_a_file = 選擇檔案以預覽。
 preview_loading = 正在載入預覽…

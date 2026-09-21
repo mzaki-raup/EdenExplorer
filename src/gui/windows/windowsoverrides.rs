@@ -138,7 +138,8 @@ fn save_manual_window_size(hwnd: HWND) {
             default_display_mode,
             default_search_scope,
             search_engine,
-            show_notification_bell,
+            auto_open_notification_panel,
+            show_operation_toasts,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -171,7 +172,8 @@ fn save_manual_window_size(hwnd: HWND) {
             default_display_mode,
             default_search_scope,
             search_engine,
-            show_notification_bell,
+            auto_open_notification_panel,
+            show_operation_toasts,
         );
     }
 }

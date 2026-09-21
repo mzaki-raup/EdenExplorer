@@ -912,7 +912,10 @@ impl MainWindow {
             self.settings_window.current_settings.default_display_mode,
             self.settings_window.current_settings.default_search_scope,
             self.settings_window.current_settings.search_engine,
-            self.settings_window.current_settings.show_notification_bell,
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
+            self.settings_window.current_settings.show_operation_toasts,
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
@@ -1522,6 +1525,9 @@ impl MainWindow {
                         crate::gui::windows::containers::notifications::FileOpKind::Compress,
                         paths.len(),
                         path_display_label(&dest_zip),
+                        self.settings_window
+                            .current_settings
+                            .auto_open_notification_panel,
                     );
                     let (tx, rx) = crossbeam_channel::unbounded();
                     crate::core::compress::compress_paths_async(paths, dest_zip.clone(), tx);
@@ -1588,6 +1594,9 @@ impl MainWindow {
                             } else {
                                 crate::gui::windows::containers::notifications::FileOpStatus::Failed
                             },
+                            self.settings_window
+                                .current_settings
+                                .auto_open_notification_panel,
                         );
                     }
                 }
@@ -1648,6 +1657,9 @@ impl MainWindow {
                     attempted.len(),
                     String::new(),
                     status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
                 );
 
                 let mut tags_changed = false;
@@ -1694,6 +1706,9 @@ impl MainWindow {
                     paths.len(),
                     destination_label,
                     delete_status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
                 );
 
                 let mut tags_changed = false;
@@ -1882,6 +1897,9 @@ impl MainWindow {
             },
             paths.len(),
             path_display_label(&target_dir),
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
         );
 
         let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
@@ -3705,7 +3723,8 @@ impl MainWindow {
                         _default_display_mode,
                         _default_search_scope,
                         _search_engine,
-                        _show_notification_bell,
+                        _auto_open_notification_panel,
+                        _show_operation_toasts,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -3915,6 +3934,9 @@ impl MainWindow {
             sources.len(),
             path_display_label(&target_dir),
             crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
         );
 
         {
