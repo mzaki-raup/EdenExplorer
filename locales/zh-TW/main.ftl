@@ -447,6 +447,7 @@ tab_group_open_hover = 將此群組中的每個資料夾都作為新分頁開啟
 tab_group_replace = 取代目前分頁
 tab_group_replace_hover = 關閉所有目前分頁，改為開啟此群組。
 tab_group_menu = 分頁群組
+tab_add_new = 開啟新分頁(本機)
 tab_group_add_to_new = 加入新群組
 tab_group_add_to_existing = 加入現有群組
 tab_group_create = 建立

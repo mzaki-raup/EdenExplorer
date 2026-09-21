@@ -447,6 +447,7 @@ tab_group_open_hover = このグループのすべてのフォルダーを新し
 tab_group_replace = 現在のタブを置き換え
 tab_group_replace_hover = 現在のタブをすべて閉じ、代わりにこのグループを開きます。
 tab_group_menu = タブグループ
+tab_add_new = 新しいタブを開く (PC)
 tab_group_add_to_new = 新しいグループに追加
 tab_group_add_to_existing = 既存のグループに追加
 tab_group_create = 作成

@@ -444,6 +444,7 @@ tab_group_open_hover = Open every folder in this group as a new tab.
 tab_group_replace = Replace Current Tabs
 tab_group_replace_hover = Close all current tabs and open this group instead.
 tab_group_menu = Tab Groups
+tab_add_new = Open New Tab (This PC)
 tab_group_add_to_new = Add to New Group
 tab_group_add_to_existing = Add to Existing Group
 tab_group_create = Create

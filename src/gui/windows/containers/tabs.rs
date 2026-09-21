@@ -336,7 +336,14 @@ pub fn draw_tabs(
                     }
 
                     // ---------- ADD NEW TAB BUTTON (wraps alongside the tabs) ----------
-                    let add_button_rect = handle_draw_add_new_tab_button(ui, palette, &mut action);
+                    let add_button_rect = handle_draw_add_new_tab_button(
+                        ui,
+                        i18n,
+                        icon_cache,
+                        tab_groups,
+                        palette,
+                        &mut action,
+                    );
                     occupied_rects.push(add_button_rect);
                 });
             });
@@ -828,6 +835,9 @@ fn handle_draw_tab_new_allocated(
 
 fn handle_draw_add_new_tab_button(
     ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    tab_groups: &[TabGroup],
     palette: &ThemePalette,
     action: &mut TabsAction,
 ) -> egui::Rect {
@@ -870,8 +880,22 @@ fn handle_draw_add_new_tab_button(
     }
 
     if resp.clicked() {
-        action.open_new = true;
+        action.duplicate = Some(PathBuf::from(MY_PC_PATH));
     }
+
+    Popup::context_menu(&resp)
+        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            if ui
+                .button(format!("{}  {}", regular::PLUS, i18n.tr("tab_add_new")))
+                .clicked()
+            {
+                action.duplicate = Some(PathBuf::from(MY_PC_PATH));
+                ui.close();
+            }
+            ui.separator();
+            draw_tab_groups_menu(ui, i18n, icon_cache, tab_groups, action);
+        });
 
     rect
 }

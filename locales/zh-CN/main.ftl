@@ -447,6 +447,7 @@ tab_group_open_hover = 将此组中的每个文件夹都作为新标签页打开
 tab_group_replace = 替换当前标签页
 tab_group_replace_hover = 关闭所有当前标签页，改为打开此组。
 tab_group_menu = 标签组
+tab_add_new = 打开新标签页(此电脑)
 tab_group_add_to_new = 添加到新组
 tab_group_add_to_existing = 添加到现有组
 tab_group_create = 创建

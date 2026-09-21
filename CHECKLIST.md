@@ -46,6 +46,7 @@ behind each item) and `CLAUDE.md` (engineering conventions).
 | Completed | Window position memory in addition to size — fixed a physical/logical pixel unit mismatch (`GetClientRect` vs. egui's logical points) in the drag/resize-finished save path that inflated the remembered size on any display scaled above 100%, throwing off both size and position on the next launch |
 | Completed | Maximization bounds and minimum-size constraints |
 | Completed | CLI accepts `::MY_PC::`, `::RECYCLE_BIN::`, `shell:MyComputerFolder`, `shell:RecycleBinFolder` |
+| Completed | The tab strip's "+" (add-tab) button now defaults to opening "This PC" as a new tab on a plain click, instead of duplicating whatever tab was currently active (`TabsAction::duplicate`, reusing the same "open a new tab at a specific path" path the sidebar's own "This PC" item already used) — and right-clicking it opens a context menu with an explicit "Open New Tab (This PC)" entry plus the same "Tab Groups" submenu (Open Group / Replace Current Tabs per saved group) already used elsewhere in the tab strip's own right-click menus |
 
 ## Phase 3 — View modes & column system
 

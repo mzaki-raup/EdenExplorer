@@ -446,6 +446,7 @@ tab_group_open_hover = Buka setiap folder dalam grup ini sebagai tab baru.
 tab_group_replace = Ganti Tab Saat Ini
 tab_group_replace_hover = Tutup semua tab saat ini dan buka grup ini sebagai gantinya.
 tab_group_menu = Grup Tab
+tab_add_new = Buka Tab Baru (PC Ini)
 tab_group_add_to_new = Tambah ke Grup Baru
 tab_group_add_to_existing = Tambah ke Grup yang Ada
 tab_group_create = Buat
