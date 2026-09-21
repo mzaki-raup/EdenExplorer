@@ -257,6 +257,8 @@ struct AppSettingsSnapshot {
     default_search_scope: crate::core::everything::DefaultSearchScope,
     #[serde(default)]
     search_engine: crate::core::everything::SearchEngine,
+    #[serde(default = "default_true")]
+    show_notification_bell: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,6 +344,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             search_engine: crate::core::everything::SearchEngine::default(),
+            show_notification_bell: true,
         }
     }
 }
@@ -1092,6 +1095,7 @@ pub fn load_app_settings() -> (
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
     crate::core::everything::SearchEngine,
+    bool,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -1139,6 +1143,7 @@ pub fn load_app_settings() -> (
         snapshot.default_display_mode,
         snapshot.default_search_scope,
         snapshot.search_engine,
+        snapshot.show_notification_bell,
     )
 }
 
@@ -1173,6 +1178,7 @@ fn default_app_settings(
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
     crate::core::everything::SearchEngine,
+    bool,
 ) {
     (
         true,
@@ -1203,6 +1209,7 @@ fn default_app_settings(
         ItemViewerDisplayMode::Details,
         crate::core::everything::DefaultSearchScope::default(),
         crate::core::everything::SearchEngine::default(),
+        true,
     )
 }
 
@@ -1235,6 +1242,7 @@ pub fn save_app_settings(
     default_display_mode: ItemViewerDisplayMode,
     default_search_scope: crate::core::everything::DefaultSearchScope,
     search_engine: crate::core::everything::SearchEngine,
+    show_notification_bell: bool,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -1270,6 +1278,7 @@ pub fn save_app_settings(
         default_display_mode,
         default_search_scope,
         search_engine,
+        show_notification_bell,
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

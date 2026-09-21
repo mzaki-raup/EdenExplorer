@@ -374,6 +374,8 @@ tooltip_settings_middle_click_opens_new_tab = Jika diaktifkan, mengklik tengah f
 
 settings_restore_last_session_tabs = Pulihkan tab yang terakhir dibuka saat memulai
 tooltip_settings_restore_last_session_tabs = Jika diaktifkan, EdenExplorer akan membuka kembali tab (dan folder) yang terbuka saat terakhir kali Anda menutupnya, alih-alih direktori awal atau tab yang disematkan.
+settings_show_notification_bell = Tampilkan lonceng notifikasi untuk operasi berkas
+tooltip_settings_show_notification_bell = Jika diaktifkan, menyalin/memindahkan/menghapus/mengganti nama akan menampilkan ikon lonceng dengan panel progres dan notifikasi toast saat selesai. Jika dinonaktifkan, operasi tetap berjalan sama, hanya saja tidak ada yang ditampilkan.
 
 preview_select_a_file = Pilih berkas untuk melihat pratinjaunya.
 preview_loading = Memuat pratinjau…

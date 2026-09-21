@@ -142,6 +142,7 @@ impl Default for AppSettings {
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             search_engine: crate::core::everything::SearchEngine::default(),
+            show_notification_bell: true,
             custom_context_menu: Vec::new(),
             tab_groups: Vec::new(),
         }
@@ -1052,6 +1053,25 @@ fn draw_behavior_section(
             info_icon(
                 ui,
                 &i18n.tr("tooltip_settings_restore_last_session_tabs"),
+                palette,
+            );
+        });
+
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.show_notification_bell,
+                RichText::new(i18n.tr("settings_show_notification_bell"))
+                    .color(palette.text_normal),
+                "settings_show_notification_bell",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(
+                ui,
+                &i18n.tr("tooltip_settings_show_notification_bell"),
                 palette,
             );
         });

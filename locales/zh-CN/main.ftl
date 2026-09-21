@@ -375,6 +375,8 @@ tooltip_settings_middle_click_opens_new_tab = 启用后，在文件列表中中�
 
 settings_restore_last_session_tabs = 启动时恢复上次打开的标签页
 tooltip_settings_restore_last_session_tabs = 启用后，EdenExplorer 会重新打开上次关闭时打开的标签页（和文件夹），而不是启动目录或固定的标签页。
+settings_show_notification_bell = 显示文件操作的通知铃铛
+tooltip_settings_show_notification_bell = 启用后，复制/移动/删除/重命名会显示铃铛图标、进度面板和完成提示。禁用后，操作仍会照常执行，只是不会显示任何提示。
 
 preview_select_a_file = 选择一个文件以预览。
 preview_loading = 正在加载预览…

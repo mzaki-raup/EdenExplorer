@@ -375,6 +375,8 @@ tooltip_settings_middle_click_opens_new_tab = 有効にすると、ファイル�
 
 settings_restore_last_session_tabs = 起動時に前回開いていたタブを復元
 tooltip_settings_restore_last_session_tabs = 有効にすると、開始ディレクトリやピン留めタブの代わりに、前回終了時に開いていたタブ(とフォルダー)を復元します。
+settings_show_notification_bell = ファイル操作の通知ベルを表示
+tooltip_settings_show_notification_bell = 有効にすると、コピー/移動/削除/名前変更の際にベルアイコン、進行状況パネル、完了トーストが表示されます。無効にしても操作自体は同じように実行されますが、何も表示されなくなります。
 
 preview_select_a_file = ファイルを選択してプレビューします。
 preview_loading = プレビューを読み込み中…

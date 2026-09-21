@@ -912,6 +912,7 @@ impl MainWindow {
             self.settings_window.current_settings.default_display_mode,
             self.settings_window.current_settings.default_search_scope,
             self.settings_window.current_settings.search_engine,
+            self.settings_window.current_settings.show_notification_bell,
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
@@ -3704,6 +3705,7 @@ impl MainWindow {
                         _default_display_mode,
                         _default_search_scope,
                         _search_engine,
+                        _show_notification_bell,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;

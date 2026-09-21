@@ -210,6 +210,7 @@ impl Default for MainWindow {
             default_display_mode,
             default_search_scope,
             search_engine,
+            show_notification_bell,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -239,6 +240,7 @@ impl Default for MainWindow {
             default_display_mode,
             default_search_scope,
             search_engine,
+            show_notification_bell,
             custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
             tab_groups: crate::core::tab_groups::load_tab_groups(),
         };
@@ -708,6 +710,7 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.default_display_mode,
                         self.settings_window.current_settings.default_search_scope,
                         self.settings_window.current_settings.search_engine,
+                        self.settings_window.current_settings.show_notification_bell,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -1059,22 +1062,30 @@ impl eframe::App for MainWindow {
                                             ),
                                             egui::vec2(bell_width, controls_rect.height()),
                                         );
-                                        ui.scope_builder(
-                                            egui::UiBuilder::new().max_rect(bell_rect),
-                                            |ui| {
-                                                ui.with_layout(
-                                                    egui::Layout::right_to_left(egui::Align::Center),
-                                                    |ui| {
-                                                        draw_notifications_button(
-                                                            ui,
-                                                            &self.i18n,
-                                                            &palette,
-                                                            &mut self.notifications_state,
-                                                        );
-                                                    },
-                                                );
-                                            },
-                                        );
+                                        if self
+                                            .settings_window
+                                            .current_settings
+                                            .show_notification_bell
+                                        {
+                                            ui.scope_builder(
+                                                egui::UiBuilder::new().max_rect(bell_rect),
+                                                |ui| {
+                                                    ui.with_layout(
+                                                        egui::Layout::right_to_left(
+                                                            egui::Align::Center,
+                                                        ),
+                                                        |ui| {
+                                                            draw_notifications_button(
+                                                                ui,
+                                                                &self.i18n,
+                                                                &palette,
+                                                                &mut self.notifications_state,
+                                                            );
+                                                        },
+                                                    );
+                                                },
+                                            );
+                                        }
 
                                         ui.scope_builder(
                                             egui::UiBuilder::new().max_rect(controls_rect),
@@ -1636,7 +1647,9 @@ impl eframe::App for MainWindow {
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
-        draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
+        if self.settings_window.current_settings.show_notification_bell {
+            draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
+        }
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());
