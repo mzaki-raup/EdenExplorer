@@ -412,6 +412,9 @@ tooltip_settings_search_engine = Everything (voidtools) memberikan hasil hampir 
 
 settings_custom_context_menu = Menu Klik Kanan Kustom
 tooltip_settings_custom_context_menu = Tambahkan perintah Anda sendiri ke menu klik kanan untuk file, folder, dan/atau ruang kosong pada folder.
+custom_context_menu_show_in_context_menu = Show custom commands in the file/folder context menu
+tooltip_custom_context_menu_show_in_context_menu = When enabled, right-clicking a file, folder, or empty background space shows your custom commands.
+tooltip_custom_context_menu_show_in_context_menu_disabled = Add at least one command or submenu before you can enable this.
 custom_context_menu_add_command = Tambah Perintah
 custom_context_menu_add_submenu = Tambah Submenu
 custom_context_menu_untitled = (tanpa judul)

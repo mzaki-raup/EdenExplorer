@@ -105,6 +105,11 @@ impl CustomContextMenuEntry {
 struct CustomContextMenuSnapshot {
     #[serde(default)]
     entries: Vec<CustomContextMenuEntry>,
+    /// Whether the Custom Context Menu section shows up in the real
+    /// right-click menu at all - meaningless (and forced back to `false`)
+    /// once `entries` is empty, same as `core::send_to`'s own toggle.
+    #[serde(default)]
+    context_menu_enabled: bool,
 }
 
 /// A standalone, human-readable export of *just* the custom context menu -
@@ -127,19 +132,20 @@ fn cache_path() -> Option<PathBuf> {
     Some(base.join("ExplorerEden").join("context_menu.bin"))
 }
 
-pub fn load_custom_context_menu() -> Vec<CustomContextMenuEntry> {
+pub fn load_custom_context_menu() -> (Vec<CustomContextMenuEntry>, bool) {
     let Some(path) = cache_path() else {
-        return Vec::new();
+        return (Vec::new(), false);
     };
     let Ok(data) = std::fs::read(&path) else {
-        return Vec::new();
+        return (Vec::new(), false);
     };
-    postcard::from_bytes::<CustomContextMenuSnapshot>(&data)
-        .map(|s| s.entries)
-        .unwrap_or_default()
+    match postcard::from_bytes::<CustomContextMenuSnapshot>(&data) {
+        Ok(snapshot) => (snapshot.entries, snapshot.context_menu_enabled),
+        Err(_) => (Vec::new(), false),
+    }
 }
 
-pub fn save_custom_context_menu(entries: &[CustomContextMenuEntry]) {
+pub fn save_custom_context_menu(entries: &[CustomContextMenuEntry], context_menu_enabled: bool) {
     let Some(path) = cache_path() else {
         return;
     };
@@ -148,6 +154,7 @@ pub fn save_custom_context_menu(entries: &[CustomContextMenuEntry]) {
     }
     let snapshot = CustomContextMenuSnapshot {
         entries: entries.to_vec(),
+        context_menu_enabled,
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

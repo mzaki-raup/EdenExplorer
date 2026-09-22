@@ -413,6 +413,9 @@ tooltip_settings_search_engine = Everything(voidtools)几乎可以即时返回�
 
 settings_custom_context_menu = 自定义右键菜单
 tooltip_settings_custom_context_menu = 为文件、文件夹和/或文件夹空白处的右键菜单添加您自己的命令。
+custom_context_menu_show_in_context_menu = Show custom commands in the file/folder context menu
+tooltip_custom_context_menu_show_in_context_menu = When enabled, right-clicking a file, folder, or empty background space shows your custom commands.
+tooltip_custom_context_menu_show_in_context_menu_disabled = Add at least one command or submenu before you can enable this.
 custom_context_menu_add_command = 添加命令
 custom_context_menu_add_submenu = 添加子菜单
 custom_context_menu_untitled = （未命名）

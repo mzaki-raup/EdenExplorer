@@ -941,6 +941,7 @@ impl MainWindow {
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
+            self.settings_window.current_settings.custom_context_menu_enabled,
         );
         crate::core::tab_groups::save_tab_groups(&self.settings_window.current_settings.tab_groups);
         crate::core::send_to::save_send_to(
@@ -3302,6 +3303,10 @@ impl MainWindow {
                     let custom_context_menu = std::mem::take(
                         &mut self.settings_window.current_settings.custom_context_menu,
                     );
+                    let custom_context_menu_enabled = self
+                        .settings_window
+                        .current_settings
+                        .custom_context_menu_enabled;
                     let tab_groups =
                         std::mem::take(&mut self.settings_window.current_settings.tab_groups);
                     let send_to =
@@ -3312,6 +3317,8 @@ impl MainWindow {
                         .send_to_context_menu_enabled;
                     self.settings_window.current_settings = Default::default();
                     self.settings_window.current_settings.custom_context_menu = custom_context_menu;
+                    self.settings_window.current_settings.custom_context_menu_enabled =
+                        custom_context_menu_enabled;
                     self.settings_window.current_settings.tab_groups = tab_groups;
                     self.settings_window.current_settings.send_to = send_to;
                     self.settings_window.current_settings.send_to_context_menu_enabled =
@@ -3403,6 +3410,9 @@ impl MainWindow {
                                         bundle.entries;
                                     crate::core::context_menu_settings::save_custom_context_menu(
                                         &self.settings_window.current_settings.custom_context_menu,
+                                        self.settings_window
+                                            .current_settings
+                                            .custom_context_menu_enabled,
                                     );
                                 }
                                 Err(err) => eprintln!("Failed to parse context menu file: {}", err),

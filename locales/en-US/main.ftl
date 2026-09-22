@@ -410,6 +410,9 @@ minimize = Minimize
 
 settings_custom_context_menu = Custom Context Menu
 tooltip_settings_custom_context_menu = Add your own commands to the right-click menu for files, folders, and/or empty space in a folder.
+custom_context_menu_show_in_context_menu = Show custom commands in the file/folder context menu
+tooltip_custom_context_menu_show_in_context_menu = When enabled, right-clicking a file, folder, or empty background space shows your custom commands.
+tooltip_custom_context_menu_show_in_context_menu_disabled = Add at least one command or submenu before you can enable this.
 custom_context_menu_add_command = Add Command
 custom_context_menu_add_submenu = Add Submenu
 custom_context_menu_untitled = (untitled)

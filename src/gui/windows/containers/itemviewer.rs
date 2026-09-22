@@ -1169,11 +1169,17 @@ pub fn draw_item_viewer(
                                 // entries to show, so View/Paste stay adjacent (no double
                                 // separator) when there are none. The separator below is
                                 // unconditional, closing off the group before Paste either way.
+                                let ccm_entries: &[crate::core::context_menu_settings::CustomContextMenuEntry] =
+                                    if settings_window.current_settings.custom_context_menu_enabled {
+                                        &settings_window.current_settings.custom_context_menu
+                                    } else {
+                                        &[]
+                                    };
                                 draw_custom_context_menu_group(
                                     ui,
                                     i18n,
                                     icon_cache,
-                                    &settings_window.current_settings.custom_context_menu,
+                                    ccm_entries,
                                     false,
                                     false,
                                     true,

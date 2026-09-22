@@ -413,6 +413,9 @@ tooltip_settings_search_engine = Everything (voidtools) はほぼ瞬時に結果
 
 settings_custom_context_menu = カスタム右クリックメニュー
 tooltip_settings_custom_context_menu = ファイル、フォルダー、フォルダーの空白部分の右クリックメニューに独自のコマンドを追加します。
+custom_context_menu_show_in_context_menu = Show custom commands in the file/folder context menu
+tooltip_custom_context_menu_show_in_context_menu = When enabled, right-clicking a file, folder, or empty background space shows your custom commands.
+tooltip_custom_context_menu_show_in_context_menu_disabled = Add at least one command or submenu before you can enable this.
 custom_context_menu_add_command = コマンドを追加
 custom_context_menu_add_submenu = サブメニューを追加
 custom_context_menu_untitled = (無題)

@@ -149,6 +149,7 @@ impl Default for AppSettings {
             auto_open_notification_panel: true,
             show_operation_toasts: true,
             custom_context_menu: Vec::new(),
+            custom_context_menu_enabled: false,
             tab_groups: Vec::new(),
             send_to: Vec::new(),
             send_to_context_menu_enabled: false,

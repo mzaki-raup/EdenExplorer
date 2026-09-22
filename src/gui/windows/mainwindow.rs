@@ -214,6 +214,7 @@ impl Default for MainWindow {
             show_operation_toasts,
         ) = load_app_settings();
         let loaded_send_to = crate::core::send_to::load_send_to();
+        let loaded_context_menu = crate::core::context_menu_settings::load_custom_context_menu();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             show_hidden_files_folders,
@@ -244,7 +245,8 @@ impl Default for MainWindow {
             search_engine,
             auto_open_notification_panel,
             show_operation_toasts,
-            custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
+            custom_context_menu: loaded_context_menu.0,
+            custom_context_menu_enabled: loaded_context_menu.1,
             tab_groups: crate::core::tab_groups::load_tab_groups(),
             send_to: loaded_send_to.0,
             send_to_context_menu_enabled: loaded_send_to.1,

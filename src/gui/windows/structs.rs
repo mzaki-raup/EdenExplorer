@@ -144,10 +144,13 @@ pub struct AppSettings {
     /// popup.
     #[serde(default = "default_true")]
     pub show_operation_toasts: bool,
-    /// Loaded/saved separately from the rest of these fields - see
+    /// Loaded/saved separately from the rest of these fields (including its
+    /// own `custom_context_menu_enabled` toggle) - see
     /// `core::context_menu_settings`.
     #[serde(default)]
     pub custom_context_menu: Vec<crate::core::context_menu_settings::CustomContextMenuEntry>,
+    #[serde(default)]
+    pub custom_context_menu_enabled: bool,
     /// Loaded/saved separately from the rest of these fields - see
     /// `core::tab_groups`.
     #[serde(default)]
