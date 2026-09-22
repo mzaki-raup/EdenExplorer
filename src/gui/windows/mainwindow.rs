@@ -1148,7 +1148,26 @@ impl eframe::App for MainWindow {
                                                 )
                                             });
 
-                                            if primary_clicked {
+                                            // A modal (paste-conflict, bulk-rename, checksum) is
+                                            // drawn in an `Order::Foreground` `Area` anchored to
+                                            // the *whole* window's center, not either pane's - so
+                                            // one of its own buttons can sit at a screen position
+                                            // that geometrically overlaps `primary_rect` even when
+                                            // the click was actually consumed by that button, not
+                                            // by the pane underneath. Without this guard, clicking
+                                            // "Replace" in the paste-conflict modal (positioned,
+                                            // in practice, over whichever pane happens to sit
+                                            // under the window's horizontal center) reassigned
+                                            // `focused_split` right back to that pane based purely
+                                            // on the click's raw coordinates - reported directly:
+                                            // pasting into the second pane and clicking Replace
+                                            // snapped focus back to the first pane, even though
+                                            // the paste itself correctly targeted the second one.
+                                            let blocking_modal_open = self.pending_paste_conflict.is_some()
+                                                || self.pending_bulk_rename.is_some()
+                                                || self.pending_checksum.is_some();
+
+                                            if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
                                                     let in_primary = primary_rect.contains(pos);
                                                     let in_secondary = secondary_rect.contains(pos);
@@ -1616,25 +1635,23 @@ impl eframe::App for MainWindow {
             }
         }
 
-        // A drag-and-drop copy/move (`MoveItems`) dropped onto a pane is a
-        // real, deliberate interaction with that pane - unlike most other
-        // actions funneled through this same temporary-focus-then-restore
-        // mechanism (which exist purely so a shared handler can resolve via
-        // `self.focused_split` without actually meaning "the user is now
-        // working in this pane"), a drop should make that pane the active
-        // one going forward, the same way clicking into it would. Without
-        // this, dragging a file into the *other* pane correctly copied it
-        // there, but `self.focused_split` snapped straight back to whichever
-        // pane was active before the drag - reported directly as "why does
-        // it go back to the first pane" - because a drag's initial press
-        // (the only thing that normally sets `self.focused_split`, in the
-        // primary-click handling above) fires in the *source* pane, and
-        // nothing ever attributes the drop itself to the destination pane.
-        let primary_drop = matches!(pending_action, Some(ItemViewerAction::MoveItems { .. }));
-        let secondary_drop =
-            matches!(secondary_pending_action, Some(ItemViewerAction::MoveItems { .. }));
-
-        let restore_focus = self.focused_split;
+        // Any `pending_action`/`secondary_pending_action` here was produced
+        // by that pane's own widgets reacting to a real click/drag/keyboard
+        // shortcut (built during that pane's own draw call) - by
+        // construction, it's always a deliberate interaction with that
+        // pane, so it should become (or stay) the active one, the same way
+        // clicking into it would. This used to restore whichever pane was
+        // focused *before* the action instead - reasonable for the
+        // breadcrumb-routing block above (which exists only so a shared
+        // handler can resolve via `self.focused_split`, not because the
+        // user is now "working in" that pane), but wrong here: a drag-and-
+        // drop copy into the other pane, or a Paste that hits a conflict
+        // and only finishes once the Replace/Skip/Rename modal is
+        // resolved, both restored focus straight back to the *previous*
+        // pane - reported directly, twice, once for each of those two
+        // paths ("why does it go back to the first pane"). If both panes
+        // somehow produced an action in the same frame, the second one
+        // handled (secondary) wins, matching normal last-write-wins.
         if pending_action.is_some() {
             self.focused_split = SplitSide::Primary;
             handle_pending_actions(pending_action, self);
@@ -1643,13 +1660,6 @@ impl eframe::App for MainWindow {
             self.focused_split = SplitSide::Secondary;
             handle_pending_actions(secondary_pending_action, self);
         }
-        self.focused_split = if secondary_drop {
-            SplitSide::Secondary
-        } else if primary_drop {
-            SplitSide::Primary
-        } else {
-            restore_focus
-        };
         // If either call above just queued delayed post-command refreshes,
         // make sure a frame actually runs to check them later - the app may
         // otherwise sit fully idle (no input, nothing else asking to
