@@ -6,6 +6,12 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-22
 
+- **Send To moved to between Delete Permanently and Create Shortcut** (was
+  between Compress and Cut), and the "Windows menu items" entry at the
+  bottom of the right-click menu now reads a plain, static "Windows Menu
+  Item" instead of switching between "Show"/"Hide Windows menu items" text.
+  It was already hidden whenever "Enable Windows context menu items" is
+  turned off in Settings - that part needed no change.
 - **New "Send To" feature.** A new Settings page (between Custom Context
   Menu and Tab Groups) for creating named groups of destination folders,
   each with its own icon (a Phosphor glyph or a browsed image file) and an

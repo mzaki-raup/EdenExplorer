@@ -611,20 +611,6 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
-    if settings_window.current_settings.send_to_context_menu_enabled
-        && !settings_window.current_settings.send_to.is_empty()
-    {
-        ui.separator();
-        draw_send_to_menu(
-            ui,
-            i18n,
-            icon_cache,
-            &settings_window.current_settings.send_to,
-            &context_paths,
-            action,
-        );
-    }
-
     ui.separator();
 
     if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
@@ -694,8 +680,23 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    if settings_window.current_settings.send_to_context_menu_enabled
+        && !settings_window.current_settings.send_to.is_empty()
+    {
+        ui.separator();
+        draw_send_to_menu(
+            ui,
+            i18n,
+            icon_cache,
+            &settings_window.current_settings.send_to,
+            &context_paths,
+            action,
+        );
+    }
+
     // Create Shortcut / Checksum / Properties - grouped together as their
-    // own trailing section, separated from Delete above.
+    // own trailing section, separated from Delete (and Send To, if shown)
+    // above.
     ui.separator();
 
     if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))
@@ -761,60 +762,57 @@ pub fn draw_windows_context_submenu(
     cache_key: Vec<PathBuf>,
     load_menu: impl FnOnce(HWND) -> windows::core::Result<ShellContextMenu>,
 ) {
-    let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
-        i18n.tr("contextmenu_hide_windows_menu_items")
-    } else {
-        i18n.tr("contextmenu_show_windows_menu_items")
-    };
+    ui.menu_button(
+        format!("{}  {}", regular::WINDOWS_LOGO, i18n.tr("contextmenu_windows_menu_item")),
+        |ui| {
+            apply_eden_visual_overrides(ui, palette);
+            apply_eden_visual_color_overrides(ui, palette);
+            apply_eden_text_overrides(ui, palette);
 
-    ui.menu_button(format!("{}  {toggle_label}", regular::WINDOWS_LOGO), |ui| {
-        apply_eden_visual_overrides(ui, palette);
-        apply_eden_visual_color_overrides(ui, palette);
-        apply_eden_text_overrides(ui, palette);
+            if let Some(hwnd) = hwnd {
+                let cache_miss = explorer_state
+                    .windows_context_menu_cache
+                    .as_ref()
+                    .map(|cache| cache.selection != cache_key)
+                    .unwrap_or(true);
 
-        if let Some(hwnd) = hwnd {
-            let cache_miss = explorer_state
-                .windows_context_menu_cache
-                .as_ref()
-                .map(|cache| cache.selection != cache_key)
-                .unwrap_or(true);
-
-            if cache_miss {
-                explorer_state.windows_context_menu_cache = load_menu(hwnd)
-                    .map(
-                        |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
-                            selection: cache_key.clone(),
-                            menu,
-                        },
-                    )
-                    .map(Some)
-                    .unwrap_or_else(|err| {
-                        eprintln!("Windows menu load failed: {}", err);
-                        None
-                    });
-            }
-
-            if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-                if cache.menu.items().is_empty() {
-                    ui.label("No Windows menu items for this selection.");
-                } else {
-                    let row_height = palette.text_size + 6.0;
-                    let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
-                    let max_height = ui.ctx().viewport_rect().height() * 0.8;
-                    ScrollArea::vertical()
-                        .max_height(max_height)
-                        .min_scrolled_height(min_height)
-                        .show(ui, |ui| {
-                            draw_windows_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
+                if cache_miss {
+                    explorer_state.windows_context_menu_cache = load_menu(hwnd)
+                        .map(
+                            |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
+                                selection: cache_key.clone(),
+                                menu,
+                            },
+                        )
+                        .map(Some)
+                        .unwrap_or_else(|err| {
+                            eprintln!("Windows menu load failed: {}", err);
+                            None
                         });
                 }
+
+                if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
+                    if cache.menu.items().is_empty() {
+                        ui.label("No Windows menu items for this selection.");
+                    } else {
+                        let row_height = palette.text_size + 6.0;
+                        let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
+                        let max_height = ui.ctx().viewport_rect().height() * 0.8;
+                        ScrollArea::vertical()
+                            .max_height(max_height)
+                            .min_scrolled_height(min_height)
+                            .show(ui, |ui| {
+                                draw_windows_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
+                            });
+                    }
+                } else {
+                    ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+                }
             } else {
-                ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+                ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
             }
-        } else {
-            ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
-        }
-    });
+        },
+    );
 }
 
 /// Renders one level of a `ShellContextMenu`'s items, recursing into an
