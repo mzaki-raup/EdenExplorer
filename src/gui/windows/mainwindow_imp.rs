@@ -3632,6 +3632,18 @@ impl MainWindow {
                     self.open_new_tab_with_split(entry.path, entry.split_path);
                 }
                 self.load_path();
+                // `load_path()` only loads the newly-active tab's Primary
+                // side (`self.focused_split` stays `Primary` here) - every
+                // *other* opened tab gets its content loaded lazily once the
+                // user actually clicks it (see the `action.activate` handler
+                // above, which loads both sides), but this last tab never
+                // receives that click, so its own Secondary split - if this
+                // entry had one - would otherwise stay unloaded and show as
+                // an incorrect "this folder is empty" until switched away
+                // from and back.
+                if self.active_tab().split_view.is_some() {
+                    self.load_view(SplitSide::Secondary);
+                }
             }
             if let Some(entries) = action.replace_with_group {
                 if !entries.is_empty() {
@@ -3671,6 +3683,13 @@ impl MainWindow {
                     self.active_tab = 0;
                     self.mark_tab_infos_dirty();
                     self.load_path();
+                    // Same reasoning as `action.open_group` above: only the
+                    // active tab's Primary side gets loaded here, so its own
+                    // Secondary split (if this entry had one) needs loading
+                    // explicitly too.
+                    if self.active_tab().split_view.is_some() {
+                        self.load_view(SplitSide::Secondary);
+                    }
                 }
             }
             if let Some((name, path, split_path)) = action.add_tab_to_new_group {
