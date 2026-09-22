@@ -1282,7 +1282,7 @@ fn draw_startup_section(
                     .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
                     .clicked()
                 {
-                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
                         settings.current_settings.start_path = Some(path);
                         *action = Some(SettingsAction::ApplySettings);
                     }

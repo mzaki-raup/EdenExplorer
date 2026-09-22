@@ -50,7 +50,7 @@ pub fn draw_favorites_settings(
     )
     .clicked()
     {
-        if let Some(path) = rfd::FileDialog::new().pick_folder() {
+        if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
             let label = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -196,7 +196,7 @@ pub fn draw_favorites_settings(
                                 .on_hover_text(i18n.tr("favorite_location_browse"))
                                 .clicked()
                             {
-                                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
                                     fav.path = path;
                                     changed = true;
                                 }
@@ -267,7 +267,7 @@ pub fn draw_favorites_settings(
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             if eden_button(ui, palette, &i18n.tr("favorite_icon_browse")).clicked() {
-                                if let Some(path) = rfd::FileDialog::new()
+                                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                                     .add_filter(
                                         "Icon/Image",
                                         &["ico", "png", "jpg", "jpeg", "bmp", "gif"],

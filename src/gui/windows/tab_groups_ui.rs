@@ -204,7 +204,7 @@ pub fn draw_tab_groups_settings(
                         )
                         .clicked()
                         {
-                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                            if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
                                 // Duplicates are allowed on purpose - the same
                                 // folder can be added more than once so opening
                                 // the group opens it as multiple separate tabs.

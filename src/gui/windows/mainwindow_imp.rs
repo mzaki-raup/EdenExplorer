@@ -3181,7 +3181,7 @@ impl MainWindow {
                     self.persist_favorites();
                 }
                 SettingsAction::ExportSettings => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Settings", &["json"])
                         .set_file_name("eden_explorer_settings.json")
                         .save_file()
@@ -3206,7 +3206,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ImportSettings => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Settings", &["json"])
                         .pick_file()
                     {
@@ -3220,7 +3220,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ExportContextMenu => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Context Menu", &["json"])
                         .set_file_name("eden_explorer_context_menu.json")
                         .save_file()
@@ -3242,7 +3242,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ImportContextMenu => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Context Menu", &["json"])
                         .pick_file()
                     {
@@ -5231,7 +5231,7 @@ impl MainWindow {
                 }
                 .clone();
 
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                     .add_filter("Theme JSON", &["json"])
                     .set_file_name(match mode {
                         ThemeMode::Dark => "eden_theme_dark.json",
@@ -5254,7 +5254,7 @@ impl MainWindow {
                 }
             }
             ThemeCustomizerAction::ImportTheme(mode) => {
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                     .add_filter("Theme JSON", &["json"])
                     .pick_file()
                 {

@@ -491,7 +491,7 @@ fn draw_entry_fields(
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         if eden_button(ui, palette, &i18n.tr("custom_context_menu_icon_browse")).clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+            if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                 .add_filter("Icon/Image", &["ico", "png", "jpg", "jpeg", "bmp", "gif"])
                 .add_filter("All files", &["*"])
                 .pick_file()
@@ -591,7 +591,7 @@ fn draw_entry_fields(
             },
             |ui| {
                 if eden_button(ui, palette, regular::FOLDER_OPEN).clicked() {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_file() {
                         entry.executable = path.display().to_string();
                         changed = true;
                     }

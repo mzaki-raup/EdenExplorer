@@ -570,6 +570,7 @@ impl eframe::App for MainWindow {
         if self.hwnd.is_none() {
             if let Some(hwnd) = crate::gui::windows::windowsoverrides::get_hwnd_from_frame(frame) {
                 self.hwnd = Some(hwnd);
+                crate::gui::windows::windowsoverrides::set_main_hwnd(hwnd);
 
                 unsafe {
                     if let Err(e) = install_wndproc(hwnd) {
