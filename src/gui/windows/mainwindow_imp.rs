@@ -403,16 +403,23 @@ pub struct PasteConflictPrompt {
     pub conflicting_names: Vec<String>,
 }
 
-/// A Send To batch: the same selection (`paths`) queued to be copied into
-/// every folder of a group, one at a time - clicking a Send To group
-/// copies to *all* of its folders, not just one you'd otherwise have to
-/// pick from a submenu. `remaining` is popped one destination at a time by
-/// `MainWindow::advance_send_to_queue`, since a name collision at any given
-/// destination needs the same single-slot `pending_paste_conflict` modal a
-/// regular paste uses.
+/// A Send To batch: the same selection (`paths`) queued to be copied (or
+/// moved, per `is_cut`) into every folder of a group, one at a time -
+/// clicking a Send To group acts on *all* of its folders, not just one
+/// you'd otherwise have to pick from a submenu. `remaining` is popped one
+/// destination at a time by `MainWindow::advance_send_to_queue`, since a
+/// name collision at any given destination needs the same single-slot
+/// `pending_paste_conflict` modal a regular paste uses. `sticky_action`
+/// implements "Replace All"/"Skip All"/"Rename All" - once the user picks
+/// one of those (instead of a plain, one-destination-only Replace/Skip/
+/// Rename) on any conflict in this batch, every later conflict in the same
+/// batch resolves the same way automatically with no further prompt; see
+/// `advance_send_to_queue`'s doc comment for exactly how.
 pub struct PendingSendTo {
     pub paths: Vec<PathBuf>,
     pub remaining: VecDeque<PathBuf>,
+    pub is_cut: bool,
+    pub sticky_action: Option<PasteConflictAction>,
 }
 
 /// State for the "Checksums" modal - held in `MainWindow::pending_checksum`
@@ -1841,30 +1848,31 @@ impl MainWindow {
                     compare_input: String::new(),
                 });
             }
-            ItemViewerContextAction::SendTo(paths, target_dirs) => {
-                self.send_to_folders(paths, target_dirs);
+            ItemViewerContextAction::SendTo(paths, target_dirs, is_cut) => {
+                self.send_to_folders(paths, target_dirs, is_cut);
             }
         }
     }
 
-    /// Kicks off copying `paths` into every one of `target_dirs` - the Send
-    /// To feature's own action (see `core::send_to`), triggered by clicking
-    /// a group (not an individual folder): every folder in that group gets
-    /// its own copy of the selection, always a copy (`is_cut = false`) so
-    /// the originals are never touched. Queued and processed one
-    /// destination at a time via `advance_send_to_queue`, rather than fired
-    /// off all at once, because a name collision needs the same Replace/
-    /// Skip/Rename modal `paste_clipboard_native` already uses - and that
-    /// modal has only one slot (`pending_paste_conflict`), so a second
-    /// destination's conflict can't be raised until the first one's is
-    /// resolved or cancelled.
-    fn send_to_folders(&mut self, paths: Vec<PathBuf>, target_dirs: Vec<PathBuf>) {
+    /// Kicks off copying (or moving, per `is_cut`) `paths` into every one of
+    /// `target_dirs` - the Send To feature's own action (see
+    /// `core::send_to`), triggered by clicking a group (not an individual
+    /// folder): every folder in that group gets its own transfer of the
+    /// selection. Queued and processed one destination at a time via
+    /// `advance_send_to_queue`, rather than fired off all at once, because a
+    /// name collision needs the same Replace/Skip/Rename modal
+    /// `paste_clipboard_native` already uses - and that modal has only one
+    /// slot (`pending_paste_conflict`), so a second destination's conflict
+    /// can't be raised until the first one's is resolved or cancelled.
+    fn send_to_folders(&mut self, paths: Vec<PathBuf>, target_dirs: Vec<PathBuf>, is_cut: bool) {
         if paths.is_empty() || target_dirs.is_empty() {
             return;
         }
         self.pending_send_to = Some(PendingSendTo {
             paths,
             remaining: target_dirs.into(),
+            is_cut,
+            sticky_action: None,
         });
         self.advance_send_to_queue();
     }
@@ -1878,6 +1886,22 @@ impl MainWindow {
     /// paste-conflict modal's own Cancel handler (skips that destination)
     /// once the user has dealt with it. A no-op when no batch is pending -
     /// safe to call after every ordinary paste-conflict resolution too.
+    ///
+    /// If `pending.sticky_action` is set (the user picked "Replace All"/
+    /// "Skip All"/"Rename All" on an earlier conflict in this same batch,
+    /// rather than a plain one-destination Replace/Skip/Rename), a
+    /// conflicting destination is resolved automatically instead of
+    /// stopping for the modal: this reuses the *exact* same
+    /// `pending_paste_conflict` + `handle_paste_conflict_resolution` path a
+    /// manual click would (so the same safety logic - recycle-before-
+    /// replace, safe rename staging - applies identically), just calling
+    /// `handle_paste_conflict_resolution` immediately instead of waiting for
+    /// a button click. That call is itself async (spawns a background
+    /// thread and only sets `pending_conflict_resolution`), so this
+    /// function returns right after starting it rather than looping again -
+    /// `poll_pending_conflict_resolution` already calls this function once
+    /// that resolution lands, continuing the batch (and applying the same
+    /// sticky action again if the *next* destination also collides).
     fn advance_send_to_queue(&mut self) {
         loop {
             let Some(pending) = &mut self.pending_send_to else {
@@ -1888,6 +1912,8 @@ impl MainWindow {
                 return;
             };
             let paths = pending.paths.clone();
+            let is_cut = pending.is_cut;
+            let sticky_action = pending.sticky_action;
 
             let before_entries = Self::directory_child_paths(&target_dir);
             let side = self.focused_split;
@@ -1905,10 +1931,13 @@ impl MainWindow {
                     paths,
                     target_dir,
                     before_entries,
-                    is_cut: false,
+                    is_cut,
                     side,
                     conflicting_names,
                 });
+                if let Some(action) = sticky_action {
+                    self.handle_paste_conflict_resolution(action);
+                }
                 return;
             }
 
@@ -1916,7 +1945,7 @@ impl MainWindow {
                 paths,
                 target_dir,
                 before_entries,
-                false,
+                is_cut,
                 side,
                 HashMap::new(),
                 HashMap::new(),
@@ -2283,7 +2312,16 @@ impl MainWindow {
             (count, preview, more)
         };
 
+        // Only a Send To batch (copying/moving the same selection into
+        // several destinations in one go) ever has more than one
+        // destination left to resolve conflicts for, so the "All" buttons
+        // - which set a sticky resolution for every *remaining* destination
+        // in the batch, not just this one - only make sense (and only
+        // render) while one is in progress.
+        let show_apply_all = self.pending_send_to.is_some();
+
         let mut resolution: Option<PasteConflictAction> = None;
+        let mut apply_to_all = false;
         let mut cancelled = false;
 
         // Dimming scrim behind the dialog, same pattern as the About
@@ -2449,6 +2487,63 @@ impl MainWindow {
                                     },
                                 );
                             });
+
+                            // "Apply to all remaining destinations" row -
+                            // only shown mid-Send-To-batch (see
+                            // `show_apply_all`'s own doc comment above).
+                            // Saves clicking Replace/Skip/Rename separately
+                            // for every destination a multi-folder Send To
+                            // collides at.
+                            if show_apply_all {
+                                ui.add_space(10.0);
+                                ui.separator();
+                                ui.add_space(10.0);
+                                ui.label(
+                                    egui::RichText::new(
+                                        self.i18n.tr("paste_conflict_apply_to_all"),
+                                    )
+                                    .size(palette.text_size)
+                                    .color(palette.text_normal.gamma_multiply(0.75)),
+                                );
+                                ui.add_space(6.0);
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if primary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_rename_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Rename);
+                                            apply_to_all = true;
+                                        }
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_skip_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Skip);
+                                            apply_to_all = true;
+                                        }
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_replace_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Replace);
+                                            apply_to_all = true;
+                                        }
+                                    },
+                                );
+                            }
                         });
                     });
             });
@@ -2460,6 +2555,9 @@ impl MainWindow {
             // continues; a no-op for an ordinary single-destination paste.
             self.advance_send_to_queue();
         } else if let Some(action) = resolution {
+            if apply_to_all && let Some(pending) = self.pending_send_to.as_mut() {
+                pending.sticky_action = Some(action);
+            }
             self.handle_paste_conflict_resolution(action);
         }
     }

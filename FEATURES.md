@@ -6,6 +6,16 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-22
 
+- **Send To: "Replace All"/"Skip All"/"Rename All", and per-group Copy or
+  Move.** When a Send To batch (copying/moving into several folders at
+  once) collides with an existing name in more than one destination, the
+  conflict dialog now offers "Replace All"/"Skip All"/"Rename All" - pick
+  one once and it applies automatically to every remaining destination in
+  that batch, instead of clicking Replace/Skip/Rename separately for each
+  one. Separately, each Send To group can now be set to Copy or Move in
+  Settings (right below its icon), and the right-click menu now reflects
+  it: "Send To" opens into "Copy" and "Move" branches, each listing only
+  the groups configured for that operation.
 - **Send To moved to between Delete Permanently and Create Shortcut** (was
   between Compress and Cut), and the "Windows menu items" entry at the
   bottom of the right-click menu now reads a plain, static "Windows Menu

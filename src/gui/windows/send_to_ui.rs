@@ -11,8 +11,10 @@
 //! same as Tab Groups/Custom Context Menu, so reordering or deleting an
 //! unrelated group never silently re-points the detail pane at the wrong one.
 
-use crate::core::send_to::{SendToGroup, SendToIcon, next_group_id};
-use crate::core::utils::widgets::{apply_eden_visual_overrides, eden_button, eden_text_label};
+use crate::core::send_to::{SendToGroup, SendToIcon, SendToMode, next_group_id};
+use crate::core::utils::widgets::{
+    apply_eden_visual_overrides, eden_button, eden_text_label, eden_toggle_button,
+};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -315,6 +317,37 @@ pub fn draw_send_to_settings(
                                     .on_hover_text(&path_text);
                                 });
                             }
+
+                            ui.add_space(10.0);
+                            eden_text_label(ui, palette, &i18n.tr("send_to_operation"));
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if eden_toggle_button(
+                                    ui,
+                                    palette,
+                                    group.mode == SendToMode::Copy,
+                                    &i18n.tr("send_to_mode_copy"),
+                                )
+                                .on_hover_text(i18n.tr("tooltip_send_to_mode_copy"))
+                                .clicked()
+                                {
+                                    group.mode = SendToMode::Copy;
+                                    changed = true;
+                                }
+                                ui.add_space(6.0);
+                                if eden_toggle_button(
+                                    ui,
+                                    palette,
+                                    group.mode == SendToMode::Move,
+                                    &i18n.tr("send_to_mode_move"),
+                                )
+                                .on_hover_text(i18n.tr("tooltip_send_to_mode_move"))
+                                .clicked()
+                                {
+                                    group.mode = SendToMode::Move;
+                                    changed = true;
+                                }
+                            });
 
                             ui.add_space(10.0);
                             ui.separator();

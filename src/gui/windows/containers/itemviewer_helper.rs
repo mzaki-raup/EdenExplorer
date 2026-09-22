@@ -324,17 +324,68 @@ fn send_to_group_icon<'a>(
     }
 }
 
-/// Draws the "Send To" section: a single top-level "Send To" submenu, under
-/// which each user-defined group (see `core::send_to`) appears as its own
-/// clickable entry, its own icon shown alongside its name - i.e. right-click
-/// → Send To → My Destinations. Clicking a group emits
-/// `ItemViewerContextAction::SendTo(context_paths, group.folders)`, copying
-/// the current selection into *every* folder in that group at once (not a
-/// per-folder pick) - always a copy, see that variant's own doc comment. A
-/// group with no folders yet is shown disabled rather than omitted, so its
-/// existence (and why it does nothing) is still visible. Callers only
-/// invoke this once at least one group exists and the enable toggle is on
-/// (see `handle_context_menu_actions`).
+/// Draws one group as a clickable menu entry (icon + name, disabled with an
+/// explanatory hover text if it has no folders yet), emitting
+/// `ItemViewerContextAction::SendTo(context_paths, group.folders, is_cut)`
+/// on click - copying or moving (per `is_cut`) the current selection into
+/// *every* folder in the group at once, not a per-folder pick. Shared by
+/// both the "Copy" and "Move" branches of `draw_send_to_menu` below, since a
+/// group's own row looks and behaves identically under either one - only
+/// `is_cut` (which branch it's drawn under) differs.
+fn draw_send_to_group_entry(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    group: &crate::core::send_to::SendToGroup,
+    context_paths: &[PathBuf],
+    is_cut: bool,
+    action: &mut Option<ItemViewerAction>,
+) {
+    let label = if group.name.is_empty() {
+        i18n.tr("send_to_untitled")
+    } else {
+        group.name.clone()
+    };
+    let has_folders = !group.folders.is_empty();
+
+    ui.add_enabled_ui(has_folders, |ui| {
+        let (texture, glyph) = send_to_group_icon(icon_cache, &group.icon);
+        let response = if let Some(texture) = texture {
+            ui.add(egui::Button::image_and_text(
+                egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                &label,
+            ))
+        } else if let crate::core::send_to::SendToIcon::Glyph(g) = &group.icon {
+            menu_item_button(ui, g, &label)
+        } else {
+            menu_item_button(ui, glyph, &label)
+        };
+        let response = if has_folders {
+            response
+        } else {
+            response.on_hover_text(i18n.tr("send_to_no_folders"))
+        };
+
+        if response.clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::SendTo(
+                context_paths.to_vec(),
+                group.folders.clone(),
+                is_cut,
+            )));
+            ui.close();
+        }
+    });
+}
+
+/// Draws the "Send To" section: a single top-level "Send To" submenu with
+/// two branches, "Copy" and "Move", each listing the groups (see
+/// `core::send_to`) configured for that operation (`SendToGroup::mode`) -
+/// i.e. right-click → Send To → Copy → My Destinations. A branch with no
+/// groups configured for it is omitted entirely rather than shown empty,
+/// same reasoning as the top-level Send To entry itself only appearing once
+/// at least one group exists. Callers only invoke this once at least one
+/// group exists and the enable toggle is on (see
+/// `handle_context_menu_actions`).
 fn draw_send_to_menu(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -343,43 +394,51 @@ fn draw_send_to_menu(
     context_paths: &[PathBuf],
     action: &mut Option<ItemViewerAction>,
 ) {
+    use crate::core::send_to::SendToMode;
+
+    let copy_groups: Vec<&crate::core::send_to::SendToGroup> =
+        groups.iter().filter(|g| g.mode == SendToMode::Copy).collect();
+    let move_groups: Vec<&crate::core::send_to::SendToGroup> =
+        groups.iter().filter(|g| g.mode == SendToMode::Move).collect();
+
     ui.menu_button(
         format!("{}  {}", regular::PAPER_PLANE_TILT, i18n.tr("send_to_menu")),
         |ui| {
-            for group in groups {
-                let label = if group.name.is_empty() {
-                    i18n.tr("send_to_untitled")
-                } else {
-                    group.name.clone()
-                };
-                let has_folders = !group.folders.is_empty();
-
-                ui.add_enabled_ui(has_folders, |ui| {
-                    let (texture, glyph) = send_to_group_icon(icon_cache, &group.icon);
-                    let response = if let Some(texture) = texture {
-                        ui.add(egui::Button::image_and_text(
-                            egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
-                            &label,
-                        ))
-                    } else if let crate::core::send_to::SendToIcon::Glyph(g) = &group.icon {
-                        menu_item_button(ui, g, &label)
-                    } else {
-                        menu_item_button(ui, glyph, &label)
-                    };
-                    let response = if has_folders {
-                        response
-                    } else {
-                        response.on_hover_text(i18n.tr("send_to_no_folders"))
-                    };
-
-                    if response.clicked() {
-                        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::SendTo(
-                            context_paths.to_vec(),
-                            group.folders.clone(),
-                        )));
-                        ui.close();
-                    }
-                });
+            if !copy_groups.is_empty() {
+                ui.menu_button(
+                    format!("{}  {}", regular::COPY, i18n.tr("send_to_mode_copy")),
+                    |ui| {
+                        for group in &copy_groups {
+                            draw_send_to_group_entry(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                group,
+                                context_paths,
+                                false,
+                                action,
+                            );
+                        }
+                    },
+                );
+            }
+            if !move_groups.is_empty() {
+                ui.menu_button(
+                    format!("{}  {}", regular::SCISSORS, i18n.tr("send_to_mode_move")),
+                    |ui| {
+                        for group in &move_groups {
+                            draw_send_to_group_entry(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                group,
+                                context_paths,
+                                true,
+                                action,
+                            );
+                        }
+                    },
+                );
             }
         },
     );

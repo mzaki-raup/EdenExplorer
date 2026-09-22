@@ -36,6 +36,18 @@ impl Default for SendToIcon {
     }
 }
 
+/// Whether a Send To group copies (originals untouched) or moves (originals
+/// removed after a successful transfer) the selection into its folders.
+/// Determines which of the context menu's "Copy"/"Move" branches the group
+/// appears under - see `gui::windows::containers::itemviewer_helper`'s
+/// `draw_send_to_menu`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SendToMode {
+    #[default]
+    Copy,
+    Move,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct SendToGroup {
     pub id: u64,
@@ -46,6 +58,8 @@ pub struct SendToGroup {
     /// app that lets a user build a list of paths (Tab Groups, Favorites).
     #[serde(default)]
     pub folders: Vec<PathBuf>,
+    #[serde(default)]
+    pub mode: SendToMode,
 }
 
 impl SendToGroup {
@@ -55,6 +69,7 @@ impl SendToGroup {
             name: String::new(),
             icon: SendToIcon::None,
             folders: Vec::new(),
+            mode: SendToMode::Copy,
         }
     }
 }
@@ -74,12 +89,45 @@ struct SendToSnapshot {
     context_menu_enabled: bool,
 }
 
+/// Pre-`mode`-field shape of `SendToGroup`/`SendToSnapshot`, kept purely as
+/// a decode fallback for a `send_to.bin` saved before the Copy/Move feature
+/// existed. Postcard's binary format has no field names and no per-field
+/// "missing, use the default" rescue for a struct nested inside a `Vec` the
+/// way `#[serde(default)]` implies (see this codebase's own extensively
+/// documented finding on this) - decoding a group with the *current* shape
+/// against old bytes that don't have a trailing `mode` byte fails the whole
+/// buffer, and without this fallback `load_send_to` would silently return
+/// an empty list, discarding every one of the user's real saved groups.
+/// Mirrors `CustomThemeEntryLegacy`'s own established pattern for the exact
+/// same problem. Re-saved in the current shape automatically the next time
+/// the user changes anything about their groups.
+#[derive(Serialize, Deserialize, Default)]
+struct SendToGroupLegacy {
+    id: u64,
+    name: String,
+    #[serde(default)]
+    icon: SendToIcon,
+    #[serde(default)]
+    folders: Vec<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct SendToSnapshotLegacy {
+    #[serde(default)]
+    groups: Vec<SendToGroupLegacy>,
+    #[serde(default)]
+    context_menu_enabled: bool,
+}
+
 fn cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("send_to.bin"))
 }
 
-/// Returns `(groups, context_menu_enabled)`.
+/// Returns `(groups, context_menu_enabled)`. Tries the current shape first;
+/// falls back to `SendToSnapshotLegacy` (pre-`mode` field) so an existing
+/// user's real saved groups survive this feature's own addition - see
+/// `SendToGroupLegacy`'s doc comment.
 pub fn load_send_to() -> (Vec<SendToGroup>, bool) {
     let Some(path) = cache_path() else {
         return (Vec::new(), false);
@@ -87,8 +135,24 @@ pub fn load_send_to() -> (Vec<SendToGroup>, bool) {
     let Ok(data) = std::fs::read(&path) else {
         return (Vec::new(), false);
     };
-    match postcard::from_bytes::<SendToSnapshot>(&data) {
-        Ok(snapshot) => (snapshot.groups, snapshot.context_menu_enabled),
+    if let Ok(snapshot) = postcard::from_bytes::<SendToSnapshot>(&data) {
+        return (snapshot.groups, snapshot.context_menu_enabled);
+    }
+    match postcard::from_bytes::<SendToSnapshotLegacy>(&data) {
+        Ok(legacy) => {
+            let groups = legacy
+                .groups
+                .into_iter()
+                .map(|g| SendToGroup {
+                    id: g.id,
+                    name: g.name,
+                    icon: g.icon,
+                    folders: g.folders,
+                    mode: SendToMode::Copy,
+                })
+                .collect();
+            (groups, legacy.context_menu_enabled)
+        }
         Err(_) => (Vec::new(), false),
     }
 }
@@ -126,6 +190,7 @@ mod tests {
             name: "Backups".to_string(),
             icon: SendToIcon::Glyph("\u{E000}".to_string()),
             folders: vec![PathBuf::from("D:\\Backup"), PathBuf::from("E:\\Archive")],
+            mode: SendToMode::Move,
         }];
         let bytes = postcard::to_allocvec(&SendToSnapshot {
             groups: groups.clone(),
@@ -135,6 +200,35 @@ mod tests {
         let decoded = postcard::from_bytes::<SendToSnapshot>(&bytes).unwrap();
         assert_eq!(decoded.groups, groups);
         assert!(decoded.context_menu_enabled);
+    }
+
+    /// A `send_to.bin` saved before the Copy/Move feature existed (no
+    /// `mode` field on `SendToGroup`) must still decode, defaulting every
+    /// existing group to `SendToMode::Copy` - not silently return an empty
+    /// list, which would discard a real user's saved groups the moment
+    /// this field was added. See `SendToGroupLegacy`'s doc comment.
+    #[test]
+    fn legacy_send_to_bytes_without_mode_field_still_decode() {
+        let legacy_groups = vec![SendToGroupLegacy {
+            id: 5,
+            name: "Test".to_string(),
+            icon: SendToIcon::None,
+            folders: vec![PathBuf::from("D:\\dest1"), PathBuf::from("D:\\dest2")],
+        }];
+        let bytes = postcard::to_allocvec(&SendToSnapshotLegacy {
+            groups: legacy_groups,
+            context_menu_enabled: true,
+        })
+        .unwrap();
+
+        // The new shape must genuinely fail against old bytes for this test
+        // to actually prove anything about the fallback path.
+        assert!(postcard::from_bytes::<SendToSnapshot>(&bytes).is_err());
+
+        let legacy = postcard::from_bytes::<SendToSnapshotLegacy>(&bytes).unwrap();
+        assert_eq!(legacy.groups.len(), 1);
+        assert_eq!(legacy.groups[0].name, "Test");
+        assert!(legacy.context_menu_enabled);
     }
 
     #[test]
