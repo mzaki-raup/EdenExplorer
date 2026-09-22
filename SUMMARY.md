@@ -46,7 +46,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 
 ## Project documentation
 - **`README.md`** — public-facing overview, feature list, roadmap, build/debug instructions, keyboard shortcuts
-- **`Features.md`** — day-by-day log of recently added features and fixes (rolling, most recent days only - the full list always lives in `README.md`)
+- **`FEATURES.md`** — day-by-day log of recently added features and fixes (rolling, most recent days only - the full list always lives in `README.md`)
 - **`PRD.md`** — product requirements: positioning, personas, principles, capability inventory, known gaps, planned and proposed enhancements, open questions
 - **`CHECKLIST.md`** — phase-by-phase delivery tracking (`Completed` / `In-Progress` / `Pending`)
 - **`CLAUDE.md`** — engineering guide: architecture map, conventions, safety rules, recorded mistakes, operational instructions
