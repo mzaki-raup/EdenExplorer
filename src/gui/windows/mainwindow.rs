@@ -1616,6 +1616,24 @@ impl eframe::App for MainWindow {
             }
         }
 
+        // A drag-and-drop copy/move (`MoveItems`) dropped onto a pane is a
+        // real, deliberate interaction with that pane - unlike most other
+        // actions funneled through this same temporary-focus-then-restore
+        // mechanism (which exist purely so a shared handler can resolve via
+        // `self.focused_split` without actually meaning "the user is now
+        // working in this pane"), a drop should make that pane the active
+        // one going forward, the same way clicking into it would. Without
+        // this, dragging a file into the *other* pane correctly copied it
+        // there, but `self.focused_split` snapped straight back to whichever
+        // pane was active before the drag - reported directly as "why does
+        // it go back to the first pane" - because a drag's initial press
+        // (the only thing that normally sets `self.focused_split`, in the
+        // primary-click handling above) fires in the *source* pane, and
+        // nothing ever attributes the drop itself to the destination pane.
+        let primary_drop = matches!(pending_action, Some(ItemViewerAction::MoveItems { .. }));
+        let secondary_drop =
+            matches!(secondary_pending_action, Some(ItemViewerAction::MoveItems { .. }));
+
         let restore_focus = self.focused_split;
         if pending_action.is_some() {
             self.focused_split = SplitSide::Primary;
@@ -1625,7 +1643,13 @@ impl eframe::App for MainWindow {
             self.focused_split = SplitSide::Secondary;
             handle_pending_actions(secondary_pending_action, self);
         }
-        self.focused_split = restore_focus;
+        self.focused_split = if secondary_drop {
+            SplitSide::Secondary
+        } else if primary_drop {
+            SplitSide::Primary
+        } else {
+            restore_focus
+        };
         // If either call above just queued delayed post-command refreshes,
         // make sure a frame actually runs to check them later - the app may
         // otherwise sit fully idle (no input, nothing else asking to

@@ -2588,7 +2588,14 @@ impl MainWindow {
                 }
             }
 
-            self.load_path();
+            // Reload the pane the paste actually happened in
+            // (`pending.side`), not whichever pane happens to be focused by
+            // the time this async job finishes - those can differ (e.g. the
+            // user pasted into the other pane, or switched panes again while
+            // a large copy was still running), and reloading the wrong one
+            // left the pane that actually received the files showing stale
+            // content until something else refreshed it.
+            self.load_view(pending.side);
         }
     }
 
