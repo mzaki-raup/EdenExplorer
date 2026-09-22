@@ -12,22 +12,24 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
   ordered, reorderable list of folders. A master toggle - only usable once
   at least one group exists - enables a single "Send To" entry in the
   file/folder right-click context menu, positioned between Compress (zip)
-  and Cut with its own separators: it opens into each of your groups, which
-  in turn opens into that group's own destination folders - right-click →
-  Send To → My Destinations → a folder - and clicking a folder copies the
-  current selection there. Always a copy, never a move - the originals stay
-  put no matter which destination is picked. A name collision at the
-  destination gets the same Replace/Skip/Rename/Cancel prompt as a regular
-  paste, and the copy shows up in the notification panel and completion
-  toast exactly like any other copy operation. Fixed one bug found right
-  after building it: the context-menu-enable checkbox initially rendered as
-  a nearly-invisible dot far from its label and couldn't be clicked,
-  because it was built directly on a raw layout row instead of through the
-  same bounded-checkbox helper every other Settings checkbox uses - fixed
-  so it renders and toggles correctly. A follow-up request also corrected
-  the menu structure itself: groups originally appeared directly as their
-  own top-level entries instead of nested under one shared "Send To"
-  parent - now fixed to the three-level nesting described above.
+  and Cut with its own separators: it opens into each of your groups (shown
+  with its own icon), and clicking a group copies the current selection
+  into *every* folder in it at once - right-click → Send To → My
+  Destinations copies straight to all of My Destinations' folders in one
+  action, no per-folder picking required. Always a copy, never a move - the
+  originals stay put no matter which group is picked. A name collision at
+  any one destination gets the same Replace/Skip/Rename/Cancel prompt as a
+  regular paste (queued one destination at a time if more than one
+  collides), and each destination gets its own entry in the notification
+  panel and its own completion toast, exactly like any other copy
+  operation. Two bugs found and fixed via direct follow-up feedback while
+  building this: the context-menu-enable checkbox initially rendered as a
+  nearly-invisible dot far from its label and couldn't be clicked (fixed by
+  routing it through the same bounded-checkbox helper every other Settings
+  checkbox uses), and the menu itself first shipped as groups appearing
+  directly as top-level entries with each one opening into a per-folder
+  picker - corrected to the single-click, copy-to-every-folder shape
+  described above, with each group's own icon now shown in the menu too.
 - **Custom Context Menu also gets an enable/hide toggle**, matching Send
   To's: usable only once at least one custom command or submenu exists, and
   automatically hidden from the right-click menu whenever the list is

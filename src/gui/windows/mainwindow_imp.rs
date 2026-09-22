@@ -37,6 +37,7 @@ use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -400,6 +401,18 @@ pub struct PasteConflictPrompt {
     /// necessarily every one of `paths`, just the ones that already exist
     /// in `target_dir`.
     pub conflicting_names: Vec<String>,
+}
+
+/// A Send To batch: the same selection (`paths`) queued to be copied into
+/// every folder of a group, one at a time - clicking a Send To group
+/// copies to *all* of its folders, not just one you'd otherwise have to
+/// pick from a submenu. `remaining` is popped one destination at a time by
+/// `MainWindow::advance_send_to_queue`, since a name collision at any given
+/// destination needs the same single-slot `pending_paste_conflict` modal a
+/// regular paste uses.
+pub struct PendingSendTo {
+    pub paths: Vec<PathBuf>,
+    pub remaining: VecDeque<PathBuf>,
 }
 
 /// State for the "Checksums" modal - held in `MainWindow::pending_checksum`
@@ -1828,57 +1841,88 @@ impl MainWindow {
                     compare_input: String::new(),
                 });
             }
-            ItemViewerContextAction::SendTo(paths, target_dir) => {
-                self.send_to_folder(paths, target_dir);
+            ItemViewerContextAction::SendTo(paths, target_dirs) => {
+                self.send_to_folders(paths, target_dirs);
             }
         }
     }
 
-    /// Copies `paths` into `target_dir` - the Send To feature's own action
-    /// (see `core::send_to`), always a copy (`is_cut = false`) so the
-    /// originals are never touched no matter which destination is picked.
-    /// Shares the same conflict-detection + `start_robocopy_paste` pipeline
-    /// `paste_clipboard_native` already uses, so a name collision in the
-    /// destination gets the same Replace/Skip/Rename prompt instead of
-    /// silently overwriting anything.
-    fn send_to_folder(&mut self, paths: Vec<PathBuf>, target_dir: PathBuf) {
-        if paths.is_empty() {
+    /// Kicks off copying `paths` into every one of `target_dirs` - the Send
+    /// To feature's own action (see `core::send_to`), triggered by clicking
+    /// a group (not an individual folder): every folder in that group gets
+    /// its own copy of the selection, always a copy (`is_cut = false`) so
+    /// the originals are never touched. Queued and processed one
+    /// destination at a time via `advance_send_to_queue`, rather than fired
+    /// off all at once, because a name collision needs the same Replace/
+    /// Skip/Rename modal `paste_clipboard_native` already uses - and that
+    /// modal has only one slot (`pending_paste_conflict`), so a second
+    /// destination's conflict can't be raised until the first one's is
+    /// resolved or cancelled.
+    fn send_to_folders(&mut self, paths: Vec<PathBuf>, target_dirs: Vec<PathBuf>) {
+        if paths.is_empty() || target_dirs.is_empty() {
             return;
         }
+        self.pending_send_to = Some(PendingSendTo {
+            paths,
+            remaining: target_dirs.into(),
+        });
+        self.advance_send_to_queue();
+    }
 
-        let before_entries = Self::directory_child_paths(&target_dir);
-        let side = self.focused_split;
+    /// Pops the next destination off a pending Send To batch and either
+    /// starts it immediately (no name collision) or holds it for the user
+    /// via `pending_paste_conflict`, same as a single-destination paste.
+    /// Keeps popping and starting destinations with no conflict in one go;
+    /// stops at the first one that needs the modal, resuming from
+    /// `poll_pending_conflict_resolution` (a clean resolution) or the
+    /// paste-conflict modal's own Cancel handler (skips that destination)
+    /// once the user has dealt with it. A no-op when no batch is pending -
+    /// safe to call after every ordinary paste-conflict resolution too.
+    fn advance_send_to_queue(&mut self) {
+        loop {
+            let Some(pending) = &mut self.pending_send_to else {
+                return;
+            };
+            let Some(target_dir) = pending.remaining.pop_front() else {
+                self.pending_send_to = None;
+                return;
+            };
+            let paths = pending.paths.clone();
 
-        let conflicting_names: Vec<String> = paths
-            .iter()
-            .filter_map(|p| {
-                let name = p.file_name()?.to_string_lossy().to_string();
-                target_dir.join(&name).exists().then_some(name)
-            })
-            .collect();
+            let before_entries = Self::directory_child_paths(&target_dir);
+            let side = self.focused_split;
 
-        if !conflicting_names.is_empty() {
-            self.pending_paste_conflict = Some(PasteConflictPrompt {
+            let conflicting_names: Vec<String> = paths
+                .iter()
+                .filter_map(|p| {
+                    let name = p.file_name()?.to_string_lossy().to_string();
+                    target_dir.join(&name).exists().then_some(name)
+                })
+                .collect();
+
+            if !conflicting_names.is_empty() {
+                self.pending_paste_conflict = Some(PasteConflictPrompt {
+                    paths,
+                    target_dir,
+                    before_entries,
+                    is_cut: false,
+                    side,
+                    conflicting_names,
+                });
+                return;
+            }
+
+            self.start_robocopy_paste(
                 paths,
                 target_dir,
                 before_entries,
-                is_cut: false,
+                false,
                 side,
-                conflicting_names,
-            });
-            return;
+                HashMap::new(),
+                HashMap::new(),
+                PasteOrigin::UserAction,
+            );
         }
-
-        self.start_robocopy_paste(
-            paths,
-            target_dir,
-            before_entries,
-            false,
-            side,
-            HashMap::new(),
-            HashMap::new(),
-            PasteOrigin::UserAction,
-        );
     }
 
     /// Drains the checksum background job's result once it's ready - called
@@ -2210,6 +2254,10 @@ impl MainWindow {
             resolved.replaced,
             PasteOrigin::UserAction,
         );
+        // No-op unless this resolution was one destination of a Send To
+        // batch (`pending_send_to` is only ever `Some` mid-batch) - moves
+        // on to the next queued destination, if any.
+        self.advance_send_to_queue();
     }
 
     /// Draws the Replace/Skip/Rename/Cancel modal for a paste held back by
@@ -2407,6 +2455,10 @@ impl MainWindow {
 
         if cancelled {
             self.pending_paste_conflict = None;
+            // Cancelling one destination's conflict skips only that
+            // destination - the rest of a Send To batch (if any) still
+            // continues; a no-op for an ordinary single-destination paste.
+            self.advance_send_to_queue();
         } else if let Some(action) = resolution {
             self.handle_paste_conflict_resolution(action);
         }

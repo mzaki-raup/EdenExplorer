@@ -111,6 +111,12 @@ pub struct MainWindow {
     /// Polled once per frame by `poll_pending_conflict_resolution`.
     pub(crate) pending_conflict_resolution:
         Option<crossbeam_channel::Receiver<crate::gui::windows::mainwindow_imp::ResolvedConflictPaste>>,
+    /// A Send To batch copying the same selection to every folder in a
+    /// group, one destination at a time - see `PendingSendTo`'s doc comment
+    /// in `mainwindow_imp.rs`. Advanced by `advance_send_to_queue`, which
+    /// pops the next destination once the current one either starts
+    /// cleanly or has its name-collision conflict resolved/cancelled.
+    pub(crate) pending_send_to: Option<crate::gui::windows::mainwindow_imp::PendingSendTo>,
     /// A bulk-rename dialog open over a multi-item selection - see
     /// `bulk_rename::BulkRenameState`'s doc comment. Drawn as a modal from
     /// the update loop, alongside `pending_paste_conflict`.
@@ -378,6 +384,7 @@ impl Default for MainWindow {
             pending_robocopy_pastes: HashMap::new(),
             pending_paste_conflict: None,
             pending_conflict_resolution: None,
+            pending_send_to: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,

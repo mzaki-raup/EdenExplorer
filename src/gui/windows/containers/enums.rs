@@ -110,8 +110,8 @@ pub enum ItemViewerContextAction {
     /// Computes CRC32/MD5/SHA-1/SHA-256 for a single file - single-file
     /// only by design, unlike every other variant here that takes a `Vec`.
     Checksum(PathBuf),
-    /// Copies the selected paths to one Send To group's chosen destination
-    /// folder - always a copy, never a move, so the originals are untouched
-    /// regardless of which destination is picked. See `core::send_to`.
-    SendTo(Vec<PathBuf>, PathBuf),
+    /// Copies the selected paths to every folder in one Send To group -
+    /// always a copy, never a move, so the originals are untouched. See
+    /// `core::send_to`.
+    SendTo(Vec<PathBuf>, Vec<PathBuf>),
 }

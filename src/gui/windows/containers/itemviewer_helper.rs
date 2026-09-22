@@ -303,17 +303,38 @@ fn custom_icon_glyph(icon: &CustomContextMenuIcon, is_submenu: bool) -> &str {
     }
 }
 
+/// Resolves a `SendToGroup`'s own icon to whatever `menu_item_button`/
+/// `Button::image_and_text` needs: a real texture for a custom image icon
+/// (falling back to the generic Send To glyph while it's still loading), or
+/// a glyph string otherwise. Mirrors `custom_icon_texture`/
+/// `custom_icon_glyph` above, just for `SendToIcon` instead of
+/// `CustomContextMenuIcon` - kept separate since the two icon enums aren't
+/// related and a shared helper would need an awkward trait/conversion for
+/// no real benefit with only two call sites.
+fn send_to_group_icon<'a>(
+    icon_cache: &'a IconCache,
+    icon: &crate::core::send_to::SendToIcon,
+) -> (Option<egui::TextureHandle>, &'a str) {
+    match icon {
+        crate::core::send_to::SendToIcon::Custom(path) => {
+            (icon_cache.get_custom_file_icon(path), regular::PAPER_PLANE_TILT)
+        }
+        crate::core::send_to::SendToIcon::Glyph(_) => (None, ""),
+        crate::core::send_to::SendToIcon::None => (None, regular::PAPER_PLANE_TILT),
+    }
+}
+
 /// Draws the "Send To" section: a single top-level "Send To" submenu, under
 /// which each user-defined group (see `core::send_to`) appears as its own
-/// nested submenu, in turn listing that group's own destination folders as
-/// clickable leaves - i.e. right-click → Send To → My Destinations → dest1.
-/// Picking a folder emits `ItemViewerContextAction::SendTo(context_paths,
-/// folder)` - always a copy, see that variant's own doc comment. The
-/// per-group nesting mirrors `tabs.rs`'s `draw_tab_groups_menu` (one submenu
-/// per named group, contents built from a per-group closure); callers only
+/// clickable entry, its own icon shown alongside its name - i.e. right-click
+/// → Send To → My Destinations. Clicking a group emits
+/// `ItemViewerContextAction::SendTo(context_paths, group.folders)`, copying
+/// the current selection into *every* folder in that group at once (not a
+/// per-folder pick) - always a copy, see that variant's own doc comment. A
+/// group with no folders yet is shown disabled rather than omitted, so its
+/// existence (and why it does nothing) is still visible. Callers only
 /// invoke this once at least one group exists and the enable toggle is on
-/// (see `handle_context_menu_actions`), so there's no separate empty-state
-/// branch here the way `draw_tab_groups_menu` has for its own empty list.
+/// (see `handle_context_menu_actions`).
 fn draw_send_to_menu(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -331,37 +352,32 @@ fn draw_send_to_menu(
                 } else {
                     group.name.clone()
                 };
+                let has_folders = !group.folders.is_empty();
 
-                ui.menu_button(label, |ui| {
-                    if group.folders.is_empty() {
-                        ui.weak(i18n.tr("send_to_no_folders"));
-                        return;
-                    }
-                    for folder in &group.folders {
-                        let folder_label = folder
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| folder.display().to_string());
+                ui.add_enabled_ui(has_folders, |ui| {
+                    let (texture, glyph) = send_to_group_icon(icon_cache, &group.icon);
+                    let response = if let Some(texture) = texture {
+                        ui.add(egui::Button::image_and_text(
+                            egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                            &label,
+                        ))
+                    } else if let crate::core::send_to::SendToIcon::Glyph(g) = &group.icon {
+                        menu_item_button(ui, g, &label)
+                    } else {
+                        menu_item_button(ui, glyph, &label)
+                    };
+                    let response = if has_folders {
+                        response
+                    } else {
+                        response.on_hover_text(i18n.tr("send_to_no_folders"))
+                    };
 
-                        let clicked = if let Some(texture) = icon_cache.get(folder, true) {
-                            ui.add(egui::Button::image_and_text(
-                                egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
-                                &folder_label,
-                            ))
-                            .on_hover_text(folder.display().to_string())
-                            .clicked()
-                        } else {
-                            menu_item_button(ui, regular::FOLDER, &folder_label)
-                                .on_hover_text(folder.display().to_string())
-                                .clicked()
-                        };
-
-                        if clicked {
-                            *action = Some(ItemViewerAction::Context(
-                                ItemViewerContextAction::SendTo(context_paths.to_vec(), folder.clone()),
-                            ));
-                            ui.close();
-                        }
+                    if response.clicked() {
+                        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::SendTo(
+                            context_paths.to_vec(),
+                            group.folders.clone(),
+                        )));
+                        ui.close();
                     }
                 });
             }
