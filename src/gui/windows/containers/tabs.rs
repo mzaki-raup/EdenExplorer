@@ -330,6 +330,7 @@ pub fn draw_tabs(
                                     icon_cache,
                                     tab_groups,
                                     &tab.full_path,
+                                    tab.split_path.as_ref(),
                                     &mut action,
                                 );
                             });
@@ -443,7 +444,7 @@ fn draw_tab_groups_menu(
                 .on_hover_text(i18n.tr("tab_group_open_hover"))
                 .clicked()
             {
-                action.open_group = Some(group.paths.clone());
+                action.open_group = Some(group.entries.clone());
                 ui.close();
             }
             if ui
@@ -455,12 +456,15 @@ fn draw_tab_groups_menu(
                 .on_hover_text(i18n.tr("tab_group_replace_hover"))
                 .clicked()
             {
-                action.replace_with_group = Some(group.paths.clone());
+                action.replace_with_group = Some(group.entries.clone());
                 ui.close();
             }
         };
 
-        let first_folder_icon = group.paths.first().and_then(|p| icon_cache.get(p, true));
+        let first_folder_icon = group
+            .entries
+            .first()
+            .and_then(|e| icon_cache.get(&e.path, true));
         if let Some(texture) = first_folder_icon {
             let image = egui::Image::new(&texture).fit_to_exact_size(TAB_GROUP_ICON_SIZE);
             ui.menu_image_text_button(image, label, contents);
@@ -479,12 +483,17 @@ const TAB_GROUP_ICON_SIZE: egui::Vec2 = egui::vec2(16.0, 16.0);
 /// to Existing Group" (one entry per saved group) for a right-clicked tab's
 /// folder - the same path can already be in the target group; it's added
 /// again regardless, same as everywhere else tab groups allow duplicates.
+/// When the tab currently has a Secondary split-view pane open
+/// (`tab_split_path`), the new group entry captures it too, so reopening the
+/// group later restores the same dual-pane layout rather than just the
+/// primary folder.
 fn draw_add_tab_to_group_menu(
     ui: &mut egui::Ui,
     i18n: &I18n,
     icon_cache: &IconCache,
     tab_groups: &[TabGroup],
     tab_path: &PathBuf,
+    tab_split_path: Option<&PathBuf>,
     action: &mut TabsAction,
 ) {
     ui.menu_button(
@@ -508,7 +517,8 @@ fn draw_add_tab_to_group_menu(
             ui.ctx().data_mut(|d| d.insert_temp(name_id, name.clone()));
 
             if ui.button(i18n.tr("tab_group_create")).clicked() {
-                action.add_tab_to_new_group = Some((name, tab_path.clone()));
+                action.add_tab_to_new_group =
+                    Some((name, tab_path.clone(), tab_split_path.cloned()));
                 ui.ctx().data_mut(|d| d.insert_temp(name_id, String::new()));
                 ui.close();
             }
@@ -530,8 +540,10 @@ fn draw_add_tab_to_group_menu(
                         group.name.clone()
                     };
 
-                    let first_folder_icon =
-                        group.paths.first().and_then(|p| icon_cache.get(p, true));
+                    let first_folder_icon = group
+                        .entries
+                        .first()
+                        .and_then(|e| icon_cache.get(&e.path, true));
                     let clicked = if let Some(texture) = first_folder_icon {
                         let image =
                             egui::Image::new(&texture).fit_to_exact_size(TAB_GROUP_ICON_SIZE);
@@ -541,7 +553,8 @@ fn draw_add_tab_to_group_menu(
                     };
 
                     if clicked {
-                        action.add_tab_to_existing_group = Some((group.id, tab_path.clone()));
+                        action.add_tab_to_existing_group =
+                            Some((group.id, tab_path.clone(), tab_split_path.cloned()));
                         ui.close();
                     }
                 }

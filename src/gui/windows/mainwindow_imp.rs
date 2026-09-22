@@ -646,6 +646,15 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
+        self.open_new_tab_with_split(path, None);
+    }
+
+    /// Like `open_new_tab`, but when `split_path` is `Some`, the new tab
+    /// also opens with a Secondary split-view pane already showing that
+    /// second folder - used when opening a `TabGroupEntry` that captured a
+    /// dual-pane tab, so reopening the group restores the same layout
+    /// rather than just the primary folder.
+    pub fn open_new_tab_with_split(&mut self, path: PathBuf, split_path: Option<PathBuf>) {
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -661,6 +670,19 @@ impl MainWindow {
             &current_settings,
             DisplayModeFallback::Default,
         );
+        if let Some(split_path) = split_path {
+            let mut split_view = TabView::new(
+                Navigation::new(split_path),
+                sort_column,
+                sort_ascending,
+            );
+            apply_directory_settings_to_view(
+                &mut split_view,
+                &current_settings,
+                DisplayModeFallback::Default,
+            );
+            self.tabs.last_mut().unwrap().split_view = Some(split_view);
+        }
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
     }
@@ -3605,14 +3627,14 @@ impl MainWindow {
                 self.open_new_tab(path);
                 self.load_path();
             }
-            if let Some(paths) = action.open_group {
-                for path in paths {
-                    self.open_new_tab(path);
+            if let Some(entries) = action.open_group {
+                for entry in entries {
+                    self.open_new_tab_with_split(entry.path, entry.split_path);
                 }
                 self.load_path();
             }
-            if let Some(paths) = action.replace_with_group {
-                if !paths.is_empty() {
+            if let Some(entries) = action.replace_with_group {
+                if !entries.is_empty() {
                     // Capture sort settings before clearing - `self.tabs`
                     // must stay non-empty for `active_tab()`'s indexing, so
                     // this can't reuse `open_new_tab` (which reads it) after
@@ -3624,24 +3646,34 @@ impl MainWindow {
                     self.tabs.clear();
                     self.focused_split = SplitSide::Primary;
                     let current_settings = self.settings_window.current_settings.clone();
-                    for path in paths {
-                        let nav = Navigation::new(path);
+                    for entry in entries {
+                        let nav = Navigation::new(entry.path);
                         let id = self.next_tab_id;
                         self.next_tab_id += 1;
-                        self.tabs
-                            .push(TabState::new(id, nav, sort_column, sort_ascending));
+                        let mut tab = TabState::new(id, nav, sort_column, sort_ascending);
                         apply_directory_settings_to_view(
-                            &mut self.tabs.last_mut().unwrap().primary_view,
+                            &mut tab.primary_view,
                             &current_settings,
                             DisplayModeFallback::Default,
                         );
+                        if let Some(split_path) = entry.split_path {
+                            let mut split_view =
+                                TabView::new(Navigation::new(split_path), sort_column, sort_ascending);
+                            apply_directory_settings_to_view(
+                                &mut split_view,
+                                &current_settings,
+                                DisplayModeFallback::Default,
+                            );
+                            tab.split_view = Some(split_view);
+                        }
+                        self.tabs.push(tab);
                     }
                     self.active_tab = 0;
                     self.mark_tab_infos_dirty();
                     self.load_path();
                 }
             }
-            if let Some((name, path)) = action.add_tab_to_new_group {
+            if let Some((name, path, split_path)) = action.add_tab_to_new_group {
                 let id = crate::core::tab_groups::next_group_id(
                     &self.settings_window.current_settings.tab_groups,
                 );
@@ -3649,12 +3681,12 @@ impl MainWindow {
                     crate::core::tab_groups::TabGroup {
                         id,
                         name,
-                        paths: vec![path],
+                        entries: vec![crate::core::tab_groups::TabGroupEntry { path, split_path }],
                     },
                 );
                 self.save_app_settings_to_disk();
             }
-            if let Some((group_id, path)) = action.add_tab_to_existing_group {
+            if let Some((group_id, path, split_path)) = action.add_tab_to_existing_group {
                 if let Some(group) = self
                     .settings_window
                     .current_settings
@@ -3663,7 +3695,9 @@ impl MainWindow {
                     .find(|g| g.id == group_id)
                 {
                     // Duplicates are allowed on purpose - see `TabGroup`.
-                    group.paths.push(path);
+                    group
+                        .entries
+                        .push(crate::core::tab_groups::TabGroupEntry { path, split_path });
                 }
                 self.save_app_settings_to_disk();
             }

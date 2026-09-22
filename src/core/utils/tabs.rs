@@ -25,6 +25,7 @@ pub fn update_tab_infos_cache(
                 } else {
                     tab.primary_view.nav.current.clone()
                 },
+                split_path: tab.split_view.as_ref().map(|v| v.nav.current.clone()),
                 is_pinned: settings_window
                     .current_settings
                     .pinned_tabs
