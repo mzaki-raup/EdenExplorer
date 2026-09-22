@@ -529,6 +529,8 @@ fn custom_folder_icon(name: &str) -> Option<&'static str> {
         Some(regular::NETWORK)
     } else if name.eq_ignore_ascii_case("Settings") {
         Some(regular::GEAR)
+    } else if name.eq_ignore_ascii_case("Administrative Tools") {
+        Some(regular::WRENCH)
     } else {
         None
     }

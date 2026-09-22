@@ -9,6 +9,7 @@ network = Jaringan
 shared_network = Jaringan Bersama
 storage = Penyimpanan
 my_user_home = Folder Home Pengguna Saya
+administrative_tools = Alat Administratif
 recycle_bin = Keranjang Sampah
 exit = Keluar
 selected = Dipilih

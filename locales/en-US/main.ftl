@@ -9,6 +9,7 @@ network = Network
 shared_network = Shared Network
 storage = Storage
 my_user_home = My User Home
+administrative_tools = Administrative Tools
 recycle_bin = Recycle Bin
 exit = Exit
 selected = Selected

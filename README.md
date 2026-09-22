@@ -359,6 +359,7 @@
 - [x] **Fixed native Export/Import Settings (and every file/folder picker) briefly showing glitched window chrome** while open
 - [x] **Dual-pane focus now stays on the pane you just interacted with** - copying, moving, or resolving a paste conflict (Replace/Skip/Rename) into the other pane no longer snaps focus back to the first pane
 - [x] **Tab Groups now support dual-pane entries** - pair two folders (automatically, from an already-split tab, or by hand in Settings) so reopening the group restores both panes side by side, not just one folder
+- [x] **Administrative Tools sidebar link** (Places) - opens `%ProgramData%\...\Administrative Tools`, the real folder holding shortcuts to every Windows admin snap-in (Computer Management, Event Viewer, Services, Task Scheduler, Registry Editor, and more), so they're one click away instead of hunting through Control Panel
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view

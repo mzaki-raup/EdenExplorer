@@ -6,6 +6,14 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-22
 
+- **New "Administrative Tools" sidebar link** (Places section). Points at
+  the real folder Windows keeps every admin snap-in shortcut in
+  (`%ProgramData%\Microsoft\Windows\Start Menu\Programs\Administrative
+  Tools` - the one that actually holds the shortcuts, since the per-user
+  equivalent location is typically empty), so Computer Management, Event
+  Viewer, Services, Task Scheduler, Registry Editor, and the rest are one
+  click away and open exactly like any other file. Only shown if that
+  folder actually exists on the machine.
 - **Tab Groups now support dual-pane entries.** A saved group entry can pair
   two folders - opening it restores a dual-pane tab with both folders side
   by side, not just one. Build a dual-pane entry automatically by

@@ -9,6 +9,7 @@ network = 网络
 shared_network = 共享网络
 storage = 存储
 my_user_home = 我的用户主目录
+administrative_tools = 管理工具
 recycle_bin = 回收站
 exit = 退出
 selected = 已选择

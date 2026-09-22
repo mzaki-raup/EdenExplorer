@@ -9,6 +9,7 @@ network = ネットワーク
 shared_network = 共有ネットワーク
 storage = ストレージ
 my_user_home = ホームフォルダー
+administrative_tools = 管理ツール
 recycle_bin = ごみ箱
 exit = 終了
 selected = 選択済み

@@ -9,6 +9,7 @@ network = 網路
 shared_network = 共用網路
 storage = 儲存空間
 my_user_home = 我的使用者主資料夾
+administrative_tools = 系統管理工具
 recycle_bin = 資源回收筒
 exit = 離開
 selected = 已選取
