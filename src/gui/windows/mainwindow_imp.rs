@@ -943,6 +943,10 @@ impl MainWindow {
             &self.settings_window.current_settings.custom_context_menu,
         );
         crate::core::tab_groups::save_tab_groups(&self.settings_window.current_settings.tab_groups);
+        crate::core::send_to::save_send_to(
+            &self.settings_window.current_settings.send_to,
+            self.settings_window.current_settings.send_to_context_menu_enabled,
+        );
     }
 
     fn apply_item_viewer_column_order(
@@ -1823,7 +1827,57 @@ impl MainWindow {
                     compare_input: String::new(),
                 });
             }
+            ItemViewerContextAction::SendTo(paths, target_dir) => {
+                self.send_to_folder(paths, target_dir);
+            }
         }
+    }
+
+    /// Copies `paths` into `target_dir` - the Send To feature's own action
+    /// (see `core::send_to`), always a copy (`is_cut = false`) so the
+    /// originals are never touched no matter which destination is picked.
+    /// Shares the same conflict-detection + `start_robocopy_paste` pipeline
+    /// `paste_clipboard_native` already uses, so a name collision in the
+    /// destination gets the same Replace/Skip/Rename prompt instead of
+    /// silently overwriting anything.
+    fn send_to_folder(&mut self, paths: Vec<PathBuf>, target_dir: PathBuf) {
+        if paths.is_empty() {
+            return;
+        }
+
+        let before_entries = Self::directory_child_paths(&target_dir);
+        let side = self.focused_split;
+
+        let conflicting_names: Vec<String> = paths
+            .iter()
+            .filter_map(|p| {
+                let name = p.file_name()?.to_string_lossy().to_string();
+                target_dir.join(&name).exists().then_some(name)
+            })
+            .collect();
+
+        if !conflicting_names.is_empty() {
+            self.pending_paste_conflict = Some(PasteConflictPrompt {
+                paths,
+                target_dir,
+                before_entries,
+                is_cut: false,
+                side,
+                conflicting_names,
+            });
+            return;
+        }
+
+        self.start_robocopy_paste(
+            paths,
+            target_dir,
+            before_entries,
+            false,
+            side,
+            HashMap::new(),
+            HashMap::new(),
+            PasteOrigin::UserAction,
+        );
     }
 
     /// Drains the checksum background job's result once it's ready - called
@@ -3242,17 +3296,26 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ResetToDefaults => {
-                    // Custom context menu entries and tab groups are
-                    // user-authored content, like favorites/tags - a general
-                    // settings reset shouldn't wipe them out.
+                    // Custom context menu entries, tab groups, and Send To
+                    // groups are user-authored content, like favorites/tags -
+                    // a general settings reset shouldn't wipe them out.
                     let custom_context_menu = std::mem::take(
                         &mut self.settings_window.current_settings.custom_context_menu,
                     );
                     let tab_groups =
                         std::mem::take(&mut self.settings_window.current_settings.tab_groups);
+                    let send_to =
+                        std::mem::take(&mut self.settings_window.current_settings.send_to);
+                    let send_to_context_menu_enabled = self
+                        .settings_window
+                        .current_settings
+                        .send_to_context_menu_enabled;
                     self.settings_window.current_settings = Default::default();
                     self.settings_window.current_settings.custom_context_menu = custom_context_menu;
                     self.settings_window.current_settings.tab_groups = tab_groups;
+                    self.settings_window.current_settings.send_to = send_to;
+                    self.settings_window.current_settings.send_to_context_menu_enabled =
+                        send_to_context_menu_enabled;
                     if let Some(hwnd) = self.hwnd {
                         crate::gui::windows::windowsoverrides::set_window_mode(
                             hwnd,

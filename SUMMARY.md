@@ -29,7 +29,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
   - `everything.rs` — voidtools Everything + built-in filesystem search engines
   - `preview.rs` / `video.rs` / `audio.rs` / `mermaid.rs` / `syntax_highlight.rs` — preview-pane content rendering
   - `checksum.rs` / `compress.rs` / `robocopy.rs` — checksums, zip compression, paste/move copy engine
-  - `context_menu_settings.rs` / `tab_groups.rs` — user-defined custom context-menu commands and saved tab groups
+  - `context_menu_settings.rs` / `tab_groups.rs` / `send_to.rs` — user-defined custom context-menu commands, saved tab groups, and Send To destination groups
   - `utils/` — clipboard, colors, dialogs, file helpers, fonts, sorting, tabs, text, thumbnails, widgets
 - **`gui/`** — UI layer:
   - `mod.rs`, `theme.rs`, `icons.rs`, `i18n.rs`, `utils.rs`, `dragdrop.rs`

@@ -213,6 +213,7 @@ impl Default for MainWindow {
             auto_open_notification_panel,
             show_operation_toasts,
         ) = load_app_settings();
+        let loaded_send_to = crate::core::send_to::load_send_to();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             show_hidden_files_folders,
@@ -245,6 +246,8 @@ impl Default for MainWindow {
             show_operation_toasts,
             custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
             tab_groups: crate::core::tab_groups::load_tab_groups(),
+            send_to: loaded_send_to.0,
+            send_to_context_menu_enabled: loaded_send_to.1,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());

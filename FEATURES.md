@@ -6,6 +6,24 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-22
 
+- **New "Send To" feature.** A new Settings page (between Custom Context
+  Menu and Tab Groups) for creating named groups of destination folders,
+  each with its own icon (a Phosphor glyph or a browsed image file) and an
+  ordered, reorderable list of folders. A master toggle - only usable once
+  at least one group exists - enables a "Send To" section in the file/folder
+  right-click context menu, positioned between Compress (zip) and Cut with
+  its own separators: each group appears as a submenu of its own
+  destination folders, and clicking one copies the current selection there.
+  Always a copy, never a move - the originals stay put no matter which
+  destination is picked. A name collision at the destination gets the same
+  Replace/Skip/Rename/Cancel prompt as a regular paste, and the copy shows
+  up in the notification panel and completion toast exactly like any other
+  copy operation. Fixed one bug found right after building it: the
+  context-menu-enable checkbox initially rendered as a nearly-invisible dot
+  far from its label and couldn't be clicked, because it was built directly
+  on a raw layout row instead of through the same bounded-checkbox helper
+  every other Settings checkbox uses - fixed so it renders and toggles
+  correctly.
 - **"Create Shortcut" context menu entries, like Windows.** Right-click a
   file or folder for a new "Create Shortcut" entry - grouped with Checksums
   and Properties as its own section, separated from Delete by a divider -

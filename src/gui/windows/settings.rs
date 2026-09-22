@@ -36,19 +36,21 @@ pub enum SettingsCategory {
     Appearance,
     Favorites,
     ContextMenu,
+    SendTo,
     TabGroups,
     Tags,
     Advanced,
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 9] = [
+    pub const ALL: [SettingsCategory; 10] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
         SettingsCategory::Appearance,
         SettingsCategory::Favorites,
         SettingsCategory::ContextMenu,
+        SettingsCategory::SendTo,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
         SettingsCategory::Advanced,
@@ -62,6 +64,7 @@ impl SettingsCategory {
             SettingsCategory::Appearance => regular::PALETTE,
             SettingsCategory::Favorites => regular::STAR,
             SettingsCategory::ContextMenu => regular::LIST,
+            SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
             SettingsCategory::Advanced => regular::WRENCH,
@@ -76,6 +79,7 @@ impl SettingsCategory {
             SettingsCategory::Appearance => i18n.tr("settings_category_appearance"),
             SettingsCategory::Favorites => i18n.tr("settings_category_favorites"),
             SettingsCategory::ContextMenu => i18n.tr("settings_category_context_menu"),
+            SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
             SettingsCategory::Advanced => i18n.tr("settings_category_advanced"),
@@ -146,6 +150,8 @@ impl Default for AppSettings {
             show_operation_toasts: true,
             custom_context_menu: Vec::new(),
             tab_groups: Vec::new(),
+            send_to: Vec::new(),
+            send_to_context_menu_enabled: false,
         }
     }
 }
@@ -609,6 +615,7 @@ pub fn draw_settings_page(
                 SettingsCategory::Appearance
                     | SettingsCategory::Favorites
                     | SettingsCategory::ContextMenu
+                    | SettingsCategory::SendTo
                     | SettingsCategory::TabGroups
                     | SettingsCategory::Tags
             );
@@ -642,6 +649,13 @@ pub fn draw_settings_page(
                     }
                     SettingsCategory::ContextMenu => {
                         if let Some(a) = crate::gui::windows::context_menu_settings_ui::draw_custom_context_menu_settings(
+                            ui, i18n, settings, palette, icon_cache,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::SendTo => {
+                        if let Some(a) = crate::gui::windows::send_to_ui::draw_send_to_settings(
                             ui, i18n, settings, palette, icon_cache,
                         ) {
                             action = Some(a);

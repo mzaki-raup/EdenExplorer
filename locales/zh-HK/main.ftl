@@ -461,6 +461,25 @@ tab_group_add_to_new = 加入新群組
 tab_group_add_to_existing = 加入現有群組
 tab_group_create = 建立
 
+settings_send_to = Send To
+tooltip_settings_send_to = Create named destinations - each holding one or more folders - that appear in the right-click "Send To" menu for copying selected files or folders there. The original is never moved.
+send_to_show_in_context_menu = Show Send To in the file/folder context menu
+tooltip_send_to_show_in_context_menu = When enabled, right-clicking a file or folder shows a Send To submenu listing every destination below.
+tooltip_send_to_show_in_context_menu_disabled = Add at least one Send To group before you can enable this.
+send_to_add = Add Group
+send_to_untitled = (untitled)
+send_to_name = Name
+send_to_icon = Icon
+send_to_icon_default = Use default icon
+send_to_icon_browse = Browse...
+send_to_icon_clear = Clear
+send_to_add_folder = Add Folder
+send_to_no_folders = No folders in this group yet.
+send_to_empty_state = No Send To groups yet. Click "Add Group" to create one.
+send_to_select_hint = Select a Send To group to edit its folders
+send_to_remove = Remove Group
+send_to_menu = Send To
+
 settings_category_general = 一般
 settings_category_behavior = 行為
 settings_category_startup = 啟動與視窗
@@ -482,6 +501,7 @@ favorite_icon_default = 使用資料夾的真實圖示
 favorite_icon_browse = 瀏覽圖示檔案...
 favorite_icon_clear = 清除圖示
 settings_category_context_menu = 自訂右鍵選單
+settings_category_send_to = Send To
 settings_category_tab_groups = 分頁群組
 settings_category_advanced = 進階
 

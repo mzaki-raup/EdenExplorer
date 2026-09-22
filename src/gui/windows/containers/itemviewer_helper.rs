@@ -303,6 +303,66 @@ fn custom_icon_glyph(icon: &CustomContextMenuIcon, is_submenu: bool) -> &str {
     }
 }
 
+/// Draws the "Send To" section: one submenu per user-defined group (see
+/// `core::send_to`), each listing that group's own destination folders as
+/// clickable leaves. Picking a folder emits `ItemViewerContextAction::
+/// SendTo(context_paths, folder)` - always a copy, see that variant's own
+/// doc comment. Mirrors `tabs.rs`'s `draw_tab_groups_menu` (one submenu per
+/// named group, contents built from a per-group closure); callers only
+/// invoke this once at least one group exists and the enable toggle is on
+/// (see `handle_context_menu_actions`), so there's no separate empty-state
+/// branch here the way `draw_tab_groups_menu` has for its own empty list.
+fn draw_send_to_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    groups: &[crate::core::send_to::SendToGroup],
+    context_paths: &[PathBuf],
+    action: &mut Option<ItemViewerAction>,
+) {
+    for group in groups {
+        let label = if group.name.is_empty() {
+            i18n.tr("send_to_untitled")
+        } else {
+            group.name.clone()
+        };
+
+        ui.menu_button(label, |ui| {
+            if group.folders.is_empty() {
+                ui.weak(i18n.tr("send_to_no_folders"));
+                return;
+            }
+            for folder in &group.folders {
+                let folder_label = folder
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| folder.display().to_string());
+
+                let clicked = if let Some(texture) = icon_cache.get(folder, true) {
+                    ui.add(egui::Button::image_and_text(
+                        egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                        &folder_label,
+                    ))
+                    .on_hover_text(folder.display().to_string())
+                    .clicked()
+                } else {
+                    menu_item_button(ui, regular::FOLDER, &folder_label)
+                        .on_hover_text(folder.display().to_string())
+                        .clicked()
+                };
+
+                if clicked {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::SendTo(
+                        context_paths.to_vec(),
+                        folder.clone(),
+                    )));
+                    ui.close();
+                }
+            }
+        });
+    }
+}
+
 pub fn handle_context_menu_actions(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -521,6 +581,20 @@ pub fn handle_context_menu_actions(
             context_paths.clone(),
         )));
         ui.close();
+    }
+
+    if settings_window.current_settings.send_to_context_menu_enabled
+        && !settings_window.current_settings.send_to.is_empty()
+    {
+        ui.separator();
+        draw_send_to_menu(
+            ui,
+            i18n,
+            icon_cache,
+            &settings_window.current_settings.send_to,
+            &context_paths,
+            action,
+        );
     }
 
     ui.separator();
