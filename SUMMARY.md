@@ -46,6 +46,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 
 ## Project documentation
 - **`README.md`** — public-facing overview, feature list, roadmap, build/debug instructions, keyboard shortcuts
+- **`Features.md`** — day-by-day log of recently added features and fixes (rolling, most recent days only - the full list always lives in `README.md`)
 - **`PRD.md`** — product requirements: positioning, personas, principles, capability inventory, known gaps, planned and proposed enhancements, open questions
 - **`CHECKLIST.md`** — phase-by-phase delivery tracking (`Completed` / `In-Progress` / `Pending`)
 - **`CLAUDE.md`** — engineering guide: architecture map, conventions, safety rules, recorded mistakes, operational instructions
@@ -86,8 +87,8 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Multi-tagging: an item can belong to more than one tag group at once (the picker is a multi-select toggle list, staying open across picks); a Tags column shows every tag on a row as a colored chip (own smaller font, truncated with an ellipsis if a name doesn't fit) with "+N" overflow; removing a tag from within one specific tag's own view removes it from that tag only, not every tag the item has
 - "Open File Location" context menu entry in the Tag view and Search results (both show items from many different real folders) - opens the item's containing folder in a new tab
 - Custom Context Menu: export/import just your custom right-click commands as a standalone file (a full settings export already includes them too), and an unquoted-path placeholder (`%L`, alongside the existing always-quoted `%1`/`%V`) for commands that want to add their own quoting or none at all
-- Tab Groups: save the currently-open tabs (or any hand-picked set of folders) as a named group in Settings, then reopen the whole set at once - added alongside current tabs or replacing them - from the "+" new-tab button's menu; the same folder can appear more than once in a group on purpose
-- Behavior settings: double-click-empty-space-to-navigate-up, an optional per-row selection-checkbox column, middle-click-to-open-in-new-tab, whether last session's tabs restore on launch, and defaults for new tabs' view layout and search scope
+- Tab Groups: save the currently-open tabs (or any hand-picked set of folders) as a named group in Settings, then reopen the whole set at once - added alongside current tabs or replacing them - from the "+" new-tab button's menu; the same folder can appear more than once in a group on purpose; an entry can also pair two folders as a dual-pane split (captured automatically from an already-split tab, or added by hand in Settings), so reopening it restores both panes side by side
+- Behavior settings: double-click-empty-space-to-navigate-up, an optional per-row selection-checkbox column, middle-click-to-open-in-new-tab, whether last session's tabs restore on launch, defaults for new tabs' view layout and search scope, and independent toggles for whether starting a file operation auto-opens the notification panel and whether toast popups show at all (the notification bell itself always stays visible)
 - Multi-row tab strip: once tabs no longer fit at a readable width on one row, the strip automatically wraps onto additional rows (shrinking tab width toward a minimum first); the topbar grows to fit however many rows are currently needed
 - Configurable tab gap: an Appearance → Layout setting (0-24px, default 8) controlling the horizontal spacing between tabs, which also feeds into the wrapping math above
 

@@ -197,7 +197,7 @@
 <h3>User Interface & Navigation</h3>
 <ul>
   <li><b>Tabbed navigation</b> with independent loading states</li>
-  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
+  <li><b>Tab Groups</b> - save a named set of folders (including dual-pane pairs) and reopen them all at once</li>
   <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
   <li><b>Responsive design</b> across window sizes</li>
   <li><b>Modern toolbar</b> with file and folder actions</li>
@@ -339,6 +339,26 @@
 - [x] **Clearer borders and search affordances on every type-to-filter/find box** - the item viewer's type-to-filter box and the preview pane's Find bar both gained a real, clearly visible border, a leading magnifying-glass icon, and an inline close (✕) button next to the input; the preview pane's Find bar and the navbar's search box both now auto-focus the moment they open, ready to type into immediately
 - [x] **Multi-row tab strip** - when there are too many tabs to fit at a comfortable width on one row, the strip automatically wraps onto additional rows below (shrinking tab width down to a minimum first) instead of squeezing tabs unreadably thin or scrolling off-screen; the window's own topbar grows to fit however many rows are currently needed
 - [x] **Configurable tab gap** - a "Tab Gap" control in Appearance → Layout sets the horizontal spacing between tabs (0-24px), which also affects how many tabs fit per row before the strip wraps onto a new one
+- [x] **Empty-folder right-click context menu** - right-click empty space in an empty folder for New Folder/New File/Paste, same as everywhere else; a newly created item is automatically scrolled to and selected, even mid-scan in a folder with thousands of files
+- [x] **User-configurable minimum tab width** (Appearance → Layout), with an instant Live Preview reflection
+- [x] **Fixed Phosphor icons rendering as wrong (CJK) characters** on systems where the default system font had been replaced by a large merged font build that happened to redefine the same private-use codepoints
+- [x] **Circular count badges** across the Custom Context Menu, Tab Groups, and Tags settings pages, plus a themeable **Badge Color** used by the notification bell's own count badge
+- [x] **Paste-conflict dialog no longer freezes** when clicking Replace/Rename (the slow work now runs in the background instead of blocking the frame); a toast now appears the moment a copy/move/delete/rename *starts*, not just when it finishes
+- [x] **Can add an already-tagged item to another tag group** (previously blocked once an item had one tag)
+- [x] **Custom theme creation live-edits your Primary/Secondary colors** as you pick them, instead of only applying once you save
+- [x] **Precise Primary/Secondary-driven theming** for badges, checkboxes, the search box's active icon, Settings navigation, pinned tabs, and notification/toast borders, following an explicit accent/secondary derivation spec
+- [x] **Swap Colors button** in the Custom Themes editor, plus spacing/alignment polish across the Custom Themes list (left-aligned, full names, wider gaps)
+- [x] **Your last-selected custom theme is remembered across restarts**
+- [x] **19 Color Scheme swatches** (up from 11) to pick a starting accent from
+- [x] **More visible Notification/Toast borders**, retroactively applied to already-saved custom themes too
+- [x] **Export Theme now bundles your Custom Themes**; importing merges them by name instead of creating duplicates
+- [x] **Fixed the type-to-filter box matching out-of-order letters** (e.g. typing "te" no longer matched names like "Make The Doc" that don't actually contain "te") - it's now a plain, predictable substring match
+- [x] **The "+" add-tab button now defaults to "This PC"** on a plain click (instead of duplicating whatever tab is currently open), and right-click shows a menu to open a new tab or open/replace your tabs with any saved Tab Group
+- [x] **Fixed per-file icons for `.exe`/`.dll`/`.ico`/`.lnk`/`.scr`/`.cpl`** - each file now shows its own real icon instead of every file of that type sharing one (often wrong) icon
+- [x] **Two independent notification settings** in Behavior: whether starting an operation automatically opens the notification panel, and whether toast popups show at all - the bell icon itself always stays visible
+- [x] **Fixed native Export/Import Settings (and every file/folder picker) briefly showing glitched window chrome** while open
+- [x] **Dual-pane focus now stays on the pane you just interacted with** - copying, moving, or resolving a paste conflict (Replace/Skip/Rename) into the other pane no longer snaps focus back to the first pane
+- [x] **Tab Groups now support dual-pane entries** - pair two folders (automatically, from an already-split tab, or by hand in Settings) so reopening the group restores both panes side by side, not just one folder
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view
