@@ -360,6 +360,7 @@
 - [x] **Dual-pane focus now stays on the pane you just interacted with** - copying, moving, or resolving a paste conflict (Replace/Skip/Rename) into the other pane no longer snaps focus back to the first pane
 - [x] **Tab Groups now support dual-pane entries** - pair two folders (automatically, from an already-split tab, or by hand in Settings) so reopening the group restores both panes side by side, not just one folder
 - [x] **Administrative Tools sidebar link** (Places) - opens `%ProgramData%\...\Administrative Tools`, the real folder holding shortcuts to every Windows admin snap-in (Computer Management, Event Viewer, Services, Task Scheduler, Registry Editor, and more), so they're one click away instead of hunting through Control Panel
+- [x] **"Create Shortcut" context menu entries, like Windows** - right-click a file or folder for a new "Create Shortcut" entry (grouped with Checksums and Properties, separated from Delete) that creates a real `.lnk` shortcut next to it, auto-numbered on a name collision; right-click empty background space in a folder for the same entry alongside New Folder/New File, which prompts for a target and creates the shortcut in the current folder
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view

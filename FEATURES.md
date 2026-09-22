@@ -6,6 +6,15 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-22
 
+- **"Create Shortcut" context menu entries, like Windows.** Right-click a
+  file or folder for a new "Create Shortcut" entry - grouped with Checksums
+  and Properties as its own section, separated from Delete by a divider -
+  that creates a real `.lnk` next to it (`"<name> - Shortcut.lnk"`,
+  auto-numbered on a collision, same as Explorer). Right-click empty
+  background space in a folder for the same entry alongside New Folder/New
+  File; it prompts for a target file via a native picker, then creates the
+  shortcut in the current folder. Both paths select the new shortcut
+  afterward.
 - **New "Administrative Tools" sidebar link** (Places section). Points at
   the real folder Windows keeps every admin snap-in shortcut in
   (`%ProgramData%\Microsoft\Windows\Start Menu\Programs\Administrative

@@ -158,6 +158,7 @@ checksum_compare_match = Cocok
 checksum_compare_no_match = Tidak cocok
 tooltip_checksum_copy = Salin ke clipboard
 properties = Properti
+inputs_create_shortcut = Buat Pintasan
 open_default_program = Buka dengan Program Default
 open_files_default_program = Buka File dengan Program Default
 inputs_compress = Kompres (zip)

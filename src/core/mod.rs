@@ -14,6 +14,7 @@ pub mod network_wsd;
 pub mod portable;
 pub mod preview;
 pub mod robocopy;
+pub mod shortcuts;
 pub mod syntax_highlight;
 pub mod tab_groups;
 pub mod utils;

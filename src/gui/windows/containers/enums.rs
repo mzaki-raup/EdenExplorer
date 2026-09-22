@@ -32,6 +32,10 @@ pub enum ItemViewerAction {
     FitAllColumns,
     CreateFolder,
     CreateFile,
+    /// Background "Create Shortcut" - prompts for a target file, then
+    /// creates a `.lnk` pointing to it in the current directory (matches
+    /// Windows' own "New > Shortcut" from an empty-space right-click).
+    CreateShortcutHere,
     RefreshCurrentDirectory,
     OpenTerminal,
     MoveColumnLeft(ItemViewerHeaderColumn),
@@ -99,6 +103,10 @@ pub enum ItemViewerContextAction {
     /// - both match native Explorer).
     Delete(Vec<PathBuf>, bool),
     Properties(Vec<PathBuf>),
+    /// Creates a `.lnk` shortcut to each selected item, in the same folder -
+    /// same shape as Explorer's own "Create shortcut" (one shortcut per
+    /// selected item for a multi-selection).
+    CreateShortcut(Vec<PathBuf>),
     /// Computes CRC32/MD5/SHA-1/SHA-256 for a single file - single-file
     /// only by design, unlike every other variant here that takes a `Vec`.
     Checksum(PathBuf),

@@ -196,6 +196,7 @@ checksum_compare_match = Matches
 checksum_compare_no_match = No match
 tooltip_checksum_copy = Copy to clipboard
 properties = Properties
+inputs_create_shortcut = Create Shortcut
 open_default_program = Open in Default Program
 open_files_default_program = Open Files in Default Program
 inputs_compress = Compress (zip)

@@ -592,6 +592,19 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    // Create Shortcut / Checksum / Properties - grouped together as their
+    // own trailing section, separated from Delete above.
+    ui.separator();
+
+    if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::CreateShortcut(context_paths.clone()),
+        ));
+        ui.close();
+    }
+
     // Checksums - single real file only (no meaningful "checksum of a
     // folder"/"checksum of 3 files at once" UX).
     if context_paths.len() == 1
@@ -3016,6 +3029,10 @@ pub fn draw_empty_folder_context_menu(
             }
             if ui.button("New File").clicked() {
                 *action = Some(ItemViewerAction::CreateFile);
+                ui.close();
+            }
+            if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
+                *action = Some(ItemViewerAction::CreateShortcutHere);
                 ui.close();
             }
             if ui.button("Refresh").clicked() {

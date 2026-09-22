@@ -461,6 +461,10 @@ pub fn draw_gallery_view(
                                 action = Some(ItemViewerAction::CreateFile);
                                 ui.close();
                             }
+                            if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
+                                action = Some(ItemViewerAction::CreateShortcutHere);
+                                ui.close();
+                            }
                             if ui.button("Refresh").clicked() {
                                 action = Some(ItemViewerAction::RefreshCurrentDirectory);
                                 ui.close();

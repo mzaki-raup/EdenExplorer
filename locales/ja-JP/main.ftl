@@ -156,6 +156,7 @@ checksum_compare_match = 一致
 checksum_compare_no_match = 一致しません
 tooltip_checksum_copy = クリップボードにコピー
 properties = プロパティ
+inputs_create_shortcut = ショートカットの作成
 open_default_program = 既定のプログラムで開く
 open_files_default_program = ファイルを既定のプログラムで開く
 inputs_compress = 圧縮（zip）

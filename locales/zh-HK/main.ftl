@@ -156,6 +156,7 @@ checksum_compare_match = 相符
 checksum_compare_no_match = 不相符
 tooltip_checksum_copy = 複製到剪貼簿
 properties = 內容
+inputs_create_shortcut = 建立捷徑
 open_default_program = 使用預設程式開啟
 open_files_default_program = 使用預設程式開啟檔案
 inputs_compress = 壓縮（zip）

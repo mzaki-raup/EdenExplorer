@@ -1392,6 +1392,40 @@ impl MainWindow {
         }
     }
 
+    /// Background "Create Shortcut" (an empty-space right-click, matching
+    /// Windows' own "New > Shortcut") - prompts for a target file, then
+    /// creates a `.lnk` pointing to it in the current directory. Unlike
+    /// Windows' own multi-step wizard (browse, then type a name), this
+    /// collapses to one step: the native picker's own default name already
+    /// seeds a sensible shortcut name via `shortcut_file_name`.
+    pub fn create_shortcut_here(&mut self) {
+        if self.current_nav().is_root()
+            || self.current_nav().is_recycle_bin()
+            || self.current_nav().is_tag_view()
+        {
+            return;
+        }
+
+        let Some(target) = crate::gui::windows::windowsoverrides::dialog().pick_file() else {
+            return;
+        };
+
+        let dir = self.current_nav().current.clone();
+        let shortcut_path = crate::core::shortcuts::shortcut_file_name(&target, &dir);
+
+        match crate::core::shortcuts::create_shortcut(&target, &shortcut_path) {
+            Ok(()) => {
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![shortcut_path]);
+                self.load_path();
+            }
+            Err(e) => eprintln!("Failed to create shortcut: {:?}", e),
+        }
+    }
+
     pub fn add_favorite(&mut self) {
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
@@ -1746,6 +1780,27 @@ impl MainWindow {
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
+            }
+            ItemViewerContextAction::CreateShortcut(paths) => {
+                let mut created = Vec::new();
+                for target in &paths {
+                    let Some(parent) = target.parent() else {
+                        continue;
+                    };
+                    let shortcut_path = crate::core::shortcuts::shortcut_file_name(target, parent);
+                    match crate::core::shortcuts::create_shortcut(target, &shortcut_path) {
+                        Ok(()) => created.push(shortcut_path),
+                        Err(e) => eprintln!("Failed to create shortcut: {:?}", e),
+                    }
+                }
+                if !created.is_empty() {
+                    let side = self.focused_split;
+                    self.active_tab_mut()
+                        .view_mut(side)
+                        .explorer_state
+                        .pending_selection_paths = Some(created);
+                    self.load_path();
+                }
             }
             ItemViewerContextAction::Checksum(path) => {
                 let file_name = path
@@ -4665,6 +4720,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             match &action {
                 ItemViewerAction::CreateFolder
                 | ItemViewerAction::CreateFile
+                | ItemViewerAction::CreateShortcutHere
+                | ItemViewerAction::Context(ItemViewerContextAction::CreateShortcut(_))
                 | ItemViewerAction::OpenTerminal
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
@@ -4749,6 +4806,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::CreateFolder => explorer.create_new_folder(),
             ItemViewerAction::CreateFile => explorer.create_new_file(),
+            ItemViewerAction::CreateShortcutHere => explorer.create_shortcut_here(),
             ItemViewerAction::RefreshCurrentDirectory => {
                 clear_clipboard_files();
                 explorer.load_path();

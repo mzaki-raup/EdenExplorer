@@ -156,6 +156,7 @@ checksum_compare_match = 匹配
 checksum_compare_no_match = 不匹配
 tooltip_checksum_copy = 复制到剪贴板
 properties = 属性
+inputs_create_shortcut = 创建快捷方式
 open_default_program = 使用默认程序打开
 open_files_default_program = 使用默认程序打开文件
 inputs_compress = 压缩（zip）
