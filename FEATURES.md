@@ -4,6 +4,16 @@ A day-by-day log of what's been added or fixed recently. For the full
 feature list, see [README.md](README.md#-features); for phase-by-phase
 delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
+## 2026-09-23
+
+- **Fixed: the shared glyph icon picker (used by both Send To and Custom
+  Context Menu) showed a visibly different list height depending on which
+  page opened it**, even though both call the exact same function. The
+  icon grid's `ScrollArea` capped its height at 280px but never guaranteed
+  it - if the popup happened to open with less room below it, it silently
+  shrank instead. Reserved the height explicitly beforehand so the grid
+  now renders at a consistent height everywhere it's opened from.
+
 ## 2026-09-22
 
 - **Send To: "Replace All"/"Skip All"/"Rename All", and per-group Copy or
