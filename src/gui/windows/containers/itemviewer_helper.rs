@@ -641,6 +641,32 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    // Send To, then Compress, sit between "Open in Default Program" and the
+    // Custom Context Menu group below - Compress directly above Custom
+    // Context Menu's own entries, Send To above that.
+    if settings_window.current_settings.send_to_context_menu_enabled
+        && !settings_window.current_settings.send_to.is_empty()
+    {
+        ui.separator();
+        draw_send_to_menu(
+            ui,
+            i18n,
+            icon_cache,
+            &settings_window.current_settings.send_to,
+            &context_paths,
+            action,
+        );
+    }
+
+    ui.separator();
+
+    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
     let has_file = context_paths.iter().any(|p| !p.is_dir());
     let has_folder = context_paths.iter().any(|p| p.is_dir());
     let ccm_entries: &[CustomContextMenuEntry] =
@@ -660,15 +686,6 @@ pub fn handle_context_menu_actions(
         &context_paths,
         action,
     );
-
-    ui.separator();
-
-    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
 
     ui.separator();
 
@@ -739,23 +756,8 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
-    if settings_window.current_settings.send_to_context_menu_enabled
-        && !settings_window.current_settings.send_to.is_empty()
-    {
-        ui.separator();
-        draw_send_to_menu(
-            ui,
-            i18n,
-            icon_cache,
-            &settings_window.current_settings.send_to,
-            &context_paths,
-            action,
-        );
-    }
-
     // Create Shortcut / Checksum / Properties - grouped together as their
-    // own trailing section, separated from Delete (and Send To, if shown)
-    // above.
+    // own trailing section, separated from Delete above.
     ui.separator();
 
     if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))

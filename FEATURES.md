@@ -6,6 +6,11 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-24
 
+- **Reordered the file/folder context menu**: Send To now sits right below
+  "Open In Default Program", and Compress (Zip) now sits directly above
+  the Custom Context Menu section - both were previously much further
+  down the menu.
+
 - **Title-cased a batch of context-menu and tab-menu labels** that were
   showing up in sentence case or with lowercase shortcut hints - "Pin tab"
   → "Pin Tab", "Add to Favorites" → "Add To Favorites", "Open in split
