@@ -107,7 +107,10 @@ pub fn draw_tab_groups_settings(
                         } else {
                             group.name.clone()
                         };
-                        let icon = group.paths.first().and_then(|p| icon_cache.get(p, true));
+                        let icon = group
+                            .entries
+                            .first()
+                            .and_then(|e| icon_cache.get(&e.path, true));
                         let is_selected = Some(group.id) == settings.selected_tab_group_id;
 
                         let row = list_row(ui, palette, is_selected, |ui| {
@@ -138,7 +141,7 @@ pub fn draw_tab_groups_settings(
                                 {
                                     remove_index = Some(index);
                                 }
-                                count_badge(ui, palette, group.paths.len());
+                                count_badge(ui, palette, group.entries.len());
                             });
                         });
 
@@ -204,49 +207,112 @@ pub fn draw_tab_groups_settings(
                         )
                         .clicked()
                         {
-                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                            if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
                                 // Duplicates are allowed on purpose - the same
                                 // folder can be added more than once so opening
                                 // the group opens it as multiple separate tabs.
-                                group.paths.push(path);
+                                group
+                                    .entries
+                                    .push(crate::core::tab_groups::TabGroupEntry::new(path));
                                 changed = true;
                             }
                         }
 
                         ui.add_space(8.0);
-                        if group.paths.is_empty() {
+                        if group.entries.is_empty() {
                             ui.weak(i18n.tr("tab_group_empty"));
                         } else {
-                            let mut remove_path: Option<usize> = None;
-                            let mut move_path: Option<(usize, usize)> = None;
-                            let path_total = group.paths.len();
-                            for (path_index, path) in group.paths.iter().enumerate() {
+                            let mut remove_entry: Option<usize> = None;
+                            let mut move_entry: Option<(usize, usize)> = None;
+                            let mut clear_split: Option<usize> = None;
+                            let mut set_split: Option<(usize, std::path::PathBuf)> = None;
+                            let entry_total = group.entries.len();
+                            for (entry_index, entry) in group.entries.iter().enumerate() {
                                 ui.horizontal(|ui| {
                                     if let Some(swap) =
-                                        reorder_buttons(ui, palette, path_index, path_total)
+                                        reorder_buttons(ui, palette, entry_index, entry_total)
                                     {
-                                        move_path = Some(swap);
+                                        move_entry = Some(swap);
                                     }
                                     if eden_button(ui, palette, regular::TRASH).clicked() {
-                                        remove_path = Some(path_index);
+                                        remove_entry = Some(entry_index);
                                     }
-                                    if let Some(texture) = icon_cache.get(path, true) {
+                                    if let Some(texture) = icon_cache.get(&entry.path, true) {
                                         ui.add(
                                             egui::Image::new(&texture)
                                                 .fit_to_exact_size(FOLDER_ICON_SIZE),
                                         );
                                     }
-                                    ui.label(path.display().to_string())
-                                        .on_hover_text(path.display().to_string());
+                                    ui.label(entry.path.display().to_string())
+                                        .on_hover_text(entry.path.display().to_string());
+                                });
+
+                                // The dual-pane half of this entry - either
+                                // shows the split folder (with its own
+                                // remove button) or a small link to set one,
+                                // indented under the primary folder so the
+                                // pairing reads as "this entry opens as one
+                                // dual-pane tab", not two separate entries.
+                                ui.horizontal(|ui| {
+                                    ui.add_space(24.0);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(regular::COLUMNS)
+                                                .color(palette.text_normal.gamma_multiply(0.7)),
+                                        )
+                                        .selectable(false),
+                                    );
+                                    if let Some(split_path) = &entry.split_path {
+                                        if eden_button(ui, palette, regular::X)
+                                            .on_hover_text(i18n.tr("tab_group_remove_split"))
+                                            .clicked()
+                                        {
+                                            clear_split = Some(entry_index);
+                                        }
+                                        if let Some(texture) = icon_cache.get(split_path, true) {
+                                            ui.add(
+                                                egui::Image::new(&texture)
+                                                    .fit_to_exact_size(FOLDER_ICON_SIZE),
+                                            );
+                                        }
+                                        ui.label(split_path.display().to_string())
+                                            .on_hover_text(split_path.display().to_string());
+                                    } else if eden_button(
+                                        ui,
+                                        palette,
+                                        &format!(
+                                            "{} {}",
+                                            regular::FOLDER_OPEN,
+                                            i18n.tr("tab_group_add_split_folder")
+                                        ),
+                                    )
+                                    .on_hover_text(i18n.tr("tooltip_tab_group_add_split_folder"))
+                                    .clicked()
+                                    {
+                                        if let Some(path) =
+                                            crate::gui::windows::windowsoverrides::dialog()
+                                                .pick_folder()
+                                        {
+                                            set_split = Some((entry_index, path));
+                                        }
+                                    }
                                 });
                                 ui.add_space(6.0);
                             }
-                            if let Some((from, to)) = move_path {
-                                group.paths.swap(from, to);
+                            if let Some((from, to)) = move_entry {
+                                group.entries.swap(from, to);
                                 changed = true;
                             }
-                            if let Some(i) = remove_path {
-                                group.paths.remove(i);
+                            if let Some(i) = clear_split {
+                                group.entries[i].split_path = None;
+                                changed = true;
+                            }
+                            if let Some((i, path)) = set_split {
+                                group.entries[i].split_path = Some(path);
+                                changed = true;
+                            }
+                            if let Some(i) = remove_entry {
+                                group.entries.remove(i);
                                 changed = true;
                             }
                         }

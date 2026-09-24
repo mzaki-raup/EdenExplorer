@@ -247,10 +247,30 @@ fn icon_key(path: &Path, is_dir: bool) -> String {
             "folder".to_string()
         }
     } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        format!("ext:{}", ext.to_lowercase())
+        let ext_lower = ext.to_lowercase();
+        if has_per_file_icon(&ext_lower) {
+            // These extensions carry their own unique icon per file (an .exe's
+            // icon comes from its own embedded PE resources, not a single
+            // registry-wide default) - a shared `ext:exe`-style key would cache
+            // one file's icon (or a lookup failure) for every other file of the
+            // same extension. Keyed by the real path instead, like
+            // `drive:`/`customfolder:` already are.
+            format!("uniqueicon:{}", path.to_string_lossy().to_lowercase())
+        } else {
+            format!("ext:{}", ext_lower)
+        }
     } else {
         "file".to_string()
     }
+}
+
+/// Extensions whose icon is genuinely per-file (baked into that specific
+/// file - an .exe/.dll's own PE resources, an .ico's own image data, an
+/// .lnk's target/custom-icon setting), as opposed to one shared icon for
+/// every file of that type. These need a real per-file shell lookup, not
+/// the generic extension-based lookup+cache every other file type uses.
+fn has_per_file_icon(ext_lower: &str) -> bool {
+    matches!(ext_lower, "exe" | "dll" | "ico" | "lnk" | "scr" | "cpl")
 }
 
 fn is_drive_root(path: &Path) -> bool {
@@ -297,9 +317,14 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
         FILE_ATTRIBUTE_NORMAL
     };
 
-    if key.starts_with("drive:") || key.starts_with("customfolder:") {
+    if key.starts_with("drive:")
+        || key.starts_with("customfolder:")
+        || key.starts_with("uniqueicon:")
+    {
         // Real path lookup (no SHGFI_USEFILEATTRIBUTES) so the shell resolves the
-        // folder's actual icon, honoring a desktop.ini customization if present.
+        // folder's actual icon (honoring a desktop.ini customization if present),
+        // or - for `uniqueicon:` - the specific file's own embedded icon instead
+        // of a generic one shared by every file of that extension.
         wide = path.as_os_str().encode_wide().chain(Some(0)).collect();
     } else if key.starts_with("portable_device") {
         let fake = PathBuf::from("C:\\");
@@ -504,6 +529,8 @@ fn custom_folder_icon(name: &str) -> Option<&'static str> {
         Some(regular::NETWORK)
     } else if name.eq_ignore_ascii_case("Settings") {
         Some(regular::GEAR)
+    } else if name.eq_ignore_ascii_case("Administrative Tools") {
+        Some(regular::WRENCH)
     } else {
         None
     }

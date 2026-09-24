@@ -34,6 +34,80 @@ const RESIZE_BORDER: i32 = 8;
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+/// Stashed once the main window's real HWND is known (mirrors the
+/// `EGUI_CTX`/`set_egui_ctx` pattern just below) so any call site that needs
+/// to parent a native dialog to the main window - most of which live in
+/// `*_ui.rs` files that only ever see an `&mut egui::Ui`, never the HWND
+/// itself - can reach it without threading a new parameter through every
+/// settings page. See `dialog_owner`'s own doc comment for why this matters.
+static MAIN_HWND: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn set_main_hwnd(hwnd: HWND) {
+    MAIN_HWND.store(hwnd.0, Ordering::SeqCst);
+}
+
+fn main_hwnd() -> Option<HWND> {
+    let ptr = MAIN_HWND.load(Ordering::SeqCst);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(HWND(ptr))
+    }
+}
+
+/// A minimal `HasWindowHandle` wrapper around a raw HWND, so it can be passed
+/// to `rfd::FileDialog::set_parent`.
+struct Win32DialogOwner(HWND);
+
+impl HasWindowHandle for Win32DialogOwner {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        let value = std::num::NonZeroIsize::new(self.0.0 as isize)
+            .ok_or(raw_window_handle::HandleError::Unavailable)?;
+        let handle = RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(value));
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle) })
+    }
+}
+
+impl raw_window_handle::HasDisplayHandle for Win32DialogOwner {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        let handle =
+            raw_window_handle::RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::new());
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(handle) })
+    }
+}
+
+/// Starts a new native file/folder dialog already parented to the main
+/// window, if its HWND is known yet. Use this instead of
+/// `rfd::FileDialog::new()` directly everywhere in this app.
+///
+/// This app strips `WS_CAPTION` and paints its entire window chrome
+/// (title bar, min/max/close, border) itself every frame - there's no
+/// native non-client area for Windows to fall back on. An *ownerless*
+/// native common dialog (`rfd::FileDialog::new()` with no parent set) blocks
+/// this window's own message loop while it's open without ever properly
+/// marking this window as that dialog's owned/disabled parent - so if the
+/// window is redrawn by the OS for any reason while blocked (losing focus,
+/// a monitor/DPI change, Windows deciding the frozen message queue needs a
+/// "ghost" placeholder), it falls back to a minimal *native* frame in the
+/// corner (a bare system Close box, sometimes a context-help "?" glyph)
+/// since there's no real caption for Windows to render - reported directly
+/// as "weird border and control button" while an Export Settings dialog was
+/// open. Explicitly parenting every dialog to the main HWND (via
+/// `set_parent`, standard Win32 modal-ownership) fixes this the correct
+/// way: Windows properly treats the main window as disabled-but-owned while
+/// the dialog is up, instead of guessing.
+pub fn dialog() -> rfd::FileDialog {
+    let dialog = rfd::FileDialog::new();
+    match main_hwnd() {
+        Some(hwnd) => dialog.set_parent(&Win32DialogOwner(hwnd)),
+        None => dialog,
+    }
+}
+
 fn get_original_wndproc() -> Option<WNDPROC> {
     let ptr = ORIGINAL_WNDPROC.load(Ordering::SeqCst);
     if ptr.is_null() {
@@ -138,6 +212,8 @@ fn save_manual_window_size(hwnd: HWND) {
             default_display_mode,
             default_search_scope,
             search_engine,
+            auto_open_notification_panel,
+            show_operation_toasts,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -170,6 +246,8 @@ fn save_manual_window_size(hwnd: HWND) {
             default_display_mode,
             default_search_scope,
             search_engine,
+            auto_open_notification_panel,
+            show_operation_toasts,
         );
     }
 }

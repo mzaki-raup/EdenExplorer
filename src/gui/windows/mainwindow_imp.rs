@@ -37,6 +37,7 @@ use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -402,6 +403,25 @@ pub struct PasteConflictPrompt {
     pub conflicting_names: Vec<String>,
 }
 
+/// A Send To batch: the same selection (`paths`) queued to be copied (or
+/// moved, per `is_cut`) into every folder of a group, one at a time -
+/// clicking a Send To group acts on *all* of its folders, not just one
+/// you'd otherwise have to pick from a submenu. `remaining` is popped one
+/// destination at a time by `MainWindow::advance_send_to_queue`, since a
+/// name collision at any given destination needs the same single-slot
+/// `pending_paste_conflict` modal a regular paste uses. `sticky_action`
+/// implements "Replace All"/"Skip All"/"Rename All" - once the user picks
+/// one of those (instead of a plain, one-destination-only Replace/Skip/
+/// Rename) on any conflict in this batch, every later conflict in the same
+/// batch resolves the same way automatically with no further prompt; see
+/// `advance_send_to_queue`'s doc comment for exactly how.
+pub struct PendingSendTo {
+    pub paths: Vec<PathBuf>,
+    pub remaining: VecDeque<PathBuf>,
+    pub is_cut: bool,
+    pub sticky_action: Option<PasteConflictAction>,
+}
+
 /// State for the "Checksums" modal - held in `MainWindow::pending_checksum`
 /// while the dialog is open, from the moment the context-menu entry is
 /// clicked until the user closes it. `rx` is drained by `poll_pending_checksum`
@@ -646,6 +666,15 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
+        self.open_new_tab_with_split(path, None);
+    }
+
+    /// Like `open_new_tab`, but when `split_path` is `Some`, the new tab
+    /// also opens with a Secondary split-view pane already showing that
+    /// second folder - used when opening a `TabGroupEntry` that captured a
+    /// dual-pane tab, so reopening the group restores the same layout
+    /// rather than just the primary folder.
+    pub fn open_new_tab_with_split(&mut self, path: PathBuf, split_path: Option<PathBuf>) {
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -661,6 +690,19 @@ impl MainWindow {
             &current_settings,
             DisplayModeFallback::Default,
         );
+        if let Some(split_path) = split_path {
+            let mut split_view = TabView::new(
+                Navigation::new(split_path),
+                sort_column,
+                sort_ascending,
+            );
+            apply_directory_settings_to_view(
+                &mut split_view,
+                &current_settings,
+                DisplayModeFallback::Default,
+            );
+            self.tabs.last_mut().unwrap().split_view = Some(split_view);
+        }
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
     }
@@ -912,11 +954,20 @@ impl MainWindow {
             self.settings_window.current_settings.default_display_mode,
             self.settings_window.current_settings.default_search_scope,
             self.settings_window.current_settings.search_engine,
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
+            self.settings_window.current_settings.show_operation_toasts,
         );
         crate::core::context_menu_settings::save_custom_context_menu(
             &self.settings_window.current_settings.custom_context_menu,
+            self.settings_window.current_settings.custom_context_menu_enabled,
         );
         crate::core::tab_groups::save_tab_groups(&self.settings_window.current_settings.tab_groups);
+        crate::core::send_to::save_send_to(
+            &self.settings_window.current_settings.send_to,
+            self.settings_window.current_settings.send_to_context_menu_enabled,
+        );
     }
 
     fn apply_item_viewer_column_order(
@@ -1366,6 +1417,40 @@ impl MainWindow {
         }
     }
 
+    /// Background "Create Shortcut" (an empty-space right-click, matching
+    /// Windows' own "New > Shortcut") - prompts for a target file, then
+    /// creates a `.lnk` pointing to it in the current directory. Unlike
+    /// Windows' own multi-step wizard (browse, then type a name), this
+    /// collapses to one step: the native picker's own default name already
+    /// seeds a sensible shortcut name via `shortcut_file_name`.
+    pub fn create_shortcut_here(&mut self) {
+        if self.current_nav().is_root()
+            || self.current_nav().is_recycle_bin()
+            || self.current_nav().is_tag_view()
+        {
+            return;
+        }
+
+        let Some(target) = crate::gui::windows::windowsoverrides::dialog().pick_file() else {
+            return;
+        };
+
+        let dir = self.current_nav().current.clone();
+        let shortcut_path = crate::core::shortcuts::shortcut_file_name(&target, &dir);
+
+        match crate::core::shortcuts::create_shortcut(&target, &shortcut_path) {
+            Ok(()) => {
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![shortcut_path]);
+                self.load_path();
+            }
+            Err(e) => eprintln!("Failed to create shortcut: {:?}", e),
+        }
+    }
+
     pub fn add_favorite(&mut self) {
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
@@ -1521,6 +1606,9 @@ impl MainWindow {
                         crate::gui::windows::containers::notifications::FileOpKind::Compress,
                         paths.len(),
                         path_display_label(&dest_zip),
+                        self.settings_window
+                            .current_settings
+                            .auto_open_notification_panel,
                     );
                     let (tx, rx) = crossbeam_channel::unbounded();
                     crate::core::compress::compress_paths_async(paths, dest_zip.clone(), tx);
@@ -1587,6 +1675,9 @@ impl MainWindow {
                             } else {
                                 crate::gui::windows::containers::notifications::FileOpStatus::Failed
                             },
+                            self.settings_window
+                                .current_settings
+                                .auto_open_notification_panel,
                         );
                     }
                 }
@@ -1647,6 +1738,9 @@ impl MainWindow {
                     attempted.len(),
                     String::new(),
                     status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
                 );
 
                 let mut tags_changed = false;
@@ -1693,6 +1787,9 @@ impl MainWindow {
                     paths.len(),
                     destination_label,
                     delete_status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
                 );
 
                 let mut tags_changed = false;
@@ -1708,6 +1805,27 @@ impl MainWindow {
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
+            }
+            ItemViewerContextAction::CreateShortcut(paths) => {
+                let mut created = Vec::new();
+                for target in &paths {
+                    let Some(parent) = target.parent() else {
+                        continue;
+                    };
+                    let shortcut_path = crate::core::shortcuts::shortcut_file_name(target, parent);
+                    match crate::core::shortcuts::create_shortcut(target, &shortcut_path) {
+                        Ok(()) => created.push(shortcut_path),
+                        Err(e) => eprintln!("Failed to create shortcut: {:?}", e),
+                    }
+                }
+                if !created.is_empty() {
+                    let side = self.focused_split;
+                    self.active_tab_mut()
+                        .view_mut(side)
+                        .explorer_state
+                        .pending_selection_paths = Some(created);
+                    self.load_path();
+                }
             }
             ItemViewerContextAction::Checksum(path) => {
                 let file_name = path
@@ -1730,6 +1848,109 @@ impl MainWindow {
                     compare_input: String::new(),
                 });
             }
+            ItemViewerContextAction::SendTo(paths, target_dirs, is_cut) => {
+                self.send_to_folders(paths, target_dirs, is_cut);
+            }
+        }
+    }
+
+    /// Kicks off copying (or moving, per `is_cut`) `paths` into every one of
+    /// `target_dirs` - the Send To feature's own action (see
+    /// `core::send_to`), triggered by clicking a group (not an individual
+    /// folder): every folder in that group gets its own transfer of the
+    /// selection. Queued and processed one destination at a time via
+    /// `advance_send_to_queue`, rather than fired off all at once, because a
+    /// name collision needs the same Replace/Skip/Rename modal
+    /// `paste_clipboard_native` already uses - and that modal has only one
+    /// slot (`pending_paste_conflict`), so a second destination's conflict
+    /// can't be raised until the first one's is resolved or cancelled.
+    fn send_to_folders(&mut self, paths: Vec<PathBuf>, target_dirs: Vec<PathBuf>, is_cut: bool) {
+        if paths.is_empty() || target_dirs.is_empty() {
+            return;
+        }
+        self.pending_send_to = Some(PendingSendTo {
+            paths,
+            remaining: target_dirs.into(),
+            is_cut,
+            sticky_action: None,
+        });
+        self.advance_send_to_queue();
+    }
+
+    /// Pops the next destination off a pending Send To batch and either
+    /// starts it immediately (no name collision) or holds it for the user
+    /// via `pending_paste_conflict`, same as a single-destination paste.
+    /// Keeps popping and starting destinations with no conflict in one go;
+    /// stops at the first one that needs the modal, resuming from
+    /// `poll_pending_conflict_resolution` (a clean resolution) or the
+    /// paste-conflict modal's own Cancel handler (skips that destination)
+    /// once the user has dealt with it. A no-op when no batch is pending -
+    /// safe to call after every ordinary paste-conflict resolution too.
+    ///
+    /// If `pending.sticky_action` is set (the user picked "Replace All"/
+    /// "Skip All"/"Rename All" on an earlier conflict in this same batch,
+    /// rather than a plain one-destination Replace/Skip/Rename), a
+    /// conflicting destination is resolved automatically instead of
+    /// stopping for the modal: this reuses the *exact* same
+    /// `pending_paste_conflict` + `handle_paste_conflict_resolution` path a
+    /// manual click would (so the same safety logic - recycle-before-
+    /// replace, safe rename staging - applies identically), just calling
+    /// `handle_paste_conflict_resolution` immediately instead of waiting for
+    /// a button click. That call is itself async (spawns a background
+    /// thread and only sets `pending_conflict_resolution`), so this
+    /// function returns right after starting it rather than looping again -
+    /// `poll_pending_conflict_resolution` already calls this function once
+    /// that resolution lands, continuing the batch (and applying the same
+    /// sticky action again if the *next* destination also collides).
+    fn advance_send_to_queue(&mut self) {
+        loop {
+            let Some(pending) = &mut self.pending_send_to else {
+                return;
+            };
+            let Some(target_dir) = pending.remaining.pop_front() else {
+                self.pending_send_to = None;
+                return;
+            };
+            let paths = pending.paths.clone();
+            let is_cut = pending.is_cut;
+            let sticky_action = pending.sticky_action;
+
+            let before_entries = Self::directory_child_paths(&target_dir);
+            let side = self.focused_split;
+
+            let conflicting_names: Vec<String> = paths
+                .iter()
+                .filter_map(|p| {
+                    let name = p.file_name()?.to_string_lossy().to_string();
+                    target_dir.join(&name).exists().then_some(name)
+                })
+                .collect();
+
+            if !conflicting_names.is_empty() {
+                self.pending_paste_conflict = Some(PasteConflictPrompt {
+                    paths,
+                    target_dir,
+                    before_entries,
+                    is_cut,
+                    side,
+                    conflicting_names,
+                });
+                if let Some(action) = sticky_action {
+                    self.handle_paste_conflict_resolution(action);
+                }
+                return;
+            }
+
+            self.start_robocopy_paste(
+                paths,
+                target_dir,
+                before_entries,
+                is_cut,
+                side,
+                HashMap::new(),
+                HashMap::new(),
+                PasteOrigin::UserAction,
+            );
         }
     }
 
@@ -1881,6 +2102,9 @@ impl MainWindow {
             },
             paths.len(),
             path_display_label(&target_dir),
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
         );
 
         let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
@@ -2059,6 +2283,10 @@ impl MainWindow {
             resolved.replaced,
             PasteOrigin::UserAction,
         );
+        // No-op unless this resolution was one destination of a Send To
+        // batch (`pending_send_to` is only ever `Some` mid-batch) - moves
+        // on to the next queued destination, if any.
+        self.advance_send_to_queue();
     }
 
     /// Draws the Replace/Skip/Rename/Cancel modal for a paste held back by
@@ -2084,7 +2312,16 @@ impl MainWindow {
             (count, preview, more)
         };
 
+        // Only a Send To batch (copying/moving the same selection into
+        // several destinations in one go) ever has more than one
+        // destination left to resolve conflicts for, so the "All" buttons
+        // - which set a sticky resolution for every *remaining* destination
+        // in the batch, not just this one - only make sense (and only
+        // render) while one is in progress.
+        let show_apply_all = self.pending_send_to.is_some();
+
         let mut resolution: Option<PasteConflictAction> = None;
+        let mut apply_to_all = false;
         let mut cancelled = false;
 
         // Dimming scrim behind the dialog, same pattern as the About
@@ -2250,13 +2487,77 @@ impl MainWindow {
                                     },
                                 );
                             });
+
+                            // "Apply to all remaining destinations" row -
+                            // only shown mid-Send-To-batch (see
+                            // `show_apply_all`'s own doc comment above).
+                            // Saves clicking Replace/Skip/Rename separately
+                            // for every destination a multi-folder Send To
+                            // collides at.
+                            if show_apply_all {
+                                ui.add_space(10.0);
+                                ui.separator();
+                                ui.add_space(10.0);
+                                ui.label(
+                                    egui::RichText::new(
+                                        self.i18n.tr("paste_conflict_apply_to_all"),
+                                    )
+                                    .size(palette.text_size)
+                                    .color(palette.text_normal.gamma_multiply(0.75)),
+                                );
+                                ui.add_space(6.0);
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if primary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_rename_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Rename);
+                                            apply_to_all = true;
+                                        }
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_skip_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Skip);
+                                            apply_to_all = true;
+                                        }
+                                        ui.add_space(6.0);
+                                        if secondary_dialog_button(
+                                            ui,
+                                            palette,
+                                            &self.i18n.tr("paste_conflict_replace_all"),
+                                        )
+                                        .clicked()
+                                        {
+                                            resolution = Some(PasteConflictAction::Replace);
+                                            apply_to_all = true;
+                                        }
+                                    },
+                                );
+                            }
                         });
                     });
             });
 
         if cancelled {
             self.pending_paste_conflict = None;
+            // Cancelling one destination's conflict skips only that
+            // destination - the rest of a Send To batch (if any) still
+            // continues; a no-op for an ordinary single-destination paste.
+            self.advance_send_to_queue();
         } else if let Some(action) = resolution {
+            if apply_to_all && let Some(pending) = self.pending_send_to.as_mut() {
+                pending.sticky_action = Some(action);
+            }
             self.handle_paste_conflict_resolution(action);
         }
     }
@@ -2569,7 +2870,14 @@ impl MainWindow {
                 }
             }
 
-            self.load_path();
+            // Reload the pane the paste actually happened in
+            // (`pending.side`), not whichever pane happens to be focused by
+            // the time this async job finishes - those can differ (e.g. the
+            // user pasted into the other pane, or switched panes again while
+            // a large copy was still running), and reloading the wrong one
+            // left the pane that actually received the files showing stale
+            // content until something else refreshed it.
+            self.load_view(pending.side);
         }
     }
 
@@ -3139,17 +3447,32 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ResetToDefaults => {
-                    // Custom context menu entries and tab groups are
-                    // user-authored content, like favorites/tags - a general
-                    // settings reset shouldn't wipe them out.
+                    // Custom context menu entries, tab groups, and Send To
+                    // groups are user-authored content, like favorites/tags -
+                    // a general settings reset shouldn't wipe them out.
                     let custom_context_menu = std::mem::take(
                         &mut self.settings_window.current_settings.custom_context_menu,
                     );
+                    let custom_context_menu_enabled = self
+                        .settings_window
+                        .current_settings
+                        .custom_context_menu_enabled;
                     let tab_groups =
                         std::mem::take(&mut self.settings_window.current_settings.tab_groups);
+                    let send_to =
+                        std::mem::take(&mut self.settings_window.current_settings.send_to);
+                    let send_to_context_menu_enabled = self
+                        .settings_window
+                        .current_settings
+                        .send_to_context_menu_enabled;
                     self.settings_window.current_settings = Default::default();
                     self.settings_window.current_settings.custom_context_menu = custom_context_menu;
+                    self.settings_window.current_settings.custom_context_menu_enabled =
+                        custom_context_menu_enabled;
                     self.settings_window.current_settings.tab_groups = tab_groups;
+                    self.settings_window.current_settings.send_to = send_to;
+                    self.settings_window.current_settings.send_to_context_menu_enabled =
+                        send_to_context_menu_enabled;
                     if let Some(hwnd) = self.hwnd {
                         crate::gui::windows::windowsoverrides::set_window_mode(
                             hwnd,
@@ -3162,7 +3485,7 @@ impl MainWindow {
                     self.persist_favorites();
                 }
                 SettingsAction::ExportSettings => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Settings", &["json"])
                         .set_file_name("eden_explorer_settings.json")
                         .save_file()
@@ -3187,7 +3510,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ImportSettings => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Settings", &["json"])
                         .pick_file()
                     {
@@ -3201,7 +3524,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ExportContextMenu => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Context Menu", &["json"])
                         .set_file_name("eden_explorer_context_menu.json")
                         .save_file()
@@ -3223,7 +3546,7 @@ impl MainWindow {
                     }
                 }
                 SettingsAction::ImportContextMenu => {
-                    if let Some(path) = rfd::FileDialog::new()
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Context Menu", &["json"])
                         .pick_file()
                     {
@@ -3237,6 +3560,9 @@ impl MainWindow {
                                         bundle.entries;
                                     crate::core::context_menu_settings::save_custom_context_menu(
                                         &self.settings_window.current_settings.custom_context_menu,
+                                        self.settings_window
+                                            .current_settings
+                                            .custom_context_menu_enabled,
                                     );
                                 }
                                 Err(err) => eprintln!("Failed to parse context menu file: {}", err),
@@ -3579,14 +3905,26 @@ impl MainWindow {
                 self.open_new_tab(path);
                 self.load_path();
             }
-            if let Some(paths) = action.open_group {
-                for path in paths {
-                    self.open_new_tab(path);
+            if let Some(entries) = action.open_group {
+                for entry in entries {
+                    self.open_new_tab_with_split(entry.path, entry.split_path);
                 }
                 self.load_path();
+                // `load_path()` only loads the newly-active tab's Primary
+                // side (`self.focused_split` stays `Primary` here) - every
+                // *other* opened tab gets its content loaded lazily once the
+                // user actually clicks it (see the `action.activate` handler
+                // above, which loads both sides), but this last tab never
+                // receives that click, so its own Secondary split - if this
+                // entry had one - would otherwise stay unloaded and show as
+                // an incorrect "this folder is empty" until switched away
+                // from and back.
+                if self.active_tab().split_view.is_some() {
+                    self.load_view(SplitSide::Secondary);
+                }
             }
-            if let Some(paths) = action.replace_with_group {
-                if !paths.is_empty() {
+            if let Some(entries) = action.replace_with_group {
+                if !entries.is_empty() {
                     // Capture sort settings before clearing - `self.tabs`
                     // must stay non-empty for `active_tab()`'s indexing, so
                     // this can't reuse `open_new_tab` (which reads it) after
@@ -3598,24 +3936,41 @@ impl MainWindow {
                     self.tabs.clear();
                     self.focused_split = SplitSide::Primary;
                     let current_settings = self.settings_window.current_settings.clone();
-                    for path in paths {
-                        let nav = Navigation::new(path);
+                    for entry in entries {
+                        let nav = Navigation::new(entry.path);
                         let id = self.next_tab_id;
                         self.next_tab_id += 1;
-                        self.tabs
-                            .push(TabState::new(id, nav, sort_column, sort_ascending));
+                        let mut tab = TabState::new(id, nav, sort_column, sort_ascending);
                         apply_directory_settings_to_view(
-                            &mut self.tabs.last_mut().unwrap().primary_view,
+                            &mut tab.primary_view,
                             &current_settings,
                             DisplayModeFallback::Default,
                         );
+                        if let Some(split_path) = entry.split_path {
+                            let mut split_view =
+                                TabView::new(Navigation::new(split_path), sort_column, sort_ascending);
+                            apply_directory_settings_to_view(
+                                &mut split_view,
+                                &current_settings,
+                                DisplayModeFallback::Default,
+                            );
+                            tab.split_view = Some(split_view);
+                        }
+                        self.tabs.push(tab);
                     }
                     self.active_tab = 0;
                     self.mark_tab_infos_dirty();
                     self.load_path();
+                    // Same reasoning as `action.open_group` above: only the
+                    // active tab's Primary side gets loaded here, so its own
+                    // Secondary split (if this entry had one) needs loading
+                    // explicitly too.
+                    if self.active_tab().split_view.is_some() {
+                        self.load_view(SplitSide::Secondary);
+                    }
                 }
             }
-            if let Some((name, path)) = action.add_tab_to_new_group {
+            if let Some((name, path, split_path)) = action.add_tab_to_new_group {
                 let id = crate::core::tab_groups::next_group_id(
                     &self.settings_window.current_settings.tab_groups,
                 );
@@ -3623,12 +3978,12 @@ impl MainWindow {
                     crate::core::tab_groups::TabGroup {
                         id,
                         name,
-                        paths: vec![path],
+                        entries: vec![crate::core::tab_groups::TabGroupEntry { path, split_path }],
                     },
                 );
                 self.save_app_settings_to_disk();
             }
-            if let Some((group_id, path)) = action.add_tab_to_existing_group {
+            if let Some((group_id, path, split_path)) = action.add_tab_to_existing_group {
                 if let Some(group) = self
                     .settings_window
                     .current_settings
@@ -3637,7 +3992,9 @@ impl MainWindow {
                     .find(|g| g.id == group_id)
                 {
                     // Duplicates are allowed on purpose - see `TabGroup`.
-                    group.paths.push(path);
+                    group
+                        .entries
+                        .push(crate::core::tab_groups::TabGroupEntry { path, split_path });
                 }
                 self.save_app_settings_to_disk();
             }
@@ -3704,6 +4061,8 @@ impl MainWindow {
                         _default_display_mode,
                         _default_search_scope,
                         _search_engine,
+                        _auto_open_notification_panel,
+                        _show_operation_toasts,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -3913,6 +4272,9 @@ impl MainWindow {
             sources.len(),
             path_display_label(&target_dir),
             crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+            self.settings_window
+                .current_settings
+                .auto_open_notification_panel,
         );
 
         {
@@ -4581,6 +4943,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             match &action {
                 ItemViewerAction::CreateFolder
                 | ItemViewerAction::CreateFile
+                | ItemViewerAction::CreateShortcutHere
+                | ItemViewerAction::Context(ItemViewerContextAction::CreateShortcut(_))
                 | ItemViewerAction::OpenTerminal
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
@@ -4665,6 +5029,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::CreateFolder => explorer.create_new_folder(),
             ItemViewerAction::CreateFile => explorer.create_new_file(),
+            ItemViewerAction::CreateShortcutHere => explorer.create_shortcut_here(),
             ItemViewerAction::RefreshCurrentDirectory => {
                 clear_clipboard_files();
                 explorer.load_path();
@@ -5207,7 +5572,7 @@ impl MainWindow {
                 }
                 .clone();
 
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                     .add_filter("Theme JSON", &["json"])
                     .set_file_name(match mode {
                         ThemeMode::Dark => "eden_theme_dark.json",
@@ -5230,7 +5595,7 @@ impl MainWindow {
                 }
             }
             ThemeCustomizerAction::ImportTheme(mode) => {
-                if let Some(path) = rfd::FileDialog::new()
+                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                     .add_filter("Theme JSON", &["json"])
                     .pick_file()
                 {

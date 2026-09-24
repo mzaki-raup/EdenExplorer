@@ -116,11 +116,17 @@ impl NotificationsState {
     /// bell. The panel still closes the normal way (clicking elsewhere, or
     /// clicking the bell again - see the `clicked_elsewhere` handling in
     /// `draw_notifications_button`), so this doesn't pin it open forever.
+    ///
+    /// `auto_open_panel` gates only the panel auto-opening (Settings ->
+    /// Behavior's "Automatically show notification panel" toggle) - the
+    /// toast's own visibility is a separate, later decision made by
+    /// `draw_toast`'s own caller, not by this method.
     pub fn start_operation(
         &mut self,
         kind: FileOpKind,
         item_count: usize,
         destination_label: String,
+        auto_open_panel: bool,
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -141,7 +147,9 @@ impl NotificationsState {
             op_id: id,
             shown_at: Instant::now(),
         });
-        self.panel_open = true;
+        if auto_open_panel {
+            self.panel_open = true;
+        }
         id
     }
 
@@ -254,8 +262,9 @@ impl NotificationsState {
         item_count: usize,
         destination_label: String,
         status: FileOpStatus,
+        auto_open_panel: bool,
     ) -> u64 {
-        let id = self.start_operation(kind, item_count, destination_label);
+        let id = self.start_operation(kind, item_count, destination_label, auto_open_panel);
         self.finish_operation(id, status);
         id
     }

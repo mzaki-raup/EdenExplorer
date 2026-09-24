@@ -19,8 +19,9 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::settings::{
-    count_badge, empty_state_hint, entry_card, master_detail_column_size, no_selection_hint,
-    reorder_buttons, setting_checkbox, setting_label, setting_row, settings_section,
+    count_badge, empty_state_hint, entry_card, info_icon, master_detail_column_size,
+    no_selection_hint, reorder_buttons, setting_checkbox, setting_label, setting_row,
+    settings_section,
 };
 use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
@@ -48,6 +49,34 @@ pub fn draw_custom_context_menu_settings(
         Some((&i18n.tr("tooltip_settings_custom_context_menu"), palette)),
         palette,
     );
+    ui.add_space(8.0);
+
+    settings_section(ui, palette, |ui| {
+        ui.horizontal(|ui| {
+            let enabled_toggle = !settings.current_settings.custom_context_menu.is_empty();
+            ui.add_enabled_ui(enabled_toggle, |ui| {
+                if setting_checkbox(
+                    ui,
+                    palette,
+                    &mut settings.current_settings.custom_context_menu_enabled,
+                    RichText::new(i18n.tr("custom_context_menu_show_in_context_menu")),
+                    "custom_context_menu_toggle",
+                ) {
+                    action = Some(SettingsAction::ApplySettings);
+                }
+            });
+            info_icon(
+                ui,
+                &i18n.tr(if enabled_toggle {
+                    "tooltip_custom_context_menu_show_in_context_menu"
+                } else {
+                    "tooltip_custom_context_menu_show_in_context_menu_disabled"
+                }),
+                palette,
+            );
+        });
+    });
+
     ui.add_space(6.0);
 
     ui.horizontal(|ui| {
@@ -363,6 +392,12 @@ pub fn draw_custom_context_menu_settings(
                 .first()
                 .map(|e| e.id);
         }
+        // The context-menu toggle is meaningless with zero entries - reset
+        // it rather than leaving a dangling "enabled" flag with nothing to
+        // show, same as `core::send_to`'s own design.
+        if settings.current_settings.custom_context_menu.is_empty() {
+            settings.current_settings.custom_context_menu_enabled = false;
+        }
         changed = true;
     }
 
@@ -491,7 +526,7 @@ fn draw_entry_fields(
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         if eden_button(ui, palette, &i18n.tr("custom_context_menu_icon_browse")).clicked() {
-            if let Some(path) = rfd::FileDialog::new()
+            if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                 .add_filter("Icon/Image", &["ico", "png", "jpg", "jpeg", "bmp", "gif"])
                 .add_filter("All files", &["*"])
                 .pick_file()
@@ -591,7 +626,7 @@ fn draw_entry_fields(
             },
             |ui| {
                 if eden_button(ui, palette, regular::FOLDER_OPEN).clicked() {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_file() {
                         entry.executable = path.display().to_string();
                         changed = true;
                     }

@@ -50,6 +50,10 @@ pub struct TabInfo {
     pub id: u64,
     pub title: String,
     pub full_path: PathBuf,
+    /// The tab's own Secondary split-view path, if it currently has one open
+    /// - lets "Add to New/Existing Group" capture a dual-pane tab as a
+    /// single `TabGroupEntry` instead of losing the split.
+    pub split_path: Option<PathBuf>,
     pub is_pinned: bool,
 }
 
@@ -70,19 +74,21 @@ pub struct TabsAction {
     /// (from_index, to_index) in the pre-move tab list, from dragging a tab to
     /// reorder it.
     pub reorder: Option<(usize, usize)>,
-    /// Open every path in a saved tab group as a new tab, alongside whatever
-    /// tabs are already open. Duplicated paths in the group intentionally
-    /// open as separate tabs.
-    pub open_group: Option<Vec<PathBuf>>,
+    /// Open every entry in a saved tab group as a new tab, alongside
+    /// whatever tabs are already open. Duplicated entries in the group
+    /// intentionally open as separate tabs; an entry with a `split_path`
+    /// opens as a dual-pane tab.
+    pub open_group: Option<Vec<crate::core::tab_groups::TabGroupEntry>>,
     /// Close every current tab and replace them with a saved tab group's
-    /// paths (one tab per entry, duplicates included).
-    pub replace_with_group: Option<Vec<PathBuf>>,
+    /// entries (one tab per entry, duplicates included).
+    pub replace_with_group: Option<Vec<crate::core::tab_groups::TabGroupEntry>>,
     /// Create a brand-new tab group with this name, containing just this one
-    /// path (from right-clicking a tab and choosing "Add to New Group").
-    pub add_tab_to_new_group: Option<(String, PathBuf)>,
-    /// Append this path to an existing group (by id) - allowed to duplicate
-    /// a path already in that group.
-    pub add_tab_to_existing_group: Option<(u64, PathBuf)>,
+    /// tab's `(path, split_path)` (from right-clicking a tab and choosing
+    /// "Add to New Group").
+    pub add_tab_to_new_group: Option<(String, PathBuf, Option<PathBuf>)>,
+    /// Append this tab's `(path, split_path)` to an existing group (by id) -
+    /// allowed to duplicate an entry already in that group.
+    pub add_tab_to_existing_group: Option<(u64, PathBuf, Option<PathBuf>)>,
     /// Add or remove this tab's folder from the sidebar Favorites list
     /// (from right-clicking a tab and choosing "Add to Favorites"/"Remove
     /// from Favorites").

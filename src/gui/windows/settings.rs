@@ -36,19 +36,21 @@ pub enum SettingsCategory {
     Appearance,
     Favorites,
     ContextMenu,
+    SendTo,
     TabGroups,
     Tags,
     Advanced,
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 9] = [
+    pub const ALL: [SettingsCategory; 10] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
         SettingsCategory::Appearance,
         SettingsCategory::Favorites,
         SettingsCategory::ContextMenu,
+        SettingsCategory::SendTo,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
         SettingsCategory::Advanced,
@@ -62,6 +64,7 @@ impl SettingsCategory {
             SettingsCategory::Appearance => regular::PALETTE,
             SettingsCategory::Favorites => regular::STAR,
             SettingsCategory::ContextMenu => regular::LIST,
+            SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
             SettingsCategory::Advanced => regular::WRENCH,
@@ -76,6 +79,7 @@ impl SettingsCategory {
             SettingsCategory::Appearance => i18n.tr("settings_category_appearance"),
             SettingsCategory::Favorites => i18n.tr("settings_category_favorites"),
             SettingsCategory::ContextMenu => i18n.tr("settings_category_context_menu"),
+            SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
             SettingsCategory::Advanced => i18n.tr("settings_category_advanced"),
@@ -142,8 +146,13 @@ impl Default for AppSettings {
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             search_engine: crate::core::everything::SearchEngine::default(),
+            auto_open_notification_panel: true,
+            show_operation_toasts: true,
             custom_context_menu: Vec::new(),
+            custom_context_menu_enabled: false,
             tab_groups: Vec::new(),
+            send_to: Vec::new(),
+            send_to_context_menu_enabled: false,
         }
     }
 }
@@ -607,6 +616,7 @@ pub fn draw_settings_page(
                 SettingsCategory::Appearance
                     | SettingsCategory::Favorites
                     | SettingsCategory::ContextMenu
+                    | SettingsCategory::SendTo
                     | SettingsCategory::TabGroups
                     | SettingsCategory::Tags
             );
@@ -640,6 +650,13 @@ pub fn draw_settings_page(
                     }
                     SettingsCategory::ContextMenu => {
                         if let Some(a) = crate::gui::windows::context_menu_settings_ui::draw_custom_context_menu_settings(
+                            ui, i18n, settings, palette, icon_cache,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::SendTo => {
+                        if let Some(a) = crate::gui::windows::send_to_ui::draw_send_to_settings(
                             ui, i18n, settings, palette, icon_cache,
                         ) {
                             action = Some(a);
@@ -1055,6 +1072,44 @@ fn draw_behavior_section(
                 palette,
             );
         });
+
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.auto_open_notification_panel,
+                RichText::new(i18n.tr("settings_auto_open_notification_panel"))
+                    .color(palette.text_normal),
+                "settings_auto_open_notification_panel",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(
+                ui,
+                &i18n.tr("tooltip_settings_auto_open_notification_panel"),
+                palette,
+            );
+        });
+
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.show_operation_toasts,
+                RichText::new(i18n.tr("settings_show_operation_toasts"))
+                    .color(palette.text_normal),
+                "settings_show_operation_toasts",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(
+                ui,
+                &i18n.tr("tooltip_settings_show_operation_toasts"),
+                palette,
+            );
+        });
     });
 
     settings_section(ui, palette, |ui| {
@@ -1242,7 +1297,7 @@ fn draw_startup_section(
                     .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
                     .clicked()
                 {
-                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog().pick_folder() {
                         settings.current_settings.start_path = Some(path);
                         *action = Some(SettingsAction::ApplySettings);
                     }

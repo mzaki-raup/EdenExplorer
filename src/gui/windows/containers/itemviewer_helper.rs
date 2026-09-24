@@ -303,6 +303,147 @@ fn custom_icon_glyph(icon: &CustomContextMenuIcon, is_submenu: bool) -> &str {
     }
 }
 
+/// Resolves a `SendToGroup`'s own icon to whatever `menu_item_button`/
+/// `Button::image_and_text` needs: a real texture for a custom image icon
+/// (falling back to the generic Send To glyph while it's still loading), or
+/// a glyph string otherwise. Mirrors `custom_icon_texture`/
+/// `custom_icon_glyph` above, just for `SendToIcon` instead of
+/// `CustomContextMenuIcon` - kept separate since the two icon enums aren't
+/// related and a shared helper would need an awkward trait/conversion for
+/// no real benefit with only two call sites.
+fn send_to_group_icon<'a>(
+    icon_cache: &'a IconCache,
+    icon: &crate::core::send_to::SendToIcon,
+) -> (Option<egui::TextureHandle>, &'a str) {
+    match icon {
+        crate::core::send_to::SendToIcon::Custom(path) => {
+            (icon_cache.get_custom_file_icon(path), regular::PAPER_PLANE_TILT)
+        }
+        crate::core::send_to::SendToIcon::Glyph(_) => (None, ""),
+        crate::core::send_to::SendToIcon::None => (None, regular::PAPER_PLANE_TILT),
+    }
+}
+
+/// Draws one group as a clickable menu entry (icon + name, disabled with an
+/// explanatory hover text if it has no folders yet), emitting
+/// `ItemViewerContextAction::SendTo(context_paths, group.folders, is_cut)`
+/// on click - copying or moving (per `is_cut`) the current selection into
+/// *every* folder in the group at once, not a per-folder pick. Shared by
+/// both the "Copy" and "Move" branches of `draw_send_to_menu` below, since a
+/// group's own row looks and behaves identically under either one - only
+/// `is_cut` (which branch it's drawn under) differs.
+fn draw_send_to_group_entry(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    group: &crate::core::send_to::SendToGroup,
+    context_paths: &[PathBuf],
+    is_cut: bool,
+    action: &mut Option<ItemViewerAction>,
+) {
+    let label = if group.name.is_empty() {
+        i18n.tr("send_to_untitled")
+    } else {
+        group.name.clone()
+    };
+    let has_folders = !group.folders.is_empty();
+
+    ui.add_enabled_ui(has_folders, |ui| {
+        let (texture, glyph) = send_to_group_icon(icon_cache, &group.icon);
+        let response = if let Some(texture) = texture {
+            ui.add(egui::Button::image_and_text(
+                egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                &label,
+            ))
+        } else if let crate::core::send_to::SendToIcon::Glyph(g) = &group.icon {
+            menu_item_button(ui, g, &label)
+        } else {
+            menu_item_button(ui, glyph, &label)
+        };
+        let response = if has_folders {
+            response
+        } else {
+            response.on_hover_text(i18n.tr("send_to_no_folders"))
+        };
+
+        if response.clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::SendTo(
+                context_paths.to_vec(),
+                group.folders.clone(),
+                is_cut,
+            )));
+            ui.close();
+        }
+    });
+}
+
+/// Draws the "Send To" section: a single top-level "Send To" submenu with
+/// two branches, "Copy" and "Move", each listing the groups (see
+/// `core::send_to`) configured for that operation (`SendToGroup::mode`) -
+/// i.e. right-click → Send To → Copy → My Destinations. A branch with no
+/// groups configured for it is omitted entirely rather than shown empty,
+/// same reasoning as the top-level Send To entry itself only appearing once
+/// at least one group exists. Callers only invoke this once at least one
+/// group exists and the enable toggle is on (see
+/// `handle_context_menu_actions`).
+fn draw_send_to_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    groups: &[crate::core::send_to::SendToGroup],
+    context_paths: &[PathBuf],
+    action: &mut Option<ItemViewerAction>,
+) {
+    use crate::core::send_to::SendToMode;
+
+    let copy_groups: Vec<&crate::core::send_to::SendToGroup> =
+        groups.iter().filter(|g| g.mode == SendToMode::Copy).collect();
+    let move_groups: Vec<&crate::core::send_to::SendToGroup> =
+        groups.iter().filter(|g| g.mode == SendToMode::Move).collect();
+
+    ui.menu_button(
+        format!("{}  {}", regular::PAPER_PLANE_TILT, i18n.tr("send_to_menu")),
+        |ui| {
+            if !copy_groups.is_empty() {
+                ui.menu_button(
+                    format!("{}  {}", regular::COPY, i18n.tr("send_to_mode_copy")),
+                    |ui| {
+                        for group in &copy_groups {
+                            draw_send_to_group_entry(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                group,
+                                context_paths,
+                                false,
+                                action,
+                            );
+                        }
+                    },
+                );
+            }
+            if !move_groups.is_empty() {
+                ui.menu_button(
+                    format!("{}  {}", regular::SCISSORS, i18n.tr("send_to_mode_move")),
+                    |ui| {
+                        for group in &move_groups {
+                            draw_send_to_group_entry(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                group,
+                                context_paths,
+                                true,
+                                action,
+                            );
+                        }
+                    },
+                );
+            }
+        },
+    );
+}
+
 pub fn handle_context_menu_actions(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -502,11 +643,17 @@ pub fn handle_context_menu_actions(
 
     let has_file = context_paths.iter().any(|p| !p.is_dir());
     let has_folder = context_paths.iter().any(|p| p.is_dir());
+    let ccm_entries: &[CustomContextMenuEntry] =
+        if settings_window.current_settings.custom_context_menu_enabled {
+            &settings_window.current_settings.custom_context_menu
+        } else {
+            &[]
+        };
     draw_custom_context_menu_group(
         ui,
         i18n,
         icon_cache,
-        &settings_window.current_settings.custom_context_menu,
+        ccm_entries,
         has_file,
         has_folder,
         false,
@@ -592,6 +739,34 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    if settings_window.current_settings.send_to_context_menu_enabled
+        && !settings_window.current_settings.send_to.is_empty()
+    {
+        ui.separator();
+        draw_send_to_menu(
+            ui,
+            i18n,
+            icon_cache,
+            &settings_window.current_settings.send_to,
+            &context_paths,
+            action,
+        );
+    }
+
+    // Create Shortcut / Checksum / Properties - grouped together as their
+    // own trailing section, separated from Delete (and Send To, if shown)
+    // above.
+    ui.separator();
+
+    if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::CreateShortcut(context_paths.clone()),
+        ));
+        ui.close();
+    }
+
     // Checksums - single real file only (no meaningful "checksum of a
     // folder"/"checksum of 3 files at once" UX).
     if context_paths.len() == 1
@@ -646,60 +821,57 @@ pub fn draw_windows_context_submenu(
     cache_key: Vec<PathBuf>,
     load_menu: impl FnOnce(HWND) -> windows::core::Result<ShellContextMenu>,
 ) {
-    let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
-        i18n.tr("contextmenu_hide_windows_menu_items")
-    } else {
-        i18n.tr("contextmenu_show_windows_menu_items")
-    };
+    ui.menu_button(
+        format!("{}  {}", regular::WINDOWS_LOGO, i18n.tr("contextmenu_windows_menu_item")),
+        |ui| {
+            apply_eden_visual_overrides(ui, palette);
+            apply_eden_visual_color_overrides(ui, palette);
+            apply_eden_text_overrides(ui, palette);
 
-    ui.menu_button(format!("{}  {toggle_label}", regular::WINDOWS_LOGO), |ui| {
-        apply_eden_visual_overrides(ui, palette);
-        apply_eden_visual_color_overrides(ui, palette);
-        apply_eden_text_overrides(ui, palette);
+            if let Some(hwnd) = hwnd {
+                let cache_miss = explorer_state
+                    .windows_context_menu_cache
+                    .as_ref()
+                    .map(|cache| cache.selection != cache_key)
+                    .unwrap_or(true);
 
-        if let Some(hwnd) = hwnd {
-            let cache_miss = explorer_state
-                .windows_context_menu_cache
-                .as_ref()
-                .map(|cache| cache.selection != cache_key)
-                .unwrap_or(true);
-
-            if cache_miss {
-                explorer_state.windows_context_menu_cache = load_menu(hwnd)
-                    .map(
-                        |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
-                            selection: cache_key.clone(),
-                            menu,
-                        },
-                    )
-                    .map(Some)
-                    .unwrap_or_else(|err| {
-                        eprintln!("Windows menu load failed: {}", err);
-                        None
-                    });
-            }
-
-            if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-                if cache.menu.items().is_empty() {
-                    ui.label("No Windows menu items for this selection.");
-                } else {
-                    let row_height = palette.text_size + 6.0;
-                    let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
-                    let max_height = ui.ctx().viewport_rect().height() * 0.8;
-                    ScrollArea::vertical()
-                        .max_height(max_height)
-                        .min_scrolled_height(min_height)
-                        .show(ui, |ui| {
-                            draw_windows_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
+                if cache_miss {
+                    explorer_state.windows_context_menu_cache = load_menu(hwnd)
+                        .map(
+                            |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
+                                selection: cache_key.clone(),
+                                menu,
+                            },
+                        )
+                        .map(Some)
+                        .unwrap_or_else(|err| {
+                            eprintln!("Windows menu load failed: {}", err);
+                            None
                         });
                 }
+
+                if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
+                    if cache.menu.items().is_empty() {
+                        ui.label("No Windows menu items for this selection.");
+                    } else {
+                        let row_height = palette.text_size + 6.0;
+                        let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
+                        let max_height = ui.ctx().viewport_rect().height() * 0.8;
+                        ScrollArea::vertical()
+                            .max_height(max_height)
+                            .min_scrolled_height(min_height)
+                            .show(ui, |ui| {
+                                draw_windows_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
+                            });
+                    }
+                } else {
+                    ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+                }
             } else {
-                ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+                ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
             }
-        } else {
-            ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
-        }
-    });
+        },
+    );
 }
 
 /// Renders one level of a `ShellContextMenu`'s items, recursing into an
@@ -3016,6 +3188,10 @@ pub fn draw_empty_folder_context_menu(
             }
             if ui.button("New File").clicked() {
                 *action = Some(ItemViewerAction::CreateFile);
+                ui.close();
+            }
+            if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
+                *action = Some(ItemViewerAction::CreateShortcutHere);
                 ui.close();
             }
             if ui.button("Refresh").clicked() {

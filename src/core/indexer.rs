@@ -257,6 +257,10 @@ struct AppSettingsSnapshot {
     default_search_scope: crate::core::everything::DefaultSearchScope,
     #[serde(default)]
     search_engine: crate::core::everything::SearchEngine,
+    #[serde(default = "default_true")]
+    auto_open_notification_panel: bool,
+    #[serde(default = "default_true")]
+    show_operation_toasts: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,6 +346,8 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             default_display_mode: ItemViewerDisplayMode::Details,
             default_search_scope: crate::core::everything::DefaultSearchScope::default(),
             search_engine: crate::core::everything::SearchEngine::default(),
+            auto_open_notification_panel: true,
+            show_operation_toasts: true,
         }
     }
 }
@@ -1092,6 +1098,8 @@ pub fn load_app_settings() -> (
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
     crate::core::everything::SearchEngine,
+    bool,
+    bool,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -1139,6 +1147,8 @@ pub fn load_app_settings() -> (
         snapshot.default_display_mode,
         snapshot.default_search_scope,
         snapshot.search_engine,
+        snapshot.auto_open_notification_panel,
+        snapshot.show_operation_toasts,
     )
 }
 
@@ -1173,6 +1183,8 @@ fn default_app_settings(
     ItemViewerDisplayMode,
     crate::core::everything::DefaultSearchScope,
     crate::core::everything::SearchEngine,
+    bool,
+    bool,
 ) {
     (
         true,
@@ -1203,6 +1215,8 @@ fn default_app_settings(
         ItemViewerDisplayMode::Details,
         crate::core::everything::DefaultSearchScope::default(),
         crate::core::everything::SearchEngine::default(),
+        true,
+        true,
     )
 }
 
@@ -1235,6 +1249,8 @@ pub fn save_app_settings(
     default_display_mode: ItemViewerDisplayMode,
     default_search_scope: crate::core::everything::DefaultSearchScope,
     search_engine: crate::core::everything::SearchEngine,
+    auto_open_notification_panel: bool,
+    show_operation_toasts: bool,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -1270,6 +1286,8 @@ pub fn save_app_settings(
         default_display_mode,
         default_search_scope,
         search_engine,
+        auto_open_notification_panel,
+        show_operation_toasts,
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

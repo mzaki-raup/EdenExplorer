@@ -67,6 +67,21 @@ pub fn draw_icon_picker_button(
                 };
 
                 ui.add_space(4.0);
+                // `ScrollArea::max_height` is a cap, not a guarantee - it
+                // computes `available_outer.size().at_most(max_size)`, so if
+                // the popup happens to open with less than 280px of real
+                // screen room below it (which depends entirely on where on
+                // screen the toggle button that opened it sits), the grid
+                // silently renders shorter there than it does for a button
+                // positioned higher up - exactly why this picker's own list
+                // showed a visibly different height in Send To vs Custom
+                // Context Menu despite both calling this same function.
+                // Reserving the height explicitly first (same fix already
+                // used for the notifications bell panel, see CLAUDE.md's
+                // entry on it) makes `available_outer` unable to under-report
+                // space, so the grid renders at a consistent height
+                // everywhere this picker is opened from.
+                ui.set_min_height(280.0);
                 egui::ScrollArea::vertical()
                     .id_salt("icon_picker_scroll")
                     .max_height(280.0)

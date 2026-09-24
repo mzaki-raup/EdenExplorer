@@ -111,6 +111,12 @@ pub struct MainWindow {
     /// Polled once per frame by `poll_pending_conflict_resolution`.
     pub(crate) pending_conflict_resolution:
         Option<crossbeam_channel::Receiver<crate::gui::windows::mainwindow_imp::ResolvedConflictPaste>>,
+    /// A Send To batch copying the same selection to every folder in a
+    /// group, one destination at a time - see `PendingSendTo`'s doc comment
+    /// in `mainwindow_imp.rs`. Advanced by `advance_send_to_queue`, which
+    /// pops the next destination once the current one either starts
+    /// cleanly or has its name-collision conflict resolved/cancelled.
+    pub(crate) pending_send_to: Option<crate::gui::windows::mainwindow_imp::PendingSendTo>,
     /// A bulk-rename dialog open over a multi-item selection - see
     /// `bulk_rename::BulkRenameState`'s doc comment. Drawn as a modal from
     /// the update loop, alongside `pending_paste_conflict`.
@@ -210,7 +216,11 @@ impl Default for MainWindow {
             default_display_mode,
             default_search_scope,
             search_engine,
+            auto_open_notification_panel,
+            show_operation_toasts,
         ) = load_app_settings();
+        let loaded_send_to = crate::core::send_to::load_send_to();
+        let loaded_context_menu = crate::core::context_menu_settings::load_custom_context_menu();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             show_hidden_files_folders,
@@ -239,8 +249,13 @@ impl Default for MainWindow {
             default_display_mode,
             default_search_scope,
             search_engine,
-            custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
+            auto_open_notification_panel,
+            show_operation_toasts,
+            custom_context_menu: loaded_context_menu.0,
+            custom_context_menu_enabled: loaded_context_menu.1,
             tab_groups: crate::core::tab_groups::load_tab_groups(),
+            send_to: loaded_send_to.0,
+            send_to_context_menu_enabled: loaded_send_to.1,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -369,6 +384,7 @@ impl Default for MainWindow {
             pending_robocopy_pastes: HashMap::new(),
             pending_paste_conflict: None,
             pending_conflict_resolution: None,
+            pending_send_to: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,
@@ -566,6 +582,7 @@ impl eframe::App for MainWindow {
         if self.hwnd.is_none() {
             if let Some(hwnd) = crate::gui::windows::windowsoverrides::get_hwnd_from_frame(frame) {
                 self.hwnd = Some(hwnd);
+                crate::gui::windows::windowsoverrides::set_main_hwnd(hwnd);
 
                 unsafe {
                     if let Err(e) = install_wndproc(hwnd) {
@@ -708,6 +725,10 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.default_display_mode,
                         self.settings_window.current_settings.default_search_scope,
                         self.settings_window.current_settings.search_engine,
+                        self.settings_window
+                            .current_settings
+                            .auto_open_notification_panel,
+                        self.settings_window.current_settings.show_operation_toasts,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -1139,7 +1160,26 @@ impl eframe::App for MainWindow {
                                                 )
                                             });
 
-                                            if primary_clicked {
+                                            // A modal (paste-conflict, bulk-rename, checksum) is
+                                            // drawn in an `Order::Foreground` `Area` anchored to
+                                            // the *whole* window's center, not either pane's - so
+                                            // one of its own buttons can sit at a screen position
+                                            // that geometrically overlaps `primary_rect` even when
+                                            // the click was actually consumed by that button, not
+                                            // by the pane underneath. Without this guard, clicking
+                                            // "Replace" in the paste-conflict modal (positioned,
+                                            // in practice, over whichever pane happens to sit
+                                            // under the window's horizontal center) reassigned
+                                            // `focused_split` right back to that pane based purely
+                                            // on the click's raw coordinates - reported directly:
+                                            // pasting into the second pane and clicking Replace
+                                            // snapped focus back to the first pane, even though
+                                            // the paste itself correctly targeted the second one.
+                                            let blocking_modal_open = self.pending_paste_conflict.is_some()
+                                                || self.pending_bulk_rename.is_some()
+                                                || self.pending_checksum.is_some();
+
+                                            if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
                                                     let in_primary = primary_rect.contains(pos);
                                                     let in_secondary = secondary_rect.contains(pos);
@@ -1607,7 +1647,23 @@ impl eframe::App for MainWindow {
             }
         }
 
-        let restore_focus = self.focused_split;
+        // Any `pending_action`/`secondary_pending_action` here was produced
+        // by that pane's own widgets reacting to a real click/drag/keyboard
+        // shortcut (built during that pane's own draw call) - by
+        // construction, it's always a deliberate interaction with that
+        // pane, so it should become (or stay) the active one, the same way
+        // clicking into it would. This used to restore whichever pane was
+        // focused *before* the action instead - reasonable for the
+        // breadcrumb-routing block above (which exists only so a shared
+        // handler can resolve via `self.focused_split`, not because the
+        // user is now "working in" that pane), but wrong here: a drag-and-
+        // drop copy into the other pane, or a Paste that hits a conflict
+        // and only finishes once the Replace/Skip/Rename modal is
+        // resolved, both restored focus straight back to the *previous*
+        // pane - reported directly, twice, once for each of those two
+        // paths ("why does it go back to the first pane"). If both panes
+        // somehow produced an action in the same frame, the second one
+        // handled (secondary) wins, matching normal last-write-wins.
         if pending_action.is_some() {
             self.focused_split = SplitSide::Primary;
             handle_pending_actions(pending_action, self);
@@ -1616,7 +1672,6 @@ impl eframe::App for MainWindow {
             self.focused_split = SplitSide::Secondary;
             handle_pending_actions(secondary_pending_action, self);
         }
-        self.focused_split = restore_focus;
         // If either call above just queued delayed post-command refreshes,
         // make sure a frame actually runs to check them later - the app may
         // otherwise sit fully idle (no input, nothing else asking to
@@ -1636,7 +1691,9 @@ impl eframe::App for MainWindow {
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
-        draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
+        if self.settings_window.current_settings.show_operation_toasts {
+            draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
+        }
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());

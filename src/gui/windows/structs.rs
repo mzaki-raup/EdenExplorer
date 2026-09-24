@@ -135,14 +135,32 @@ pub struct AppSettings {
     pub default_search_scope: crate::core::everything::DefaultSearchScope,
     #[serde(default)]
     pub search_engine: crate::core::everything::SearchEngine,
-    /// Loaded/saved separately from the rest of these fields - see
+    /// Whether starting a file operation automatically opens the
+    /// notification bell's dropdown panel. The bell icon itself always
+    /// shows; this only controls the auto-open behavior.
+    #[serde(default = "default_true")]
+    pub auto_open_notification_panel: bool,
+    /// Whether starting/finishing a file operation shows a transient toast
+    /// popup.
+    #[serde(default = "default_true")]
+    pub show_operation_toasts: bool,
+    /// Loaded/saved separately from the rest of these fields (including its
+    /// own `custom_context_menu_enabled` toggle) - see
     /// `core::context_menu_settings`.
     #[serde(default)]
     pub custom_context_menu: Vec<crate::core::context_menu_settings::CustomContextMenuEntry>,
+    #[serde(default)]
+    pub custom_context_menu_enabled: bool,
     /// Loaded/saved separately from the rest of these fields - see
     /// `core::tab_groups`.
     #[serde(default)]
     pub tab_groups: Vec<crate::core::tab_groups::TabGroup>,
+    /// Loaded/saved separately from the rest of these fields (including its
+    /// own `send_to_context_menu_enabled` toggle) - see `core::send_to`.
+    #[serde(default)]
+    pub send_to: Vec<crate::core::send_to::SendToGroup>,
+    #[serde(default)]
+    pub send_to_context_menu_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -171,6 +189,7 @@ pub struct SettingsWindow {
     pub selected_context_menu_id: Option<u64>,
     pub selected_tab_group_id: Option<u64>,
     pub selected_tag_group_id: Option<u64>,
+    pub selected_send_to_id: Option<u64>,
 }
 
 pub struct SidebarState {

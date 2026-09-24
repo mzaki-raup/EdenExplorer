@@ -10,6 +10,7 @@ pub mod icon_picker_ui;
 pub mod mainwindow;
 pub mod mainwindow_imp;
 pub mod navigation;
+pub mod send_to_ui;
 pub mod settings;
 pub mod shell_context_menu;
 pub mod structs;

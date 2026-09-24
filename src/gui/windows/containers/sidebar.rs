@@ -162,6 +162,49 @@ pub fn draw_sidebar(
                                 });
                         }
 
+                        // A real folder, not a virtual shell namespace item - Windows
+                        // itself merges this per-user location with the "all users"
+                        // one (`%ProgramData%\...\Administrative Tools`) into a single
+                        // virtual "Administrative Tools" view, but the per-user folder
+                        // is typically empty on a normal install while the ProgramData
+                        // one holds the real shortcuts (Computer Management, Event
+                        // Viewer, Services, Task Scheduler, ...) - so this points
+                        // straight at that one, the same way "My User Home" points at
+                        // a real directory instead of a virtual shell folder.
+                        if let Some(admin_tools) = std::env::var("ProgramData").ok().map(|base| {
+                            PathBuf::from(base)
+                                .join("Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools")
+                        }).filter(|p| p.is_dir())
+                        {
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &admin_tools,
+                                &i18n.tr("administrative_tools"),
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+
+                            if resp.clicked() {
+                                action.nav_to = Some(admin_tools.clone());
+                            }
+                            if resp.middle_clicked() {
+                                action.open_new_tab = Some(admin_tools.clone());
+                            }
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    apply_eden_text_overrides(ui, palette);
+                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                        action.open_new_tab = Some(admin_tools.clone());
+                                        ui.close();
+                                    }
+                                });
+                        }
+
                         let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
                         let resp = draw_sidebar_item(
                             ui,
