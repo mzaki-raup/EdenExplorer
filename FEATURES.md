@@ -6,6 +6,10 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-24
 
+- **Context menu tweak**: Compress (Zip) now sits above Send To (was the
+  other way around), and Cut now sits between Copy Path and Paste
+  (was above Copy).
+
 - **Reordered the file/folder context menu**: Send To now sits right below
   "Open In Default Program", and Compress (Zip) now sits directly above
   the Custom Context Menu section - both were previously much further

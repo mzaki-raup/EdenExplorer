@@ -641,9 +641,18 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
-    // Send To, then Compress, sit between "Open in Default Program" and the
-    // Custom Context Menu group below - Compress directly above Custom
-    // Context Menu's own entries, Send To above that.
+    // Compress, then Send To, sit between "Open in Default Program" and the
+    // Custom Context Menu group below - Send To directly above Custom
+    // Context Menu's own entries, Compress above that.
+    ui.separator();
+
+    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
     if settings_window.current_settings.send_to_context_menu_enabled
         && !settings_window.current_settings.send_to.is_empty()
     {
@@ -656,15 +665,6 @@ pub fn handle_context_menu_actions(
             &context_paths,
             action,
         );
-    }
-
-    ui.separator();
-
-    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
-            context_paths.clone(),
-        )));
-        ui.close();
     }
 
     let has_file = context_paths.iter().any(|p| !p.is_dir());
@@ -689,12 +689,6 @@ pub fn handle_context_menu_actions(
 
     ui.separator();
 
-    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
     if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
             context_paths.clone(),
@@ -705,6 +699,12 @@ pub fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::Context(
             ItemViewerContextAction::CopyPath(context_paths.clone()),
         ));
+        ui.close();
+    }
+    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+            context_paths.clone(),
+        )));
         ui.close();
     }
     if menu_item_button_enabled(
