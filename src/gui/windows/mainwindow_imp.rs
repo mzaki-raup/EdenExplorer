@@ -42,6 +42,7 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
@@ -1021,6 +1022,7 @@ impl MainWindow {
             view.pending_size_queue.clear();
             view.pending_size_set.clear();
             view.is_loading = false;
+            view.network_share_error = Arc::new(Mutex::new(None));
             view.explorer_state.selected_paths.clear();
             view.explorer_state.selection_anchor = None;
             view.explorer_state.selection_focus = None;
@@ -1147,12 +1149,14 @@ impl MainWindow {
 
         // Async directory listing
         let (tx, rx) = unbounded();
+        let network_share_error = Arc::new(Mutex::new(None));
         scan_dir_async(
             current_path,
             tx,
             self.settings_window.current_settings.date_style,
             self.settings_window.current_settings.time_format_24h,
             self.settings_window.current_settings.custom_date_format.clone(),
+            Arc::clone(&network_share_error),
         );
         let folder_scanning_enabled = self
             .settings_window
@@ -1162,6 +1166,7 @@ impl MainWindow {
         let view = self.active_tab_mut().view_mut(side);
         view.rx = Some(rx);
         view.is_loading = true;
+        view.network_share_error = network_share_error;
 
         // Setup folder size calculation channels only if folder scanning is enabled
         if folder_scanning_enabled {

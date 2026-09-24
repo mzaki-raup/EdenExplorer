@@ -641,6 +641,32 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    // Compress, then Send To, sit between "Open in Default Program" and the
+    // Custom Context Menu group below - Send To directly above Custom
+    // Context Menu's own entries, Compress above that.
+    ui.separator();
+
+    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
+    if settings_window.current_settings.send_to_context_menu_enabled
+        && !settings_window.current_settings.send_to.is_empty()
+    {
+        ui.separator();
+        draw_send_to_menu(
+            ui,
+            i18n,
+            icon_cache,
+            &settings_window.current_settings.send_to,
+            &context_paths,
+            action,
+        );
+    }
+
     let has_file = context_paths.iter().any(|p| !p.is_dir());
     let has_folder = context_paths.iter().any(|p| p.is_dir());
     let ccm_entries: &[CustomContextMenuEntry] =
@@ -663,21 +689,6 @@ pub fn handle_context_menu_actions(
 
     ui.separator();
 
-    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
-
-    ui.separator();
-
-    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
     if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
             context_paths.clone(),
@@ -688,6 +699,12 @@ pub fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::Context(
             ItemViewerContextAction::CopyPath(context_paths.clone()),
         ));
+        ui.close();
+    }
+    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+            context_paths.clone(),
+        )));
         ui.close();
     }
     if menu_item_button_enabled(
@@ -739,23 +756,8 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
-    if settings_window.current_settings.send_to_context_menu_enabled
-        && !settings_window.current_settings.send_to.is_empty()
-    {
-        ui.separator();
-        draw_send_to_menu(
-            ui,
-            i18n,
-            icon_cache,
-            &settings_window.current_settings.send_to,
-            &context_paths,
-            action,
-        );
-    }
-
     // Create Shortcut / Checksum / Properties - grouped together as their
-    // own trailing section, separated from Delete (and Send To, if shown)
-    // above.
+    // own trailing section, separated from Delete above.
     ui.separator();
 
     if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))

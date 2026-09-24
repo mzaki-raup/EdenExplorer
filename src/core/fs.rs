@@ -329,6 +329,7 @@ pub fn scan_dir_async(
     date_style: DateStyle,
     time_format_24h: bool,
     custom_date_format: String,
+    network_share_error: std::sync::Arc<std::sync::Mutex<Option<network::ShareEnumError>>>,
 ) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
@@ -341,13 +342,20 @@ pub fn scan_dir_async(
         }
 
         if let Some(host) = network::unc_host_only(&path) {
-            for share in network::list_shares(&host) {
-                let is_hidden = share.name.ends_with('$');
-                let item = FileItem::new(
-                    share.name, share.path, true, is_hidden, None, None, None, None, None, None,
-                    None, None, None,
-                );
-                let _ = tx.send(item);
+            match network::list_shares(&host) {
+                Ok(shares) => {
+                    for share in shares {
+                        let is_hidden = share.name.ends_with('$');
+                        let item = FileItem::new(
+                            share.name, share.path, true, is_hidden, None, None, None, None,
+                            None, None, None, None, None,
+                        );
+                        let _ = tx.send(item);
+                    }
+                }
+                Err(err) => {
+                    *network_share_error.lock().unwrap() = Some(err);
+                }
             }
             return;
         }

@@ -1,5 +1,6 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::network;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
@@ -29,6 +30,25 @@ use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
+
+/// The empty-state text for a folder/host with no visible items - normally a
+/// plain "this folder is empty", but for a `\\server` network host whose
+/// `NetShareEnum` call failed (see `TabView::network_share_error`), showing
+/// that same text would be actively misleading: the server has real shares,
+/// they just couldn't be listed (almost always a permissions problem on the
+/// server, not "no shares exist").
+fn network_share_empty_state_text(
+    i18n: &I18n,
+    network_share_error: Option<network::ShareEnumError>,
+) -> String {
+    match network_share_error {
+        Some(network::ShareEnumError::AccessDenied) => {
+            i18n.tr("network_share_access_denied")
+        }
+        Some(network::ShareEnumError::Other) => i18n.tr("network_share_enum_failed"),
+        None => i18n.tr("folder_is_empty"),
+    }
+}
 
 pub fn draw_item_viewer(
     ui: &mut egui::Ui,
@@ -80,6 +100,7 @@ pub fn draw_item_viewer(
     let preview_selection = &mut view.preview_selection;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
+    let network_share_error = *view.network_share_error.lock().unwrap();
     let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
@@ -204,7 +225,7 @@ pub fn draw_item_viewer(
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
             } else {
-                ui.label(i18n.tr("folder_is_empty"));
+                ui.label(network_share_empty_state_text(i18n, network_share_error));
             }
         });
 
@@ -395,7 +416,7 @@ pub fn draw_item_viewer(
                 if is_loading && files.is_empty() {
                     ui.add(egui::Spinner::new().size(28.0));
                 } else {
-                    ui.label(i18n.tr("folder_is_empty"));
+                    ui.label(network_share_empty_state_text(i18n, network_share_error));
                 }
             });
 
