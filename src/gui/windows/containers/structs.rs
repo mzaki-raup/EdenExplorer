@@ -129,6 +129,18 @@ pub struct TabView {
     pub drag_state: DragState,
     pub is_loading: bool,
     pub rx: Option<Receiver<FileItem>>,
+    /// Set by `scan_dir_async`'s background thread when the current location
+    /// is a `\\server` network host and `NetShareEnum` fails (most commonly
+    /// access denied - a server with Guest/anonymous SMB access disabled, or
+    /// requiring credentials this PC doesn't have). Read once per frame
+    /// alongside `visible_items_empty` so a real permissions failure shows as
+    /// an actual error instead of the same "This folder is empty" text as a
+    /// server that genuinely has no shares - those two cases are otherwise
+    /// indistinguishable in the UI. A fresh `Arc` is created per navigation
+    /// (see `load_view_with_fallback`), so a slow-finishing scan from a
+    /// location the user has already navigated away from can never write
+    /// into what's currently being displayed.
+    pub network_share_error: std::sync::Arc<std::sync::Mutex<Option<crate::core::network::ShareEnumError>>>,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
@@ -187,6 +199,7 @@ impl TabView {
             drag_state: DragState::default(),
             is_loading: false,
             rx: None,
+            network_share_error: std::sync::Arc::new(std::sync::Mutex::new(None)),
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),

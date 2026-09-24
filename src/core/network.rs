@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{HANDLE, NO_ERROR};
+use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HANDLE, NO_ERROR};
 use windows::Win32::NetworkManagement::NetManagement::{NERR_Success, NetApiBufferFree};
 use windows::Win32::NetworkManagement::WNet::{
     NETRESOURCEW, RESOURCE_GLOBALNET, RESOURCETYPE_ANY, RESOURCEUSAGE_CONTAINER,
@@ -57,10 +57,24 @@ pub fn unc_share_root_host(path: &Path) -> Option<String> {
     (segments.len() == 2).then(|| segments[0].clone())
 }
 
+/// Why `list_shares` couldn't enumerate a server's shares - distinguished from
+/// "the server genuinely has none" so the caller can show a real error instead
+/// of a misleading empty folder. `AccessDenied` is by far the most common case
+/// in practice: a server with Guest/anonymous SMB access disabled (or that
+/// requires a matching Windows account this PC has no credentials for) refuses
+/// `NetShareEnum` outright, even though the server itself is fully reachable
+/// (SMB port open, `\\server\knownshare` might even open fine directly) - the
+/// same class of thing `net view \\server` reports as "System error 5".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShareEnumError {
+    AccessDenied,
+    Other,
+}
+
 /// Enumerate the file shares published by a server (e.g. the contents of `\\SERVER`).
 /// Print queues, IPC$, and other non-disk shares are skipped. Administrative shares
 /// (ending in `$`) are returned so the caller can mark them hidden like normal hidden folders.
-pub fn list_shares(server: &str) -> Vec<ShareInfo> {
+pub fn list_shares(server: &str) -> Result<Vec<ShareInfo>, ShareEnumError> {
     let mut shares = Vec::new();
 
     let server_wide: Vec<u16> = OsString::from(format!(r"\\{server}"))
@@ -68,7 +82,7 @@ pub fn list_shares(server: &str) -> Vec<ShareInfo> {
         .chain(std::iter::once(0))
         .collect();
 
-    unsafe {
+    let status = unsafe {
         let mut buffer: *mut u8 = std::ptr::null_mut();
         let mut entries_read: u32 = 0;
         let mut total_entries: u32 = 0;
@@ -110,9 +124,17 @@ pub fn list_shares(server: &str) -> Vec<ShareInfo> {
         if !buffer.is_null() {
             let _ = NetApiBufferFree(Some(buffer as *const _));
         }
-    }
 
-    shares
+        status
+    };
+
+    if status == NERR_Success {
+        Ok(shares)
+    } else if status == ERROR_ACCESS_DENIED.0 {
+        Err(ShareEnumError::AccessDenied)
+    } else {
+        Err(ShareEnumError::Other)
+    }
 }
 
 #[derive(Clone)]

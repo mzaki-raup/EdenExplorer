@@ -4,6 +4,17 @@ A day-by-day log of what's been added or fixed recently. For the full
 feature list, see [README.md](README.md#-features); for phase-by-phase
 delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
+## 2026-09-24
+
+- **Fixed: a network PC whose shares couldn't be listed (a permissions
+  problem on that server - Guest/anonymous access disabled, or requiring
+  credentials this PC doesn't have) showed the exact same "This folder is
+  empty" text as a server that genuinely has zero shares**, making a real
+  access problem look like nothing was ever shared. Opening `\\server` now
+  shows "Access denied - this PC doesn't have permission to list this
+  server's shares" (or a generic failure message) instead, whenever share
+  enumeration actually fails.
+
 ## 2026-09-23
 
 - **Fixed: the shared glyph icon picker (used by both Send To and Custom
