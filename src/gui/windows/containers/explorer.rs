@@ -130,6 +130,7 @@ pub fn draw_tab_content(
                     &tags_state.groups,
                     saved_search_count,
                     settings_window.current_settings.middle_click_opens_new_tab,
+                    settings_window.current_settings.tag_icon_style,
                 ));
             });
 

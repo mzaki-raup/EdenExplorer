@@ -1,8 +1,29 @@
+use crate::core::indexer::TagIconStyle;
 use crate::core::utils::colors::{drive_usage_color, hsl_to_color32, rgb_to_hsl};
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
+
+/// Resolves a tag's own colored glyph + font family for the current
+/// `TagIconStyle` setting - the single place every tag-icon call site
+/// (sidebar list, tab strip, Settings > Tags list) should read this from, so
+/// they can't drift out of sync with each other. `regular::TAG`/`fill::TAG`
+/// are the exact same Unicode codepoint; which weight actually renders
+/// depends entirely on the font *family* requested (Fill is registered under
+/// its own named family, not merged into `Proportional`) - painting the fill
+/// codepoint with the default family silently renders the outline glyph
+/// anyway, which is why this always returns a matched glyph+family pair
+/// rather than letting a call site pick one without the other.
+pub fn tag_glyph(style: TagIconStyle) -> (&'static str, FontFamily) {
+    match style {
+        TagIconStyle::Filled => (
+            egui_phosphor::fill::TAG,
+            FontFamily::Name("phosphor_fill".into()),
+        ),
+        TagIconStyle::Outline => (egui_phosphor::regular::TAG, FontFamily::Proportional),
+    }
+}
 
 pub fn clickable_active_icon(
     ui: &mut Ui,

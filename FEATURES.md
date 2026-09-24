@@ -6,6 +6,21 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-24
 
+- **Tab Groups and Send To can now be exported/imported individually**, like
+  Custom Context Menu already could - new "Export"/"Import" buttons on both
+  settings pages, for sharing/backing up just those lists without a full
+  settings export. (Both were already included in a full Export/Import
+  Settings, via `AppSettings` - that part didn't need fixing.)
+- **A Tab Group's own icon can now be customized** - Settings → Tab Groups →
+  pick a glyph from the searchable icon picker, or browse for an image file
+  - shown everywhere the group itself is listed (the "+" button's group
+    menu, the settings page's own list). Left alone, it keeps following the
+  group's first folder's real icon, exactly as before.
+- **New Settings → Tags toggle: Filled or Outline tag icons**, applied
+  everywhere a tag's colored glyph shows up (the sidebar, a tag-view tab's
+  icon, the breadcrumb bar, the Tags settings list) - previously always
+  Filled with no way to change it.
+
 - **Context menu tweak**: Compress (Zip) now sits above Send To (was the
   other way around), and Cut now sits between Copy Path and Paste
   (was above Copy).

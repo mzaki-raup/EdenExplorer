@@ -690,6 +690,64 @@ pub fn save_tab_layout(snapshot: &TabLayoutSnapshot) {
     }
 }
 
+/// Whether a tag group's own colored glyph (sidebar list, tab strip icon for
+/// a tag-view tab, Settings > Tags list) renders as a solid filled tag or a
+/// thin outline - a purely visual preference applied everywhere that glyph
+/// shows up, not per-tag. `Filled` matches this app's look before this
+/// setting existed, so it's the default (zero visual change for an existing
+/// user until they touch it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TagIconStyle {
+    Filled,
+    Outline,
+}
+
+impl Default for TagIconStyle {
+    fn default() -> Self {
+        Self::Filled
+    }
+}
+
+/// A brand-new, dedicated file for the same reason `TabLayoutSnapshot` above
+/// is - a single small enum with no relation to `ThemePalette`/
+/// `AppSettingsSnapshot`, so it gets its own file rather than risking a
+/// whole-struct decode failure resetting either of those unrelated blobs.
+#[derive(Serialize, Deserialize, Default)]
+pub struct TagIconStyleSnapshot {
+    #[serde(default)]
+    pub style: TagIconStyle,
+}
+
+fn tag_icon_style_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("tag_icon_style.bin"))
+}
+
+pub fn load_tag_icon_style() -> TagIconStyle {
+    let Some(path) = tag_icon_style_cache_path() else {
+        return TagIconStyle::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return TagIconStyle::default();
+    };
+    postcard::take_from_bytes::<TagIconStyleSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v.style)
+        .unwrap_or_default()
+}
+
+pub fn save_tag_icon_style(style: TagIconStyle) {
+    let Some(path) = tag_icon_style_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(&TagIconStyleSnapshot { style }) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 /// Which `CustomThemeEntry` (by id, not name - a name can be edited later)
 /// the user most recently selected in Settings > Appearance > Custom
 /// Themes, so `ThemeCustomizer::new_custom_theme_name` can be pre-filled

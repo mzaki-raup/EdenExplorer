@@ -153,6 +153,7 @@ impl Default for AppSettings {
             tab_groups: Vec::new(),
             send_to: Vec::new(),
             send_to_context_menu_enabled: false,
+            tag_icon_style: crate::core::indexer::TagIconStyle::default(),
         }
     }
 }

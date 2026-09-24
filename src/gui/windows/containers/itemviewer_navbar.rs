@@ -69,6 +69,7 @@ pub fn draw_itemviewer_navigation_bar(
     tags: &[TagGroup],
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
+    tag_icon_style: crate::core::indexer::TagIconStyle,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
@@ -117,6 +118,7 @@ pub fn draw_itemviewer_navigation_bar(
                 tags,
                 saved_search_count,
                 middle_click_opens_new_tab,
+                tag_icon_style,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -191,6 +193,7 @@ pub fn draw_itemviewer_navigation_bar(
                 tags,
                 saved_search_count,
                 middle_click_opens_new_tab,
+                tag_icon_style,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -254,6 +257,7 @@ fn draw_bordered_breadcrumb(
     tags: &[TagGroup],
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
+    tag_icon_style: crate::core::indexer::TagIconStyle,
 ) {
     // Computed before the frame is created: inside a horizontal layout, a
     // frame otherwise shrinks to fit its content (like an inline element)
@@ -361,6 +365,7 @@ fn draw_bordered_breadcrumb(
         tags,
         saved_search_count,
         middle_click_opens_new_tab,
+        tag_icon_style,
     );
 }
 
@@ -564,6 +569,7 @@ fn draw_breadcrumb_row_contents(
     tags: &[TagGroup],
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
+    tag_icon_style: crate::core::indexer::TagIconStyle,
 ) {
     if tab.search_box_editing {
         draw_search_box_contents(ui, i18n, tab, tab_id, palette, action, saved_search_count);
@@ -796,14 +802,11 @@ fn draw_breadcrumb_row_contents(
                 .map(|g| g.color)
                 .unwrap_or(palette.text_header_section);
 
+            let (tag_glyph, tag_family) = crate::core::utils::widgets::tag_glyph(tag_icon_style);
             ui.add(
-                // `regular::TAG`/`fill::TAG` share a codepoint - the fill
-                // weight only renders with the "phosphor_fill" family (see
-                // `sidebar.rs`'s note on this), not the default font used by
-                // a plain `RichText`.
                 egui::Label::new(
-                    egui::RichText::new(fill::TAG)
-                        .family(egui::FontFamily::Name("phosphor_fill".into()))
+                    egui::RichText::new(tag_glyph)
+                        .family(tag_family)
                         .size(BREADCRUMB_ICON_SIZE)
                         .color(color),
                 )

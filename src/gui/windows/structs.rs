@@ -161,6 +161,10 @@ pub struct AppSettings {
     pub send_to: Vec<crate::core::send_to::SendToGroup>,
     #[serde(default)]
     pub send_to_context_menu_enabled: bool,
+    /// Loaded/saved separately from the rest of these fields - see
+    /// `core::indexer::{load_tag_icon_style, save_tag_icon_style}`.
+    #[serde(default)]
+    pub tag_icon_style: crate::core::indexer::TagIconStyle,
 }
 
 fn default_true() -> bool {
