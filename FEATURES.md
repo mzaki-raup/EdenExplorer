@@ -6,6 +6,13 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-24
 
+- **Title-cased a batch of context-menu and tab-menu labels** that were
+  showing up in sentence case or with lowercase shortcut hints - "Pin tab"
+  → "Pin Tab", "Add to Favorites" → "Add To Favorites", "Open in split
+  view" → "Open In Split View", "Compress (zip)" → "Compress (Zip)",
+  "Cut/Copy/Paste (ctrl+x/ctrl+c/ctrl+v)" → "(Ctrl+X)/(Ctrl+C)/(Ctrl+V)",
+  and several more of the same shape.
+
 - **Fixed: a network PC whose shares couldn't be listed (a permissions
   problem on that server - Guest/anonymous access disabled, or requiring
   credentials this PC doesn't have) showed the exact same "This folder is
