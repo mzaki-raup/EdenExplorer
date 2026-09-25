@@ -304,22 +304,22 @@ pub fn draw_tabs(
                                 }
                                 if ui
                                     .add_enabled(
-                                        index + 1 < tabs.len(),
-                                        egui::Button::new(i18n.tr("tab_close_to_right")),
-                                    )
-                                    .clicked()
-                                {
-                                    action.close_to_right = Some(tab.id);
-                                    ui.close();
-                                }
-                                if ui
-                                    .add_enabled(
                                         index > 0,
                                         egui::Button::new(i18n.tr("tab_close_to_left")),
                                     )
                                     .clicked()
                                 {
                                     action.close_to_left = Some(tab.id);
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        index + 1 < tabs.len(),
+                                        egui::Button::new(i18n.tr("tab_close_to_right")),
+                                    )
+                                    .clicked()
+                                {
+                                    action.close_to_right = Some(tab.id);
                                     ui.close();
                                 }
                                 ui.separator();
