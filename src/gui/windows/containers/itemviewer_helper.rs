@@ -161,6 +161,17 @@ fn menu_item_button_enabled(
 /// own separator-bounded group - a no-op if none apply. Shared by the
 /// per-item context menu (`handle_context_menu_actions`) and the
 /// folder-background menu drawn directly in `itemviewer.rs`.
+///
+/// `draw_leading_separator` controls whether this call draws its own
+/// separator ahead of the entries when there are any: the background menu
+/// (not user-reorderable, has no other way to get a separator before this
+/// group) needs `true`, same as always; the per-item context menu passes
+/// `false`, since `core::context_menu_order` already lets the user place
+/// (or not place) a configured `Separator` immediately before
+/// `ContextMenuSection::CustomContextMenu` themselves - drawing one here too
+/// would silently double it up whenever they also configured one, with no
+/// way for them to see or remove the "hidden" extra line from the settings
+/// page's own list.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_custom_context_menu_group(
     ui: &mut egui::Ui,
@@ -172,6 +183,7 @@ pub fn draw_custom_context_menu_group(
     is_background: bool,
     context_paths: &[PathBuf],
     action: &mut Option<ItemViewerAction>,
+    draw_leading_separator: bool,
 ) {
     let applicable: Vec<&CustomContextMenuEntry> = entries
         .iter()
@@ -182,7 +194,9 @@ pub fn draw_custom_context_menu_group(
         return;
     }
 
-    ui.separator();
+    if draw_leading_separator {
+        ui.separator();
+    }
 
     for entry in applicable {
         draw_custom_context_menu_entry(ui, i18n, icon_cache, entry, context_paths, action);
@@ -708,6 +722,7 @@ pub fn handle_context_menu_actions(
                     false,
                     &context_paths,
                     action,
+                    false,
                 );
             }
             ContextMenuSection::FileOperations => {

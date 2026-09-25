@@ -4,6 +4,15 @@ A day-by-day log of what's been added or fixed recently. For the full
 feature list, see [README.md](README.md#-features); for phase-by-phase
 delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
+## 2026-09-25
+
+- **Fixed: the real context menu showed a separator after Compress (Zip)
+  that the new Context Menu Order settings page's own list didn't account
+  for.** Custom Context Menu's entries were drawing their own separator
+  regardless of what the user configured - now the per-item menu relies
+  entirely on the user's own configured separators, matching the settings
+  page exactly.
+
 ## 2026-09-24
 
 - **New "Context Menu Order" settings page** (between Appearance and
