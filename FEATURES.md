@@ -6,6 +6,13 @@ delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
 
 ## 2026-09-24
 
+- **New "Context Menu Order" settings page** (between Appearance and
+  Favorites) - drag the right-click menu's own sections (Send To, Custom
+  Context Menu, Copy/Cut/Paste, Rename, Delete, Compress, Create Shortcut,
+  Checksums, Properties, Windows Menu Item, and more) into whatever order
+  you like, and add or remove separator lines between them, with a
+  one-click "Reset to Default Order."
+
 - **Tab Groups and Send To can now be exported/imported individually**, like
   Custom Context Menu already could - new "Export"/"Import" buttons on both
   settings pages, for sharing/backing up just those lists without a full

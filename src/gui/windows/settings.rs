@@ -34,6 +34,7 @@ pub enum SettingsCategory {
     Behavior,
     Startup,
     Appearance,
+    ContextMenuOrder,
     Favorites,
     ContextMenu,
     SendTo,
@@ -43,11 +44,12 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 10] = [
+    pub const ALL: [SettingsCategory; 11] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
         SettingsCategory::Appearance,
+        SettingsCategory::ContextMenuOrder,
         SettingsCategory::Favorites,
         SettingsCategory::ContextMenu,
         SettingsCategory::SendTo,
@@ -62,6 +64,7 @@ impl SettingsCategory {
             SettingsCategory::Behavior => regular::SLIDERS,
             SettingsCategory::Startup => regular::APP_WINDOW,
             SettingsCategory::Appearance => regular::PALETTE,
+            SettingsCategory::ContextMenuOrder => regular::SORT_ASCENDING,
             SettingsCategory::Favorites => regular::STAR,
             SettingsCategory::ContextMenu => regular::LIST,
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
@@ -77,6 +80,7 @@ impl SettingsCategory {
             SettingsCategory::Behavior => i18n.tr("settings_category_behavior"),
             SettingsCategory::Startup => i18n.tr("settings_category_startup"),
             SettingsCategory::Appearance => i18n.tr("settings_category_appearance"),
+            SettingsCategory::ContextMenuOrder => i18n.tr("settings_category_context_menu_order"),
             SettingsCategory::Favorites => i18n.tr("settings_category_favorites"),
             SettingsCategory::ContextMenu => i18n.tr("settings_category_context_menu"),
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
@@ -154,6 +158,7 @@ impl Default for AppSettings {
             send_to: Vec::new(),
             send_to_context_menu_enabled: false,
             tag_icon_style: crate::core::indexer::TagIconStyle::default(),
+            context_menu_order: crate::core::context_menu_order::default_order(),
         }
     }
 }
@@ -702,6 +707,15 @@ pub fn draw_settings_page(
                             }
                             SettingsCategory::Advanced => {
                                 draw_advanced_section(ui, i18n, settings, palette, &mut action);
+                            }
+                            SettingsCategory::ContextMenuOrder => {
+                                if let Some(a) =
+                                    crate::gui::windows::context_menu_order_ui::draw_context_menu_order_settings(
+                                        ui, i18n, settings, palette,
+                                    )
+                                {
+                                    action = Some(a);
+                                }
                             }
                             _ => unreachable!(
                                 "master-detail categories are handled above, outside this shared ScrollArea"

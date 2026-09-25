@@ -257,6 +257,7 @@ impl Default for MainWindow {
             send_to: loaded_send_to.0,
             send_to_context_menu_enabled: loaded_send_to.1,
             tag_icon_style: crate::core::indexer::load_tag_icon_style(),
+            context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
