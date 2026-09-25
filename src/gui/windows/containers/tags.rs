@@ -1,4 +1,6 @@
 use crate::core::fs::{DateStyle, FileItem, filetime_to_string};
+use crate::core::indexer::TagIconStyle;
+use crate::core::utils::widgets::{eden_text_label, eden_toggle_button};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -48,6 +50,37 @@ pub fn draw_tags(
     );
     ui.add_space(8.0);
 
+    eden_text_label(ui, palette, &i18n.tr("tag_icon_style"));
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        if eden_toggle_button(
+            ui,
+            palette,
+            settings.current_settings.tag_icon_style == TagIconStyle::Filled,
+            &i18n.tr("tag_icon_style_filled"),
+        )
+        .clicked()
+        {
+            settings.current_settings.tag_icon_style = TagIconStyle::Filled;
+            crate::core::indexer::save_tag_icon_style(settings.current_settings.tag_icon_style);
+            changed = true;
+        }
+        ui.add_space(6.0);
+        if eden_toggle_button(
+            ui,
+            palette,
+            settings.current_settings.tag_icon_style == TagIconStyle::Outline,
+            &i18n.tr("tag_icon_style_outline"),
+        )
+        .clicked()
+        {
+            settings.current_settings.tag_icon_style = TagIconStyle::Outline;
+            crate::core::indexer::save_tag_icon_style(settings.current_settings.tag_icon_style);
+            changed = true;
+        }
+    });
+    ui.add_space(10.0);
+
     if tags_state.groups.is_empty() {
         ui.centered_and_justified(|ui| {
             ui.label(i18n.tr("tag_empty_state"));
@@ -93,15 +126,10 @@ pub fn draw_tags(
                         let item_count = group.items.len();
                         let is_selected = Some(group_id) == settings.selected_tag_group_id;
 
+                        let (tag_glyph, tag_family) = crate::core::utils::widgets::tag_glyph(
+                            settings.current_settings.tag_icon_style,
+                        );
                         let row = list_row(ui, palette, is_selected, |ui| {
-                            // `regular::TAG` and `fill::TAG` share the same
-                            // Unicode codepoint - which glyph actually renders
-                            // depends on the *font family* requested (the
-                            // "Fill" weight is a separate named family, not
-                            // merged into Proportional), so `fill::TAG` alone
-                            // with no family override silently draws the
-                            // outline glyph anyway. Matches the sidebar's own
-                            // solid-filled tag icon (`sidebar.rs`).
                             // `.selectable(false)` on both - a plain `ui.label`
                             // is selectable text by default in this app's
                             // style, which registers its own click-and-drag
@@ -114,8 +142,8 @@ pub fn draw_tags(
                             // select the row instead of the text.
                             ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new(egui_phosphor::fill::TAG)
-                                        .family(egui::FontFamily::Name("phosphor_fill".into()))
+                                    egui::RichText::new(tag_glyph)
+                                        .family(tag_family.clone())
                                         .size(palette.text_size + 3.0)
                                         .color(group_color),
                                 )

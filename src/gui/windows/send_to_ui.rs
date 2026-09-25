@@ -93,6 +93,17 @@ pub fn draw_send_to_settings(
         changed = true;
     }
 
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        if eden_button(ui, palette, &i18n.tr("send_to_export")).clicked() {
+            action = Some(SettingsAction::ExportSendTo);
+        }
+        if eden_button(ui, palette, &i18n.tr("send_to_import")).clicked() {
+            action = Some(SettingsAction::ImportSendTo);
+        }
+    });
+
     ui.add_space(10.0);
 
     if settings.current_settings.send_to.is_empty() {

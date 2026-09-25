@@ -67,6 +67,7 @@ pub fn draw_sidebar(
     tags_state: &TagsState,
     saved_searches_state: &mut SavedSearchesState,
     recent_locations_state: &RecentLocationsState,
+    tag_icon_style: crate::core::indexer::TagIconStyle,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
@@ -509,24 +510,16 @@ pub fn draw_sidebar(
                                     .color(palette.tooltip_text_color),
                             );
                         } else {
+                            let (tag_glyph, tag_family) =
+                                crate::core::utils::widgets::tag_glyph(tag_icon_style);
                             for group in tags_state.groups.iter() {
-                                // `regular::TAG` and `fill::TAG` are the exact
-                                // same Unicode codepoint (egui_phosphor just
-                                // exposes both weights' code as separate
-                                // constants for convenience) - which glyph
-                                // actually renders depends entirely on which
-                                // *font family* is requested, since "Fill" is
-                                // registered under its own named family
-                                // (`fonts.rs`), not merged into `Proportional`.
-                                // Passing `fill::TAG` alone (as this used to)
-                                // silently rendered the outline glyph anyway.
                                 let resp = draw_sidebar_virtual_item(
                                     ui,
                                     &group.name,
-                                    egui_phosphor::fill::TAG,
+                                    tag_glyph,
                                     group.color,
                                     palette,
-                                    egui::FontFamily::Name("phosphor_fill".into()),
+                                    tag_family.clone(),
                                     palette.sidebar_icon_size * 0.75,
                                 );
                                 if resp.clicked() {

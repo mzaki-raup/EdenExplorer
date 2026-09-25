@@ -1206,6 +1206,7 @@ pub fn draw_item_viewer(
                                     true,
                                     &[],
                                     &mut action,
+                                    true,
                                 );
                                 ui.separator();
 

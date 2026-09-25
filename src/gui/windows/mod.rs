@@ -1,6 +1,7 @@
 pub mod containers; // small reusable components
 
 pub mod about;
+pub mod context_menu_order_ui;
 pub mod context_menu_settings_ui;
 pub mod customizetheme;
 pub mod dragdrop;

@@ -1,3 +1,4 @@
+use crate::core::context_menu_order::ContextMenuSection;
 use crate::core::context_menu_settings::{CustomContextMenuEntry, CustomContextMenuIcon};
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
@@ -160,6 +161,17 @@ fn menu_item_button_enabled(
 /// own separator-bounded group - a no-op if none apply. Shared by the
 /// per-item context menu (`handle_context_menu_actions`) and the
 /// folder-background menu drawn directly in `itemviewer.rs`.
+///
+/// `draw_leading_separator` controls whether this call draws its own
+/// separator ahead of the entries when there are any: the background menu
+/// (not user-reorderable, has no other way to get a separator before this
+/// group) needs `true`, same as always; the per-item context menu passes
+/// `false`, since `core::context_menu_order` already lets the user place
+/// (or not place) a configured `Separator` immediately before
+/// `ContextMenuSection::CustomContextMenu` themselves - drawing one here too
+/// would silently double it up whenever they also configured one, with no
+/// way for them to see or remove the "hidden" extra line from the settings
+/// page's own list.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_custom_context_menu_group(
     ui: &mut egui::Ui,
@@ -171,6 +183,7 @@ pub fn draw_custom_context_menu_group(
     is_background: bool,
     context_paths: &[PathBuf],
     action: &mut Option<ItemViewerAction>,
+    draw_leading_separator: bool,
 ) {
     let applicable: Vec<&CustomContextMenuEntry> = entries
         .iter()
@@ -181,7 +194,9 @@ pub fn draw_custom_context_menu_group(
         return;
     }
 
-    ui.separator();
+    if draw_leading_separator {
+        ui.separator();
+    }
 
     for entry in applicable {
         draw_custom_context_menu_entry(ui, i18n, icon_cache, entry, context_paths, action);
@@ -595,16 +610,7 @@ pub fn handle_context_menu_actions(
         .cloned()
         .collect();
 
-    if !favoritable_dirs.is_empty()
-        && menu_item_button(ui, regular::STAR, &i18n.tr("add_favorite")).clicked()
-    {
-        *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::AddFavorite(favoritable_dirs),
-        ));
-        ui.close();
-    }
-
-    let label = if context_paths.len() == 1 {
+    let open_default_label = if context_paths.len() == 1 {
         i18n.tr("open_default_program")
     } else {
         i18n.tr("open_files_default_program")
@@ -618,55 +624,7 @@ pub fn handle_context_menu_actions(
     // group membership at once) is a separate, additional entry shown only
     // when at least one of the selected items actually has a tag.
     let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
-
-    if menu_item_button(ui, regular::TAG, &i18n.tr("tag_add")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::AddTag(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
-
-    if has_tag && menu_item_button(ui, regular::TAG, &i18n.tr("tag_remove")).clicked() {
-        *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::RemoveTag(context_paths.clone()),
-        ));
-        ui.close();
-    }
-
     let all_files = context_paths.iter().all(|path| !path.is_dir());
-
-    if menu_item_button_enabled(ui, all_files, regular::PLAY, &label).clicked() {
-        let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
-        *action = Some(ItemViewerAction::OpenWithDefault(paths));
-        ui.close();
-    }
-
-    // Compress, then Send To, sit between "Open in Default Program" and the
-    // Custom Context Menu group below - Send To directly above Custom
-    // Context Menu's own entries, Compress above that.
-    ui.separator();
-
-    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
-
-    if settings_window.current_settings.send_to_context_menu_enabled
-        && !settings_window.current_settings.send_to.is_empty()
-    {
-        ui.separator();
-        draw_send_to_menu(
-            ui,
-            i18n,
-            icon_cache,
-            &settings_window.current_settings.send_to,
-            &context_paths,
-            action,
-        );
-    }
-
     let has_file = context_paths.iter().any(|p| !p.is_dir());
     let has_folder = context_paths.iter().any(|p| p.is_dir());
     let ccm_entries: &[CustomContextMenuEntry] =
@@ -675,135 +633,226 @@ pub fn handle_context_menu_actions(
         } else {
             &[]
         };
-    draw_custom_context_menu_group(
-        ui,
-        i18n,
-        icon_cache,
-        ccm_entries,
-        has_file,
-        has_folder,
-        false,
-        &context_paths,
-        action,
-    );
 
-    ui.separator();
+    // Everything from here down is drawn in the order the user configured in
+    // Settings > Context Menu Order (`core::context_menu_order`) rather than
+    // a fixed sequence - each fixed section below always appears exactly
+    // once (its own enable/empty condition, unchanged from before this
+    // feature existed, still decides whether it actually renders anything),
+    // `ContextMenuSection::Separator` entries are the only thing the user
+    // can freely add/remove/reorder among them. `Custom Context Menu` still
+    // draws its own leading separator internally when it has applicable
+    // entries (`draw_custom_context_menu_group`, shared with the folder-
+    // background menu elsewhere, which isn't user-reorderable and still
+    // depends on that) - placing a configured `Separator` immediately before
+    // it too is a user choice, not prevented here, and just means two thin
+    // lines back to back in that specific arrangement.
+    for section in &settings_window.current_settings.context_menu_order {
+        match section {
+            ContextMenuSection::Separator => {
+                ui.separator();
+            }
+            ContextMenuSection::AddFavorite => {
+                if !favoritable_dirs.is_empty()
+                    && menu_item_button(ui, regular::STAR, &i18n.tr("add_favorite")).clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::AddFavorite(favoritable_dirs.clone()),
+                    ));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Tags => {
+                if menu_item_button(ui, regular::TAG, &i18n.tr("tag_add")).clicked() {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::AddTag(
+                        context_paths.clone(),
+                    )));
+                    ui.close();
+                }
+                if has_tag
+                    && menu_item_button(ui, regular::TAG, &i18n.tr("tag_remove")).clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::RemoveTag(context_paths.clone()),
+                    ));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::OpenDefaultProgram => {
+                if menu_item_button_enabled(ui, all_files, regular::PLAY, &open_default_label)
+                    .clicked()
+                {
+                    let paths: Vec<PathBuf> =
+                        explorer_state.selected_paths.iter().cloned().collect();
+                    *action = Some(ItemViewerAction::OpenWithDefault(paths));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Compress => {
+                if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+                        context_paths.clone(),
+                    )));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::SendTo => {
+                if settings_window.current_settings.send_to_context_menu_enabled
+                    && !settings_window.current_settings.send_to.is_empty()
+                {
+                    draw_send_to_menu(
+                        ui,
+                        i18n,
+                        icon_cache,
+                        &settings_window.current_settings.send_to,
+                        &context_paths,
+                        action,
+                    );
+                }
+            }
+            ContextMenuSection::CustomContextMenu => {
+                draw_custom_context_menu_group(
+                    ui,
+                    i18n,
+                    icon_cache,
+                    ccm_entries,
+                    has_file,
+                    has_folder,
+                    false,
+                    &context_paths,
+                    action,
+                    false,
+                );
+            }
+            ContextMenuSection::FileOperations => {
+                if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
+                        context_paths.clone(),
+                    )));
+                    ui.close();
+                }
+                if menu_item_button(ui, regular::LINK, &i18n.tr("inputs_copy_path")).clicked() {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::CopyPath(context_paths.clone()),
+                    ));
+                    ui.close();
+                }
+                if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut"))
+                    .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+                        context_paths.clone(),
+                    )));
+                    ui.close();
+                }
+                if menu_item_button_enabled(
+                    ui,
+                    paste_enabled,
+                    regular::CLIPBOARD,
+                    &i18n.tr("inputs_paste"),
+                )
+                .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Rename => {
+                if menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename"))
+                    .clicked()
+                {
+                    *action = if context_paths.len() > 1 {
+                        Some(ItemViewerAction::Context(
+                            ItemViewerContextAction::BulkRenameRequest(context_paths.clone()),
+                        ))
+                    } else {
+                        Some(ItemViewerAction::StartEdit(file.path.clone()))
+                    };
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Delete => {
+                if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                        context_paths.clone(),
+                        false,
+                    )));
+                    ui.close();
+                }
 
-    if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
-    if menu_item_button(ui, regular::LINK, &i18n.tr("inputs_copy_path")).clicked() {
-        *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::CopyPath(context_paths.clone()),
-        ));
-        ui.close();
-    }
-    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-            context_paths.clone(),
-        )));
-        ui.close();
-    }
-    if menu_item_button_enabled(
-        ui,
-        paste_enabled,
-        regular::CLIPBOARD,
-        &i18n.tr("inputs_paste"),
-    )
-    .clicked()
-    {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-        ui.close();
-    }
-
-    if menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename")).clicked() {
-        *action = if context_paths.len() > 1 {
-            Some(ItemViewerAction::Context(ItemViewerContextAction::BulkRenameRequest(
-                context_paths.clone(),
-            )))
-        } else {
-            Some(ItemViewerAction::StartEdit(file.path.clone()))
-        };
-        ui.close();
-    }
-
-    if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-            context_paths.clone(),
-            false,
-        )));
-        ui.close();
-    }
-
-    // Shift+Delete is unreliable to detect in some environments (the
-    // modifier state isn't always seen at the moment the Delete key event
-    // arrives), so this menu entry gives permanent delete a keyboard-free
-    // path as well.
-    if menu_item_button(
-        ui,
-        regular::TRASH,
-        &i18n.tr("recycle_bin_delete_permanently"),
-    )
-    .clicked()
-    {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-            context_paths.clone(),
-            true,
-        )));
-        ui.close();
-    }
-
-    // Create Shortcut / Checksum / Properties - grouped together as their
-    // own trailing section, separated from Delete above.
-    ui.separator();
-
-    if menu_item_button(ui, regular::ARROW_BEND_UP_RIGHT, &i18n.tr("inputs_create_shortcut"))
-        .clicked()
-    {
-        *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::CreateShortcut(context_paths.clone()),
-        ));
-        ui.close();
-    }
-
-    // Checksums - single real file only (no meaningful "checksum of a
-    // folder"/"checksum of 3 files at once" UX).
-    if context_paths.len() == 1
-        && !context_paths[0].is_dir()
-        && menu_item_button(ui, regular::HASH, &i18n.tr("checksum_menu_label")).clicked()
-    {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
-            context_paths[0].clone(),
-        )));
-        ui.close();
-    }
-
-    // Properties (multi-select aware)
-    if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
-        *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::Properties(context_paths.clone()),
-        ));
-        ui.close();
-    }
-
-    if settings_window
-        .current_settings
-        .windows_context_menu_enabled
-    {
-        ui.separator();
-        let selected_paths = context_paths.clone();
-        draw_windows_context_submenu(
-            ui,
-            i18n,
-            _palette,
-            explorer_state,
-            hwnd,
-            selected_paths.clone(),
-            |hwnd| ShellContextMenu::for_paths(&selected_paths, hwnd),
-        );
+                // Shift+Delete is unreliable to detect in some environments
+                // (the modifier state isn't always seen at the moment the
+                // Delete key event arrives), so this menu entry gives
+                // permanent delete a keyboard-free path as well.
+                if menu_item_button(
+                    ui,
+                    regular::TRASH,
+                    &i18n.tr("recycle_bin_delete_permanently"),
+                )
+                .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                        context_paths.clone(),
+                        true,
+                    )));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::CreateShortcut => {
+                if menu_item_button(
+                    ui,
+                    regular::ARROW_BEND_UP_RIGHT,
+                    &i18n.tr("inputs_create_shortcut"),
+                )
+                .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::CreateShortcut(context_paths.clone()),
+                    ));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Checksum => {
+                // Single real file only (no meaningful "checksum of a
+                // folder"/"checksum of 3 files at once" UX).
+                if context_paths.len() == 1
+                    && !context_paths[0].is_dir()
+                    && menu_item_button(ui, regular::HASH, &i18n.tr("checksum_menu_label"))
+                        .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
+                        context_paths[0].clone(),
+                    )));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::Properties => {
+                if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::Properties(context_paths.clone()),
+                    ));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::WindowsMenu => {
+                if settings_window
+                    .current_settings
+                    .windows_context_menu_enabled
+                {
+                    let selected_paths = context_paths.clone();
+                    draw_windows_context_submenu(
+                        ui,
+                        i18n,
+                        _palette,
+                        explorer_state,
+                        hwnd,
+                        selected_paths.clone(),
+                        |hwnd| ShellContextMenu::for_paths(&selected_paths, hwnd),
+                    );
+                }
+            }
+        }
     }
 }
 

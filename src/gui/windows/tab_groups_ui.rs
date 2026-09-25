@@ -10,8 +10,8 @@
 //! rather than a positional index, so reordering or deleting an unrelated
 //! group never silently re-points the detail pane at the wrong one.
 
-use crate::core::tab_groups::{TabGroup, next_group_id};
-use crate::core::utils::widgets::{apply_eden_visual_overrides, eden_button};
+use crate::core::tab_groups::{TabGroup, TabGroupIcon, next_group_id};
+use crate::core::utils::widgets::{apply_eden_visual_overrides, eden_button, eden_text_label};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -27,6 +27,36 @@ use egui_phosphor::regular;
 /// Row/header icon size for a folder's real shell icon - small enough to sit
 /// inline with text like any other icon in this app's menus/lists.
 const FOLDER_ICON_SIZE: egui::Vec2 = egui::vec2(16.0, 16.0);
+
+/// Resolves what a tab group's own parent icon should actually show, for
+/// every place a group is listed (the "+" button's group menu in `tabs.rs`,
+/// and this page's own master-detail list below): a user-picked image file's
+/// real texture, a user-picked glyph, or - the default, `TabGroupIcon::None`
+/// - the group's first folder entry's own real shell icon, falling back to
+/// the plain folder glyph if there's no first entry or its icon hasn't
+/// loaded yet. Centralized here (rather than duplicated per call site) so
+/// both places agree on the same fallback chain, including what happens if a
+/// user-picked custom image file fails to load (falls through to the
+/// first-folder default rather than showing nothing).
+pub fn resolve_tab_group_icon<'a>(
+    icon_cache: &'a IconCache,
+    group: &'a TabGroup,
+) -> (Option<egui::TextureHandle>, Option<&'a str>) {
+    match &group.icon {
+        TabGroupIcon::Custom(path) => {
+            if let Some(texture) = icon_cache.get_custom_file_icon(path) {
+                return (Some(texture), None);
+            }
+        }
+        TabGroupIcon::Glyph(glyph) => return (None, Some(glyph.as_str())),
+        TabGroupIcon::None => {}
+    }
+    let texture = group
+        .entries
+        .first()
+        .and_then(|e| icon_cache.get(&e.path, true));
+    (texture, None)
+}
 
 pub fn draw_tab_groups_settings(
     ui: &mut egui::Ui,
@@ -57,6 +87,17 @@ pub fn draw_tab_groups_settings(
         settings.selected_tab_group_id = Some(id);
         action = Some(SettingsAction::ApplySettings);
     }
+
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        if eden_button(ui, palette, &i18n.tr("tab_group_export")).clicked() {
+            action = Some(SettingsAction::ExportTabGroups);
+        }
+        if eden_button(ui, palette, &i18n.tr("tab_group_import")).clicked() {
+            action = Some(SettingsAction::ImportTabGroups);
+        }
+    });
 
     ui.add_space(10.0);
 
@@ -107,14 +148,11 @@ pub fn draw_tab_groups_settings(
                         } else {
                             group.name.clone()
                         };
-                        let icon = group
-                            .entries
-                            .first()
-                            .and_then(|e| icon_cache.get(&e.path, true));
+                        let (icon_texture, icon_glyph) = resolve_tab_group_icon(icon_cache, group);
                         let is_selected = Some(group.id) == settings.selected_tab_group_id;
 
                         let row = list_row(ui, palette, is_selected, |ui| {
-                            if let Some(texture) = &icon {
+                            if let Some(texture) = &icon_texture {
                                 ui.add(egui::Image::new(texture).fit_to_exact_size(FOLDER_ICON_SIZE));
                             } else {
                                 // `.selectable(false)` - a plain `ui.label` is
@@ -124,7 +162,10 @@ pub fn draw_tab_groups_settings(
                                 // would otherwise steal a click meant to
                                 // select the row (see `list_row`'s own doc
                                 // comment on background-sensed-first).
-                                ui.add(egui::Label::new(regular::FOLDERS).selectable(false));
+                                ui.add(
+                                    egui::Label::new(icon_glyph.unwrap_or(regular::FOLDERS))
+                                        .selectable(false),
+                                );
                             }
                             ui.add(
                                 egui::Label::new(egui::RichText::new(&label).strong())
@@ -194,6 +235,98 @@ pub fn draw_tab_groups_settings(
                                     .changed();
                             },
                         );
+
+                        ui.add_space(8.0);
+                        eden_text_label(ui, palette, &i18n.tr("tab_group_icon"));
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            let is_default = matches!(group.icon, TabGroupIcon::None);
+                            let default_color = if is_default {
+                                palette.primary
+                            } else {
+                                ui.visuals().text_color()
+                            };
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(regular::PROHIBIT)
+                                            .size(16.0)
+                                            .color(default_color),
+                                    )
+                                    .min_size(egui::vec2(24.0, 24.0)),
+                                )
+                                .on_hover_text(i18n.tr("tab_group_icon_default"))
+                                .clicked()
+                            {
+                                group.icon = TabGroupIcon::None;
+                                changed = true;
+                            }
+
+                            ui.add_space(4.0);
+
+                            let current_glyph = match &group.icon {
+                                TabGroupIcon::Glyph(g) => Some(g.as_str()),
+                                _ => None,
+                            };
+                            if let Some(glyph) =
+                                crate::gui::windows::icon_picker_ui::draw_icon_picker_button(
+                                    ui,
+                                    i18n,
+                                    palette,
+                                    &mut settings.icon_picker_search,
+                                    ("tab_group_icon_picker", selected_id),
+                                    current_glyph,
+                                    regular::FOLDERS,
+                                )
+                            {
+                                group.icon = TabGroupIcon::Glyph(glyph);
+                                changed = true;
+                            }
+                        });
+
+                        // A user-browsed image file's own icon, on its own
+                        // row below the glyph choices - same layout as Send
+                        // To/Favorites' own icon pickers.
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if eden_button(ui, palette, &i18n.tr("tab_group_icon_browse")).clicked()
+                            {
+                                if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
+                                    .add_filter(
+                                        "Icon/Image",
+                                        &["ico", "png", "jpg", "jpeg", "bmp", "gif"],
+                                    )
+                                    .add_filter("All files", &["*"])
+                                    .pick_file()
+                                {
+                                    let stored_path =
+                                        crate::core::indexer::import_custom_icon(&path)
+                                            .unwrap_or(path);
+                                    group.icon = TabGroupIcon::Custom(stored_path);
+                                    changed = true;
+                                }
+                            }
+                            if eden_button(ui, palette, &i18n.tr("tab_group_icon_clear")).clicked()
+                            {
+                                group.icon = TabGroupIcon::None;
+                                changed = true;
+                            }
+                        });
+                        if let TabGroupIcon::Custom(file) = &group.icon {
+                            let file = file.clone();
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if let Some(texture) = icon_cache.get_custom_file_icon(&file) {
+                                    ui.add(
+                                        egui::Image::new(&texture)
+                                            .fit_to_exact_size(egui::vec2(20.0, 20.0)),
+                                    );
+                                }
+                                let path_text = file.display().to_string();
+                                ui.add(egui::Label::new(&path_text).truncate().selectable(false))
+                                    .on_hover_text(&path_text);
+                            });
+                        }
 
                         ui.add_space(8.0);
                         if eden_button(

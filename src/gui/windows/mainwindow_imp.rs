@@ -969,6 +969,12 @@ impl MainWindow {
             &self.settings_window.current_settings.send_to,
             self.settings_window.current_settings.send_to_context_menu_enabled,
         );
+        crate::core::indexer::save_tag_icon_style(
+            self.settings_window.current_settings.tag_icon_style,
+        );
+        crate::core::context_menu_order::save_context_menu_order(
+            &self.settings_window.current_settings.context_menu_order,
+        );
     }
 
     fn apply_item_viewer_column_order(
@@ -3576,6 +3582,103 @@ impl MainWindow {
                         }
                     }
                 }
+                SettingsAction::ExportTabGroups => {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
+                        .add_filter("Eden Explorer Tab Groups", &["json"])
+                        .set_file_name("eden_explorer_tab_groups.json")
+                        .save_file()
+                    {
+                        let bundle = crate::core::tab_groups::TabGroupsExportBundle {
+                            format_version: crate::core::tab_groups::TAB_GROUPS_EXPORT_FORMAT_VERSION,
+                            groups: self.settings_window.current_settings.tab_groups.clone(),
+                        };
+
+                        match serde_json::to_string_pretty(&bundle) {
+                            Ok(json) => {
+                                if let Err(err) = std::fs::write(&path, json) {
+                                    eprintln!("Failed to export tab groups: {}", err);
+                                }
+                            }
+                            Err(err) => eprintln!("Failed to serialize tab groups: {}", err),
+                        }
+                    }
+                }
+                SettingsAction::ImportTabGroups => {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
+                        .add_filter("Eden Explorer Tab Groups", &["json"])
+                        .pick_file()
+                    {
+                        match std::fs::read_to_string(&path) {
+                            Ok(json) => match serde_json::from_str::<
+                                crate::core::tab_groups::TabGroupsExportBundle,
+                            >(&json)
+                            {
+                                Ok(bundle) => {
+                                    self.settings_window.current_settings.tab_groups = bundle.groups;
+                                    crate::core::tab_groups::save_tab_groups(
+                                        &self.settings_window.current_settings.tab_groups,
+                                    );
+                                }
+                                Err(err) => eprintln!("Failed to parse tab groups file: {}", err),
+                            },
+                            Err(err) => eprintln!("Failed to read tab groups file: {}", err),
+                        }
+                    }
+                }
+                SettingsAction::ExportSendTo => {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
+                        .add_filter("Eden Explorer Send To", &["json"])
+                        .set_file_name("eden_explorer_send_to.json")
+                        .save_file()
+                    {
+                        let bundle = crate::core::send_to::SendToExportBundle {
+                            format_version: crate::core::send_to::SEND_TO_EXPORT_FORMAT_VERSION,
+                            groups: self.settings_window.current_settings.send_to.clone(),
+                            context_menu_enabled: self
+                                .settings_window
+                                .current_settings
+                                .send_to_context_menu_enabled,
+                        };
+
+                        match serde_json::to_string_pretty(&bundle) {
+                            Ok(json) => {
+                                if let Err(err) = std::fs::write(&path, json) {
+                                    eprintln!("Failed to export Send To groups: {}", err);
+                                }
+                            }
+                            Err(err) => eprintln!("Failed to serialize Send To groups: {}", err),
+                        }
+                    }
+                }
+                SettingsAction::ImportSendTo => {
+                    if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
+                        .add_filter("Eden Explorer Send To", &["json"])
+                        .pick_file()
+                    {
+                        match std::fs::read_to_string(&path) {
+                            Ok(json) => match serde_json::from_str::<
+                                crate::core::send_to::SendToExportBundle,
+                            >(&json)
+                            {
+                                Ok(bundle) => {
+                                    self.settings_window.current_settings.send_to = bundle.groups;
+                                    self.settings_window
+                                        .current_settings
+                                        .send_to_context_menu_enabled =
+                                        bundle.context_menu_enabled;
+                                    crate::core::send_to::save_send_to(
+                                        &self.settings_window.current_settings.send_to,
+                                        self.settings_window
+                                            .current_settings
+                                            .send_to_context_menu_enabled,
+                                    );
+                                }
+                                Err(err) => eprintln!("Failed to parse Send To file: {}", err),
+                            },
+                            Err(err) => eprintln!("Failed to read Send To file: {}", err),
+                        }
+                    }
+                }
                 SettingsAction::ThemeCustomizer(theme_action) => {
                     self.apply_theme_customizer_action(ctx, theme_action);
                 }
@@ -3592,6 +3695,11 @@ impl MainWindow {
         self.settings_window.current_settings = bundle.settings;
         self.i18n
             .set_locale(&self.settings_window.current_settings.language);
+        // `save_app_settings_to_disk` already persists Tab Groups, Send To,
+        // Custom Context Menu, and Tag Icon Style to their own dedicated
+        // files (each lives on `AppSettings` in memory but is saved
+        // separately - see their own `core` modules' doc comments), so a
+        // full settings import doesn't need to call any of those again here.
         self.save_app_settings_to_disk();
 
         if let Some(hwnd) = self.hwnd {
@@ -3984,6 +4092,7 @@ impl MainWindow {
                         id,
                         name,
                         entries: vec![crate::core::tab_groups::TabGroupEntry { path, split_path }],
+                        icon: crate::core::tab_groups::TabGroupIcon::None,
                     },
                 );
                 self.save_app_settings_to_disk();

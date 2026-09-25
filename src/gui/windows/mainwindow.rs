@@ -256,6 +256,8 @@ impl Default for MainWindow {
             tab_groups: crate::core::tab_groups::load_tab_groups(),
             send_to: loaded_send_to.0,
             send_to_context_menu_enabled: loaded_send_to.1,
+            tag_icon_style: crate::core::indexer::load_tag_icon_style(),
+            context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -882,6 +884,7 @@ impl eframe::App for MainWindow {
                                                     &self.tags_state,
                                                     &mut self.saved_searches_state,
                                                     &self.recent_locations_state,
+                                                    self.settings_window.current_settings.tag_icon_style,
                                                 ));
                                             },
                                         );
@@ -1039,6 +1042,7 @@ impl eframe::App for MainWindow {
                                                     &self.tags_state.groups,
                                                     &self.sidebar_state.favorites,
                                                     self.saved_searches_state.items.len(),
+                                                    self.settings_window.current_settings.tag_icon_style,
                                                 ));
                                             },
                                         );

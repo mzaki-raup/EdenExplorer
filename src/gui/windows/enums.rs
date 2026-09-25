@@ -50,6 +50,16 @@ pub enum SettingsAction {
     /// full settings import already replaces `AppSettings` wholesale.
     ExportContextMenu,
     ImportContextMenu,
+    /// Export/import *just* the Tab Groups list (see
+    /// `core::tab_groups::TabGroupsExportBundle`) - same rationale as
+    /// `ExportContextMenu`/`ImportContextMenu` above.
+    ExportTabGroups,
+    ImportTabGroups,
+    /// Export/import *just* the Send To groups (see
+    /// `core::send_to::SendToExportBundle`) - same rationale as
+    /// `ExportContextMenu`/`ImportContextMenu` above.
+    ExportSendTo,
+    ImportSendTo,
     /// Produced by the Settings page's Appearance category (which embeds the
     /// same theme editor that used to be its own floating window) - handled
     /// identically to how that window's actions always were.

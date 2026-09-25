@@ -92,6 +92,7 @@ pub fn draw_tabs(
     tags: &[TagGroup],
     favorites: &[FavoriteItem],
     saved_search_count: usize,
+    tag_icon_style: crate::core::indexer::TagIconStyle,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
@@ -198,6 +199,7 @@ pub fn draw_tabs(
                             palette,
                             icon_cache,
                             tags,
+                            tag_icon_style,
                             &mut action,
                         );
 
@@ -461,13 +463,13 @@ fn draw_tab_groups_menu(
             }
         };
 
-        let first_folder_icon = group
-            .entries
-            .first()
-            .and_then(|e| icon_cache.get(&e.path, true));
-        if let Some(texture) = first_folder_icon {
+        let (icon_texture, icon_glyph) =
+            crate::gui::windows::tab_groups_ui::resolve_tab_group_icon(icon_cache, group);
+        if let Some(texture) = icon_texture {
             let image = egui::Image::new(&texture).fit_to_exact_size(TAB_GROUP_ICON_SIZE);
             ui.menu_image_text_button(image, label, contents);
+        } else if let Some(glyph) = icon_glyph {
+            ui.menu_button(format!("{glyph}  {label}"), contents);
         } else {
             ui.menu_button(label, contents);
         }
@@ -640,6 +642,7 @@ fn handle_draw_tab_new_allocated(
     palette: &ThemePalette,
     icon_cache: &IconCache,
     tags: &[TagGroup],
+    tag_icon_style: crate::core::indexer::TagIconStyle,
     action: &mut TabsAction,
 ) {
     let is_active = tab.id == active_id;
@@ -697,7 +700,8 @@ fn handle_draw_tab_new_allocated(
             .find(|g| g.id == group_id)
             .map(|g| g.color)
             .unwrap_or(icon_color);
-        TabIconPaint::ColoredGlyph(fill::TAG, color)
+        let (tag_glyph, _) = crate::core::utils::widgets::tag_glyph(tag_icon_style);
+        TabIconPaint::ColoredGlyph(tag_glyph, color)
     } else if crate::core::fs::parse_search_view_path(&tab.full_path).is_some() {
         TabIconPaint::Glyph(regular::MAGNIFYING_GLASS)
     } else if let Some(glyph) = icon_cache.get_custom_folder_icon(&tab.full_path, true) {
@@ -756,21 +760,21 @@ fn handle_draw_tab_new_allocated(
             );
         }
         TabIconPaint::ColoredGlyph(glyph, color) => {
-            // `regular::TAG` and `fill::TAG` are the exact same Unicode
-            // codepoint (see `sidebar.rs`'s own note on this) - which glyph
-            // weight actually renders depends on the *font family* painted
-            // with, not which Rust constant is referenced. `icon_font_id`
-            // (shared with the other two paint variants above) requests the
-            // default `Proportional` family, which only has the Regular
-            // Phosphor font merged into its fallback chain - painting
-            // `fill::TAG` with it silently rendered as the outline glyph.
-            let fill_font_id =
-                FontId::new(palette.tab_icon_size, FontFamily::Name("phosphor_fill".into()));
+            // A tag-view tab's icon follows the `tag_icon_style` setting
+            // (Filled/Outline - see `core::utils::widgets::tag_glyph`),
+            // which determines both the glyph codepoint and the font family
+            // it was resolved with above - `icon_font_id` (shared with the
+            // other two paint variants) requests the default `Proportional`
+            // family, which only has the Regular Phosphor font merged into
+            // its fallback chain, so the Filled style needs its own font id
+            // painted with the matching family rather than `icon_font_id`.
+            let (_, tag_family) = crate::core::utils::widgets::tag_glyph(tag_icon_style);
+            let tag_font_id = FontId::new(palette.tab_icon_size, tag_family);
             painter.text(
                 icon_rect.left_center(),
                 egui::Align2::LEFT_CENTER,
                 glyph,
-                fill_font_id,
+                tag_font_id,
                 color,
             );
         }

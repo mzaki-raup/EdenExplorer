@@ -173,6 +173,22 @@ pub fn save_send_to(groups: &[SendToGroup], context_menu_enabled: bool) {
     }
 }
 
+/// A standalone, human-readable export of *just* the Send To groups -
+/// distinct from `core::indexer::SettingsExportBundle`, which already
+/// carries this same list as part of a full settings export (it clones
+/// `AppSettings` wholesale, and `send_to`/`send_to_context_menu_enabled`
+/// live on that struct). This one lets a user share/back up only their Send
+/// To destinations, e.g. to hand a coworker a single "shared drives" file
+/// without also exporting every other app setting.
+#[derive(Serialize, Deserialize)]
+pub struct SendToExportBundle {
+    pub format_version: u32,
+    pub groups: Vec<SendToGroup>,
+    pub context_menu_enabled: bool,
+}
+
+pub const SEND_TO_EXPORT_FORMAT_VERSION: u32 = 1;
+
 /// A fresh id, guaranteed higher than every group id currently in use, for a
 /// newly-added group.
 pub fn next_group_id(groups: &[SendToGroup]) -> u64 {
@@ -236,5 +252,34 @@ mod tests {
         let groups = vec![SendToGroup::new(3), SendToGroup::new(1), SendToGroup::new(7)];
         assert_eq!(next_group_id(&groups), 8);
         assert_eq!(next_group_id(&[]), 1);
+    }
+
+    /// Exercises the exact serialize/deserialize path the Export/Import Send
+    /// To buttons use (`serde_json` round-trip through `SendToExportBundle`),
+    /// same rationale as
+    /// `context_menu_export_bundle_round_trips_through_json` in
+    /// `core::context_menu_settings`.
+    #[test]
+    fn send_to_export_bundle_round_trips_through_json() {
+        let bundle = SendToExportBundle {
+            format_version: SEND_TO_EXPORT_FORMAT_VERSION,
+            groups: vec![SendToGroup {
+                id: 1,
+                name: "Backups".to_string(),
+                icon: SendToIcon::None,
+                folders: vec![PathBuf::from("D:\\Backup")],
+                mode: SendToMode::Move,
+            }],
+            context_menu_enabled: true,
+        };
+
+        let json = serde_json::to_string_pretty(&bundle).expect("serialize");
+        let round_tripped: SendToExportBundle = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(round_tripped.format_version, SEND_TO_EXPORT_FORMAT_VERSION);
+        assert_eq!(round_tripped.groups.len(), 1);
+        assert_eq!(round_tripped.groups[0].name, "Backups");
+        assert_eq!(round_tripped.groups[0].mode, SendToMode::Move);
+        assert!(round_tripped.context_menu_enabled);
     }
 }
