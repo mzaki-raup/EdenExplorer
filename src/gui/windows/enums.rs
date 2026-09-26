@@ -35,10 +35,48 @@ pub enum ThemeCustomizerAction {
     CustomThemesChanged,
 }
 
+/// A kind of user-created data that Settings > Advanced > Reset Data can
+/// clear on its own, without touching anything else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetTarget {
+    Favorites,
+    CustomContextMenu,
+    CustomThemes,
+    SendTo,
+    TabGroups,
+    Tags,
+}
+
+impl ResetTarget {
+    pub const ALL: [ResetTarget; 6] = [
+        ResetTarget::Favorites,
+        ResetTarget::CustomContextMenu,
+        ResetTarget::CustomThemes,
+        ResetTarget::SendTo,
+        ResetTarget::TabGroups,
+        ResetTarget::Tags,
+    ];
+
+    /// The i18n key prefix for this target's strings:
+    /// `<prefix>` (row label), `<prefix>_confirm` (dialog message).
+    pub fn i18n_key(self) -> &'static str {
+        match self {
+            ResetTarget::Favorites => "reset_data_favorites",
+            ResetTarget::CustomContextMenu => "reset_data_custom_context_menu",
+            ResetTarget::CustomThemes => "reset_data_custom_themes",
+            ResetTarget::SendTo => "reset_data_send_to",
+            ResetTarget::TabGroups => "reset_data_tab_groups",
+            ResetTarget::Tags => "reset_data_tags",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum SettingsAction {
     ResetToDefaults,
-    ResetFavourites,
+    /// Clears one kind of user-created data (Settings > Advanced > Reset
+    /// Data), after the user confirmed it.
+    ResetData(ResetTarget),
     ApplySettings,
     ExportSettings,
     ImportSettings,

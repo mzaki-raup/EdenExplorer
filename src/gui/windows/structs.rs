@@ -182,7 +182,8 @@ fn default_true() -> bool {
 #[derive(Default)]
 pub struct SettingsWindow {
     pub current_settings: AppSettings,
-    pub show_reset_favorites_confirmation: bool,
+    /// Which Reset Data row is waiting for its confirmation dialog, if any.
+    pub pending_reset_confirmation: Option<crate::gui::windows::enums::ResetTarget>,
     /// An action produced while drawing the Settings tab's content, picked up and
     /// handled once per frame after all tabs have been drawn.
     pub pending_action: Option<crate::gui::windows::enums::SettingsAction>,

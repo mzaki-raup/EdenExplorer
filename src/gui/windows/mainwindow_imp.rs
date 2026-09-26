@@ -3497,9 +3497,57 @@ impl MainWindow {
                         );
                     }
                 }
-                SettingsAction::ResetFavourites => {
-                    self.sidebar_state.favorites = self.default_favorites();
-                    self.persist_favorites();
+                SettingsAction::ResetData(target) => {
+                    use crate::gui::windows::enums::ResetTarget;
+                    let settings = &mut self.settings_window.current_settings;
+                    match target {
+                        ResetTarget::Favorites => {
+                            self.sidebar_state.favorites = self.default_favorites();
+                            self.persist_favorites();
+                        }
+                        ResetTarget::CustomContextMenu => {
+                            settings.custom_context_menu.clear();
+                            settings.custom_context_menu_enabled = false;
+                            crate::core::context_menu_settings::save_custom_context_menu(
+                                &settings.custom_context_menu,
+                                settings.custom_context_menu_enabled,
+                            );
+                        }
+                        ResetTarget::CustomThemes => {
+                            let customizer = &mut self.theme_customizer;
+                            customizer.custom_themes.clear();
+                            customizer.selected_custom_theme_id = None;
+                            customizer.custom_theme_delete_confirm = None;
+                            customizer.new_custom_theme_name.clear();
+                            crate::core::indexer::save_custom_themes(
+                                &crate::core::indexer::CustomThemesSnapshot {
+                                    next_id: customizer.custom_themes_next_id,
+                                    items: Vec::new(),
+                                },
+                            );
+                            crate::core::indexer::save_selected_custom_theme(
+                                &crate::core::indexer::SelectedCustomThemeSnapshot { id: None },
+                            );
+                        }
+                        ResetTarget::SendTo => {
+                            settings.send_to.clear();
+                            settings.send_to_context_menu_enabled = false;
+                            crate::core::send_to::save_send_to(
+                                &settings.send_to,
+                                settings.send_to_context_menu_enabled,
+                            );
+                        }
+                        ResetTarget::TabGroups => {
+                            settings.tab_groups.clear();
+                            crate::core::tab_groups::save_tab_groups(&settings.tab_groups);
+                        }
+                        ResetTarget::Tags => {
+                            self.tags_state.groups.clear();
+                            self.tags_state.picker = None;
+                            self.tags_state.delete_confirmation = None;
+                            self.persist_tags();
+                        }
+                    }
                 }
                 SettingsAction::ExportSettings => {
                     if let Some(path) = crate::gui::windows::windowsoverrides::dialog()

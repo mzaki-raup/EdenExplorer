@@ -11,7 +11,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::containers::structs::ItemViewerDisplayMode;
-use crate::gui::windows::enums::SettingsAction;
+use crate::gui::windows::enums::{ResetTarget, SettingsAction};
 use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
 use egui::RichText;
@@ -740,13 +740,13 @@ pub fn draw_settings_page(
             ctx, i18n, palette, tags_state,
         );
 
-        // Reset Favorites Confirmation Dialog
-        if settings.show_reset_favorites_confirmation {
+        // Reset Data confirmation dialog (Settings > Advanced > Reset Data)
+        if let Some(target) = settings.pending_reset_confirmation {
             let mut should_close = false;
-            egui::Window::new(i18n.tr("settings_favorites_reset_confirm"))
+            egui::Window::new(i18n.tr("reset_data_confirm_title"))
                 .collapsible(false)
                 .resizable(false)
-                .fixed_size([400.0, 150.0])
+                .fixed_size([420.0, 150.0])
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(
                     egui::Frame::popup(&ctx.style_of(ctx.theme()))
@@ -754,16 +754,17 @@ pub fn draw_settings_page(
                 )
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        eden_text_label(ui, palette, &i18n.tr("settings_favorites_reset_confirm"));
-                        eden_text_label(
-                            ui,
-                            palette,
-                            &i18n.tr("settings_favorite_reset_confirm_label1"),
+                        ui.label(
+                            RichText::new(i18n.tr(target.i18n_key()))
+                                .strong()
+                                .size(palette.text_size)
+                                .color(palette.text_normal),
                         );
-                        eden_text_label(
-                            ui,
-                            palette,
-                            &i18n.tr("settings_favorite_reset_confirm_label2"),
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(i18n.tr(&format!("{}_confirm", target.i18n_key())))
+                                .size(palette.text_size)
+                                .color(palette.text_normal),
                         );
                         ui.add_space(20.0);
                         ui.horizontal(|ui| {
@@ -774,7 +775,7 @@ pub fn draw_settings_page(
                                         should_close = true;
                                     }
                                     if eden_button(ui, palette, &i18n.tr("reset")).clicked() {
-                                        action = Some(SettingsAction::ResetFavourites);
+                                        action = Some(SettingsAction::ResetData(target));
                                         should_close = true;
                                     }
                                 },
@@ -783,7 +784,7 @@ pub fn draw_settings_page(
                     });
                 });
             if should_close {
-                settings.show_reset_favorites_confirmation = false;
+                settings.pending_reset_confirmation = None;
             }
         }
     }
@@ -1529,21 +1530,27 @@ fn draw_advanced_section(
     });
 
     settings_section(ui, palette, |ui| {
-        ui.horizontal(|ui| {
-            if eden_button(
+        setting_label(
+            ui,
+            &i18n.tr("reset_data_title"),
+            Some((&i18n.tr("tooltip_reset_data"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        for target in ResetTarget::ALL {
+            setting_row(
                 ui,
-                palette,
-                &format!("{} {}", regular::TRASH, i18n.tr("settings_favorites_reset")),
-            )
-            .on_hover_text(
-                egui::RichText::new(&i18n.tr("tooltip_settings_favorites_reset"))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .clicked()
-            {
-                settings.show_reset_favorites_confirmation = true;
-            }
-        });
+                |ui| {
+                    eden_text_label(ui, palette, &i18n.tr(target.i18n_key()));
+                },
+                |ui| {
+                    if eden_button(ui, palette, &format!("{} {}", regular::TRASH, i18n.tr("reset")))
+                        .clicked()
+                    {
+                        settings.pending_reset_confirmation = Some(target);
+                    }
+                },
+            );
+        }
     });
 }
