@@ -160,6 +160,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - Ctrl+Shift+P - Show/hide the Performance panel
 
 
+See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
+
 ### ✅ Implemented Features Changelog
 - [x] **Tabbed interface** with tab management, tab pinning (automatic restore on startup), and navigation
 - [x] **Search and filter engine** with real-time file indexing
