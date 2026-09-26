@@ -177,3 +177,7 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 ### Reset Data confirmation - every reset explains exactly what it removes before anything is deleted
 
 ![Reset Data confirmation](42-reset-data-confirm.png)
+
+### Notification panel after deletes - answering No to the delete confirmation (Delete or Shift+Del) is reported as Cancelled and leaves the item and its tags untouched; answering Yes shows Completed
+
+![Delete cancelled and completed in the notification panel](43-delete-cancelled-notifications.png)

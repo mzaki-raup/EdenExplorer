@@ -120,7 +120,7 @@
 | ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 42 feature screenshots.
+See the [Screenshots folder](Screenshots/README.md) for all 43 feature screenshots.
 
 ## Star History
 
@@ -309,6 +309,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - [x] **Reset Data** - Settings > Advanced > Reset Data can clear Favorites, Custom Context Menu, Custom Themes, Send To, Tab Groups, or Tags on their own, each with a confirmation that explains exactly what will be removed
 - [x] **Security hardening** - Custom Context Menu placeholders are filled in a single pass (a file name containing `%*` or `%1` can no longer inject arguments) and paths ending in `\` are quoted correctly; robocopy, cmd, PowerShell, and Windows Terminal are launched by their full install path; the terminal button can't be tricked by a folder name containing `;`; and .docx, EPUB, .svgz, and large-PDF previews are size-capped against decompression bombs
 - [x] **Performance and stability fixes** - icons are requested once instead of every frame while loading, per-file icon textures are capped, the built-in search stops as soon as its tab is closed, text previews read only the part they show, and previews with CJK or emoji text no longer crash the preview loader
+- [x] **Shift+Del now permanently deletes** - on Windows, egui turned Shift+Delete into a Cut command, so the shortcut silently marked the selection for cutting instead of deleting it; it now permanently deletes (skipping the Recycle Bin) after the usual confirmation
+- [x] **Safer delete confirmation** - answering No to a delete confirmation is now reported as Cancelled instead of Failed, can never fall through to a permanent delete, and no longer strips tags from the items that were kept; tags are only removed from items that are actually gone
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 
