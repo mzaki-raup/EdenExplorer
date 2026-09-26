@@ -6,7 +6,7 @@ All screenshots were taken with sample data (the `Eden Demo` folder: photos, a s
 
 ![EdenExplorer walkthrough](eden-explorer-walkthrough.gif)
 
-Browsing Photos in Gallery and Details + Preview, previewing a Markdown file with a Mermaid diagram and a Python file, running a search, opening a tag view, and opening Settings > Shortcuts.
+Browsing Photos in Gallery and Details + Preview, previewing a Markdown file with a Mermaid diagram and a Python file, running a search, opening a tag view, opening Settings > Shortcuts, and hiding and re-showing sidebar sections from Settings > General.
 
 ## Features
 
@@ -122,7 +122,7 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 
 ![Light theme](28-light-theme.png)
 
-### Settings - General
+### Settings - General, including the new Sidebar Sections card
 
 ![Settings - General](29-settings-general.png)
 
@@ -169,3 +169,7 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 ### Settings - Advanced
 
 ![Settings - Advanced](40-settings-advanced.png)
+
+### Settings - General > Sidebar Sections, with Saved Searches, Recent, and Shared Network hidden from the sidebar
+
+![Sidebar sections hidden](41-sidebar-sections-hidden.png)

@@ -120,7 +120,7 @@
 | ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 40 feature screenshots.
+See the [Screenshots folder](Screenshots/README.md) for all 41 feature screenshots.
 
 ## Star History
 
