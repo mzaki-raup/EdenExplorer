@@ -1817,10 +1817,18 @@ pub fn handle_global_actions(
                     }
                 }
                 egui::Event::Cut => {
+                    // On Windows, egui delivers Shift+Delete as a Cut event
+                    // (see `windowsoverrides::take_shift_delete`) - treat it
+                    // as the permanent delete the user actually pressed.
+                    let shift_delete = crate::gui::windows::windowsoverrides::take_shift_delete();
                     if !is_drive_view && !explorer_state.selected_paths.is_empty() {
-                        action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-                            explorer_state.selected_paths.iter().cloned().collect(),
-                        )));
+                        let paths: Vec<PathBuf> =
+                            explorer_state.selected_paths.iter().cloned().collect();
+                        action = Some(ItemViewerAction::Context(if shift_delete {
+                            ItemViewerContextAction::Delete(paths, true)
+                        } else {
+                            ItemViewerContextAction::Cut(paths)
+                        }));
                     }
                 }
                 _ => {}

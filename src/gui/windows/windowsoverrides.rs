@@ -522,6 +522,22 @@ unsafe extern "system" fn custom_wndproc(
             }
         }
 
+        WM_KEYDOWN | WM_SYSKEYDOWN => unsafe {
+            // Every key press records whether it was Shift+Delete, so a
+            // later, unrelated Cut (Ctrl+X) is never mistaken for it.
+            use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_DELETE, VK_SHIFT};
+            let shift_down = GetKeyState(VK_SHIFT.0 as i32) < 0;
+            SHIFT_DELETE_PRESSED.store(
+                shift_down && wparam.0 == VK_DELETE.0 as usize,
+                Ordering::SeqCst,
+            );
+            if let Some(orig) = get_original_wndproc() {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        },
+
         _ => unsafe {
             if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
@@ -530,6 +546,19 @@ unsafe extern "system" fn custom_wndproc(
             }
         },
     }
+}
+
+/// Set when the most recent key press was Shift+Delete. egui's Windows input
+/// layer turns Shift+Delete into a Cut command (the legacy Windows Cut
+/// shortcut) and never reports the Delete key itself, so without this the
+/// app could only see a Cut - Shift+Delete silently marked the selection for
+/// cutting instead of permanently deleting it.
+static SHIFT_DELETE_PRESSED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the Cut command currently being handled actually came from
+/// Shift+Delete. Consumes the flag, so it's only honored once.
+pub fn take_shift_delete() -> bool {
+    SHIFT_DELETE_PRESSED.swap(false, Ordering::SeqCst)
 }
 
 fn get_x_lparam(lparam: LPARAM) -> i32 {

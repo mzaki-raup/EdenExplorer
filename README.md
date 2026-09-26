@@ -145,6 +145,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - Ctrl+R (F5) - Refresh current directory
 - Alt+D - Select the address bar / current directory path
 - F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
+- Del - Delete the selected items (to the Recycle Bin)
+- Shift+Del - Permanently delete the selected items (skips the Recycle Bin, with a confirmation)
 - Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
 - Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
 - Alt + Left Arrow (Backspace, Mouse Button 4) - Navigate backwards
