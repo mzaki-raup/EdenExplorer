@@ -14,6 +14,7 @@ pub mod navigation;
 pub mod send_to_ui;
 pub mod settings;
 pub mod shell_context_menu;
+pub mod shortcuts_ui;
 pub mod structs;
 pub mod tab_groups_ui;
 pub mod windowsoverrides;

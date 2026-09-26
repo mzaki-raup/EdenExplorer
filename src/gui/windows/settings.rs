@@ -40,11 +40,12 @@ pub enum SettingsCategory {
     SendTo,
     TabGroups,
     Tags,
+    Shortcuts,
     Advanced,
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 11] = [
+    pub const ALL: [SettingsCategory; 12] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
@@ -55,6 +56,7 @@ impl SettingsCategory {
         SettingsCategory::SendTo,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
+        SettingsCategory::Shortcuts,
         SettingsCategory::Advanced,
     ];
 
@@ -70,6 +72,7 @@ impl SettingsCategory {
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
+            SettingsCategory::Shortcuts => regular::KEYBOARD,
             SettingsCategory::Advanced => regular::WRENCH,
         }
     }
@@ -86,6 +89,7 @@ impl SettingsCategory {
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
+            SettingsCategory::Shortcuts => i18n.tr("settings_category_shortcuts"),
             SettingsCategory::Advanced => i18n.tr("settings_category_advanced"),
         }
     }
@@ -704,6 +708,11 @@ pub fn draw_settings_page(
                             }
                             SettingsCategory::Startup => {
                                 draw_startup_section(ui, i18n, settings, palette, &mut action);
+                            }
+                            SettingsCategory::Shortcuts => {
+                                crate::gui::windows::shortcuts_ui::draw_shortcuts_settings(
+                                    ui, i18n, palette,
+                                );
                             }
                             SettingsCategory::Advanced => {
                                 draw_advanced_section(ui, i18n, settings, palette, &mut action);

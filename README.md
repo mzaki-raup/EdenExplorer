@@ -116,6 +116,8 @@
 </a>
 
 ## Keyboard Shortcuts
+The full list, including mouse shortcuts, is also available in the app under **Settings > Shortcuts**.
+
 - F1 - Toggle fullscreen
 - Ctrl+Shift+C - Copy selected path
 - Ctrl+W - Close current Tab
@@ -128,9 +130,9 @@
 - F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
 - Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
 - Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
-- Alt + Left Arrow (Backspace) - Navigate backwards
-- Alt + Right Arrow (Mouse Button 4) - Navigate forwards
-- Alt + Up Arrow (Mouse Button 5) - Navigate upwards
+- Alt + Left Arrow (Backspace, Mouse Button 4) - Navigate backwards
+- Alt + Right Arrow (Mouse Button 5) - Navigate forwards
+- Alt + Up Arrow - Navigate upwards
 - Enter - If a file is selected, runs the default program
 - Ctrl+F - Open the search box in the current pane
 - Ctrl+Z - Undo the last rename/move/copy
@@ -283,6 +285,7 @@
 - [x] **Native file/folder pickers stay attached to the main window** - every Browse/Export/Import dialog is parented to EdenExplorer, so it can't hide behind the app or be lost behind other windows
 - [x] **Easier window resizing** - a wider, DPI-scaled grab area along the window edges, matching the resize border size of standard Windows windows
 - [x] **No duplicate raw drives** - a physical disk that already has a lettered drive is no longer listed a second time as a raw/unmounted drive
+- [x] **Shortcuts page in Settings** - a Shortcuts category (between Tags and Advanced) lists every keyboard and mouse shortcut in the app, grouped into Tabs, Navigation, Files & Selection, Mouse, and Window, with each key combination drawn as keycaps
 
 
 ## Bulk Rename Guide
