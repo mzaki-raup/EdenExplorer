@@ -1,9 +1,8 @@
 name: Release
 
+# Releases are published only when started manually:
+# Actions -> Release -> Run workflow.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
