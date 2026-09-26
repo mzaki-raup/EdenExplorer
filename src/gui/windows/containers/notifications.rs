@@ -42,6 +42,14 @@ pub enum FileOpStatus {
     Cancelled,
 }
 
+/// Marks a notification entry as the result of an Undo or Redo, so its title
+/// says so ("Undo: Renaming 1 Item") instead of looking like a fresh action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryAction {
+    Undo,
+    Redo,
+}
+
 /// One entry in the notification list - a single copy/move/delete operation,
 /// from the moment it's kicked off through however it ends. Phase A wires
 /// this to the existing `IFileOperation`-backed engine (see
@@ -68,6 +76,9 @@ pub struct FileOperation {
     /// callback to source this from, so they stay `None` and the panel
     /// just shows their status text with no bar.
     pub progress: Option<f32>,
+    /// Set when this operation was carried out by Undo/Redo - see
+    /// `NotificationsState::mark_history`.
+    pub history: Option<HistoryAction>,
 }
 
 struct ActiveToast {
@@ -141,6 +152,7 @@ impl NotificationsState {
                 started_at: Instant::now(),
                 finished_at: None,
                 progress: None,
+                history: None,
             },
         );
         self.active_toast = Some(ActiveToast {
@@ -151,6 +163,14 @@ impl NotificationsState {
             self.panel_open = true;
         }
         id
+    }
+
+    /// Labels an existing entry (and so its toast, which reads the same
+    /// entry) as the result of an Undo or Redo.
+    pub fn mark_history(&mut self, id: u64, action: HistoryAction) {
+        if let Some(op) = self.operations.iter_mut().find(|op| op.id == id) {
+            op.history = Some(action);
+        }
     }
 
     /// Attaches a live robocopy job to an operation created via
@@ -365,7 +385,7 @@ fn item_word(i18n: &I18n, count: usize) -> String {
 fn operation_title(i18n: &I18n, op: &FileOperation) -> String {
     let verb = kind_label(i18n, op.kind);
     let items = item_word(i18n, op.item_count);
-    if op.destination_label.is_empty() {
+    let title = if op.destination_label.is_empty() {
         format!("{verb} {} {items}", op.item_count)
     } else {
         format!(
@@ -374,6 +394,11 @@ fn operation_title(i18n: &I18n, op: &FileOperation) -> String {
             i18n.tr("notifications_to"),
             op.destination_label
         )
+    };
+    match op.history {
+        Some(HistoryAction::Undo) => format!("{}: {title}", i18n.tr("notifications_history_undo")),
+        Some(HistoryAction::Redo) => format!("{}: {title}", i18n.tr("notifications_history_redo")),
+        None => title,
     }
 }
 
@@ -809,5 +834,32 @@ mod status_color_tests {
             status_color(FileOpStatus::Cancelled, &palette),
             palette.notification_status_error
         );
+    }
+}
+
+#[cfg(test)]
+mod history_label_tests {
+    use super::*;
+
+    #[test]
+    fn undo_and_redo_entries_are_labelled_and_normal_entries_are_not() {
+        let i18n = I18n::new("en-US");
+        let mut state = NotificationsState::default();
+        let plain = state.record_finished(FileOpKind::Rename, 1, String::new(), FileOpStatus::Completed, false);
+        let undo = state.record_finished(FileOpKind::Rename, 1, String::new(), FileOpStatus::Completed, false);
+        let redo = state.record_finished(FileOpKind::Move, 2, "Docs".into(), FileOpStatus::Failed, false);
+        state.mark_history(undo, HistoryAction::Undo);
+        state.mark_history(redo, HistoryAction::Redo);
+
+        let title = |id: u64| {
+            let op = state.operations.iter().find(|op| op.id == id).unwrap();
+            operation_title(&i18n, op)
+        };
+        let undo_prefix = format!("{}: ", i18n.tr("notifications_history_undo"));
+        let redo_prefix = format!("{}: ", i18n.tr("notifications_history_redo"));
+        assert!(!title(plain).starts_with(&undo_prefix));
+        assert!(title(undo).starts_with(&undo_prefix));
+        assert!(title(redo).starts_with(&redo_prefix));
+        assert!(title(redo).ends_with("Docs"));
     }
 }

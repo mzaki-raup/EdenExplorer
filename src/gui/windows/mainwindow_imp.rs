@@ -22,6 +22,7 @@ use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
+use crate::gui::windows::containers::notifications::HistoryAction;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, FilterState, GalleryThumbnailSize, ItemViewerColumnFitRequest,
     ItemViewerColumnState, ItemViewerDisplayMode, ItemViewerFolderSizeState,
@@ -2181,6 +2182,17 @@ impl MainWindow {
                 .auto_open_notification_panel,
         );
 
+        match &origin {
+            PasteOrigin::UndoOf(..) => self.notifications_state.mark_history(
+                notification_id,
+                HistoryAction::Undo,
+            ),
+            PasteOrigin::RedoOf(..) => self.notifications_state.mark_history(
+                notification_id,
+                HistoryAction::Redo,
+            ),
+            _ => {}
+        }
         let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
         self.notifications_state
             .attach_robocopy_job(notification_id, handle);
@@ -3097,19 +3109,69 @@ impl MainWindow {
         }
     }
 
-    /// Shows a Failed entry in the notification panel for an undo/redo that
-    /// couldn't be carried out, so it doesn't fail silently.
-    fn report_undo_redo_failure(&mut self, op: &UndoableOperation) {
-        use crate::gui::windows::containers::notifications::{FileOpKind, FileOpStatus};
-        let (kind, count) = match op {
-            UndoableOperation::Rename { .. } => (FileOpKind::Rename, 1),
-            UndoableOperation::BulkRename { pairs } => (FileOpKind::Rename, pairs.len()),
-            UndoableOperation::Move { pairs, .. } => (FileOpKind::Move, pairs.len()),
-            UndoableOperation::Copy { pairs, .. } => (FileOpKind::Copy, pairs.len()),
-        };
+    /// What an undo/redo of `op` does, as a notification kind + item count
+    /// + destination: undoing a copy deletes the copies (to the Recycle
+    /// Bin); everything else repeats or reverses its own kind.
+    fn undo_redo_notification_parts(
+        &self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) -> (crate::gui::windows::containers::notifications::FileOpKind, usize, String) {
+        use crate::gui::windows::containers::notifications::FileOpKind;
+        match op {
+            UndoableOperation::Rename { .. } => (FileOpKind::Rename, 1, String::new()),
+            UndoableOperation::BulkRename { pairs } => {
+                (FileOpKind::Rename, pairs.len(), String::new())
+            }
+            UndoableOperation::Move { pairs, .. } => (FileOpKind::Move, pairs.len(), String::new()),
+            UndoableOperation::Copy { pairs, .. } if action == HistoryAction::Undo => {
+                (FileOpKind::Delete, pairs.len(), self.i18n.tr("recycle_bin"))
+            }
+            UndoableOperation::Copy { pairs, .. } => (FileOpKind::Copy, pairs.len(), String::new()),
+        }
+    }
+
+    /// Adds a finished, Undo/Redo-labelled entry to the notification panel
+    /// (and toast) for an undo/redo that completed synchronously, or that
+    /// couldn't be carried out - so neither happens silently. Move/Copy
+    /// undo/redo that run as robocopy jobs are labelled in
+    /// `start_robocopy_paste` instead.
+    fn report_undo_redo(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+        status: crate::gui::windows::containers::notifications::FileOpStatus,
+    ) {
+        let (kind, count, destination) = self.undo_redo_notification_parts(op, action);
         let auto_open = self.settings_window.current_settings.auto_open_notification_panel;
-        self.notifications_state
-            .record_finished(kind, count, String::new(), FileOpStatus::Failed, auto_open);
+        let id = self
+            .notifications_state
+            .record_finished(kind, count, destination, status, auto_open);
+        self.notifications_state.mark_history(id, action);
+    }
+
+    fn report_undo_redo_failure(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) {
+        self.report_undo_redo(
+            op,
+            action,
+            crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+        );
+    }
+
+    fn report_undo_redo_success(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) {
+        self.report_undo_redo(
+            op,
+            action,
+            crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+        );
     }
 
     /// Reverses the most recently completed reversible operation, if any -
@@ -3126,7 +3188,7 @@ impl MainWindow {
         // name (robocopy would silently replace it). Leave the entry on the
         // stack so it can be retried once the user moves that item away.
         if Self::undo_target_occupied(&op) {
-            self.report_undo_redo_failure(&op);
+            self.report_undo_redo_failure(&op, HistoryAction::Undo);
             self.undo_stack.push_back(op);
             return;
         }
@@ -3138,11 +3200,12 @@ impl MainWindow {
                     return;
                 };
                 if Self::rename_one_native(new_path, &new_name).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not rename back to original name");
-                    self.report_undo_redo_failure(&op);
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3154,11 +3217,12 @@ impl MainWindow {
                     })
                     .collect();
                 if self.rename_paths_native(reversed).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not restore original names");
-                    self.report_undo_redo_failure(&op);
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
             UndoableOperation::Move { pairs, side, .. } => {
@@ -3221,11 +3285,12 @@ impl MainWindow {
                         let pidls: Vec<Vec<u8>> = replaced.values().cloned().collect();
                         let _ = self.restore_paths_native(pidls);
                     }
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not delete the copied item(s)");
-                    self.report_undo_redo_failure(&op);
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
         }
@@ -3243,7 +3308,7 @@ impl MainWindow {
         // Same rule as `undo`: never overwrite something that now occupies
         // the name the operation is about to recreate.
         if Self::redo_target_occupied(&op) {
-            self.report_undo_redo_failure(&op);
+            self.report_undo_redo_failure(&op, HistoryAction::Redo);
             self.redo_stack.push_back(op);
             return;
         }
@@ -3255,11 +3320,12 @@ impl MainWindow {
                     return;
                 };
                 if Self::rename_one_native(old_path, &new_name).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Redo);
                     self.undo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply rename");
-                    self.report_undo_redo_failure(&op);
+                    self.report_undo_redo_failure(&op, HistoryAction::Redo);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3271,11 +3337,12 @@ impl MainWindow {
                     })
                     .collect();
                 if self.rename_paths_native(forward).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Redo);
                     self.undo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply bulk rename");
-                    self.report_undo_redo_failure(&op);
+                    self.report_undo_redo_failure(&op, HistoryAction::Redo);
                 }
             }
             UndoableOperation::Move { pairs, side, replaced } => {
