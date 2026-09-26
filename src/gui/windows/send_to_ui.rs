@@ -294,7 +294,7 @@ pub fn draw_send_to_settings(
                                                 "Icon/Image",
                                                 &["ico", "png", "jpg", "jpeg", "bmp", "gif"],
                                             )
-                                            .add_filter("All files", &["*"])
+                                            .add_filter("All Files", &["*"])
                                             .pick_file()
                                     {
                                         let stored_path =
