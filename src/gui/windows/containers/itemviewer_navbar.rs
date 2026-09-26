@@ -1254,16 +1254,24 @@ pub(crate) fn open_default_terminal(current_dir: &Path) {
         current_dir.to_path_buf()
     };
 
-    let launched = Command::new("wt.exe")
-        .arg("-d")
-        .arg(&start_dir)
-        .spawn()
-        .is_ok()
-        || Command::new("powershell.exe")
+    // Windows Terminal is given `-d .` plus a working directory rather than
+    // the folder path itself: wt splits its command line on `;` to chain
+    // commands, and a folder name may contain `;`, so passing the path as an
+    // argument would let a folder named e.g. `x ; calc` launch another
+    // program. Every program is started from its absolute install path (see
+    // `core::system_paths`).
+    use crate::core::system_paths;
+    let launched = system_paths::windows_terminal_exe().is_some_and(|wt| {
+        Command::new(wt)
             .current_dir(&start_dir)
+            .args(["-d", "."])
             .spawn()
             .is_ok()
-        || Command::new("cmd.exe")
+    }) || Command::new(system_paths::powershell_exe())
+        .current_dir(&start_dir)
+        .spawn()
+        .is_ok()
+        || Command::new(system_paths::cmd_exe())
             .current_dir(&start_dir)
             .spawn()
             .is_ok();

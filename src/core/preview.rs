@@ -13,6 +13,54 @@ const PREVIEW_CACHE_CAPACITY: usize = 12;
 const MAX_ARCHIVE_ENTRIES: usize = 5000;
 const MAX_GIF_PREVIEW_BYTES: usize = 200 * 1024 * 1024;
 const MIN_GIF_FRAME_DELAY_MS: u64 = 20;
+/// Upper bound on how much a single compressed entry (a .docx's
+/// `document.xml`, one EPUB chapter, a whole .svgz) may inflate to while
+/// being previewed. Without a cap, a small crafted "zip bomb" expands to
+/// gigabytes in memory the moment it's merely selected.
+const MAX_DECOMPRESSED_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Reads at most `limit` bytes from `reader`, failing (rather than
+/// allocating without bound) if there is more.
+fn read_capped(reader: impl Read, limit: u64) -> Result<Vec<u8>, String> {
+    let mut data = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut data)
+        .map_err(|err| err.to_string())?;
+    if data.len() as u64 > limit {
+        return Err(format!(
+            "content is larger than {} MB and can't be previewed",
+            limit / (1024 * 1024)
+        ));
+    }
+    Ok(data)
+}
+
+/// Shortens `text` to at most `max_bytes`, backing off to the previous
+/// character boundary - `String::truncate` panics when the cut lands inside
+/// a multi-byte character (common in CJK text or emoji).
+fn truncate_at_char_boundary(text: &mut String, max_bytes: usize) {
+    if text.len() <= max_bytes {
+        return;
+    }
+    let mut cut = max_bytes;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
+}
+
+/// Reads at most `MAX_TEXT_PREVIEW_BYTES` (plus one byte, to detect that the
+/// file continues) instead of the whole file - selecting a multi-gigabyte
+/// log shouldn't load all of it into memory just to show the first 512 KB.
+fn read_text_prefix(path: &Path) -> std::io::Result<(Vec<u8>, bool)> {
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(MAX_TEXT_PREVIEW_BYTES.min(64 * 1024));
+    file.take(MAX_TEXT_PREVIEW_BYTES as u64 + 1).read_to_end(&mut bytes)?;
+    let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
+    bytes.truncate(MAX_TEXT_PREVIEW_BYTES);
+    Ok((bytes, truncated))
+}
 
 /// One entry (file or folder) listed inside a previewed archive.
 #[derive(Clone)]
@@ -118,7 +166,12 @@ impl PreviewService {
         let owned = path.to_path_buf();
 
         thread::spawn(move || {
-            let payload = load_preview_payload(&owned);
+            // A decoder panicking on a malformed file must not leave this
+            // path stuck on "Loading" forever - report it as an error.
+            let payload = std::panic::catch_unwind(|| load_preview_payload(&owned))
+                .unwrap_or_else(|_| {
+                    PreviewPayload::Error("Couldn't preview this file (it may be damaged).".to_string())
+                });
             let _ = tx.send((owned, payload));
         });
     }
@@ -362,11 +415,9 @@ fn decode_text_bytes(bytes: &[u8]) -> String {
 }
 
 fn load_text_preview(path: &Path) -> PreviewPayload {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
-            let slice = &bytes[..bytes.len().min(MAX_TEXT_PREVIEW_BYTES)];
-            let mut text = decode_text_bytes(slice);
+    match read_text_prefix(path) {
+        Ok((bytes, truncated)) => {
+            let mut text = decode_text_bytes(&bytes);
             if truncated {
                 text.push_str("\n\n… (preview truncated - file is larger than 512 KB)");
             }
@@ -377,11 +428,9 @@ fn load_text_preview(path: &Path) -> PreviewPayload {
 }
 
 fn load_markdown_preview(path: &Path) -> PreviewPayload {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
-            let slice = &bytes[..bytes.len().min(MAX_TEXT_PREVIEW_BYTES)];
-            let mut text = decode_text_bytes(slice);
+    match read_text_prefix(path) {
+        Ok((bytes, truncated)) => {
+            let mut text = decode_text_bytes(&bytes);
             if truncated {
                 text.push_str("\n\n… (preview truncated - file is larger than 512 KB)");
             }
@@ -625,11 +674,20 @@ fn load_pdf_preview(path: &Path) -> PreviewPayload {
 }
 
 fn load_pdf_text_preview(path: &Path) -> PreviewPayload {
+    // `pdf_extract` has no size limits of its own and decompresses every
+    // stream in the file, so very large PDFs are skipped rather than risking
+    // running out of memory just because the file was selected.
+    const MAX_PDF_TEXT_PREVIEW_FILE_BYTES: u64 = 50 * 1024 * 1024;
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > MAX_PDF_TEXT_PREVIEW_FILE_BYTES) {
+        return PreviewPayload::Unsupported(
+            "This PDF is too large to extract a text preview from.\nDouble-click to open it in its default program.".to_string(),
+        );
+    }
     match pdf_extract::extract_text(path) {
         Ok(text) if !text.trim().is_empty() => {
             let mut text = text;
             if text.len() > MAX_TEXT_PREVIEW_BYTES {
-                text.truncate(MAX_TEXT_PREVIEW_BYTES);
+                truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
                 text.push_str("\n\n… (preview truncated)");
             }
             PreviewPayload::Text(text)
@@ -790,15 +848,15 @@ fn load_docx_text_preview(path: &Path) -> PreviewPayload {
         Err(err) => return PreviewPayload::Error(format!("Couldn't read .docx: {err}")),
     };
 
-    let mut xml = String::new();
-    match archive.by_name("word/document.xml") {
-        Ok(mut entry) => {
-            if let Err(err) = entry.read_to_string(&mut xml) {
+    let xml = match archive.by_name("word/document.xml") {
+        Ok(entry) => match read_capped(entry, MAX_DECOMPRESSED_PREVIEW_BYTES) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(err) => {
                 return PreviewPayload::Error(format!("Couldn't read document content: {err}"));
             }
-        }
+        },
         Err(err) => return PreviewPayload::Error(format!("Couldn't find document content: {err}")),
-    }
+    };
 
     let mut text = extract_docx_text(&xml);
     if text.trim().is_empty() {
@@ -807,7 +865,7 @@ fn load_docx_text_preview(path: &Path) -> PreviewPayload {
         );
     }
     if text.len() > MAX_TEXT_PREVIEW_BYTES {
-        text.truncate(MAX_TEXT_PREVIEW_BYTES);
+        truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
         text.push_str("\n\n… (preview truncated)");
     }
     PreviewPayload::Text(text)
@@ -880,7 +938,7 @@ fn load_epub_preview(path: &Path) -> PreviewPayload {
         );
     }
     if text.len() > MAX_TEXT_PREVIEW_BYTES {
-        text.truncate(MAX_TEXT_PREVIEW_BYTES);
+        truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
         text.push_str("\n\n… (preview truncated)");
     }
     PreviewPayload::Text(text)
@@ -890,12 +948,9 @@ fn read_zip_entry_to_string(
     archive: &mut zip::ZipArchive<std::fs::File>,
     name: &str,
 ) -> Result<String, String> {
-    let mut entry = archive.by_name(name).map_err(|err| err.to_string())?;
-    let mut s = String::new();
-    entry
-        .read_to_string(&mut s)
-        .map_err(|err| err.to_string())?;
-    Ok(s)
+    let entry = archive.by_name(name).map_err(|err| err.to_string())?;
+    let bytes = read_capped(entry, MAX_DECOMPRESSED_PREVIEW_BYTES)?;
+    String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
 /// Pulls the OPF manifest's path out of an EPUB's `META-INF/container.xml`,
@@ -1167,13 +1222,13 @@ fn load_svg_preview(path: &Path, gzip_compressed: bool) -> PreviewPayload {
     };
 
     let data = if gzip_compressed {
-        use std::io::Read;
-        let mut decompressed = Vec::new();
-        if let Err(err) = flate2::read::GzDecoder::new(raw.as_slice()).read_to_end(&mut decompressed)
-        {
-            return PreviewPayload::Error(format!("Couldn't decompress .svgz: {err}"));
+        match read_capped(
+            flate2::read::GzDecoder::new(raw.as_slice()),
+            MAX_DECOMPRESSED_PREVIEW_BYTES,
+        ) {
+            Ok(decompressed) => decompressed,
+            Err(err) => return PreviewPayload::Error(format!("Couldn't decompress .svgz: {err}")),
         }
-        decompressed
     } else {
         raw
     };
@@ -1573,5 +1628,39 @@ mod sevenz_tests {
         assert_eq!(entries[0].depth, 0);
         assert_eq!(entries[1].name, "nested.txt");
         assert_eq!(entries[1].depth, 1);
+    }
+}
+
+#[cfg(test)]
+mod safety_limit_tests {
+    use super::*;
+
+    #[test]
+    fn truncating_never_splits_a_multi_byte_character() {
+        // "日" is 3 bytes in UTF-8; cutting at 4 would land inside the second one.
+        let mut text = "日本語".to_string();
+        truncate_at_char_boundary(&mut text, 4);
+        assert_eq!(text, "日");
+        let mut short = "abc".to_string();
+        truncate_at_char_boundary(&mut short, 10);
+        assert_eq!(short, "abc");
+    }
+
+    #[test]
+    fn read_capped_rejects_data_past_the_limit() {
+        assert_eq!(read_capped(&b"hello"[..], 5).unwrap(), b"hello");
+        assert!(read_capped(&b"hello!"[..], 5).is_err());
+    }
+
+    #[test]
+    fn a_gzip_bomb_is_refused_instead_of_fully_inflated() {
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        encoder.write_all(&vec![0u8; 4 * 1024 * 1024]).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert!(compressed.len() < 64 * 1024);
+        let result = read_capped(flate2::read::GzDecoder::new(compressed.as_slice()), 1024 * 1024);
+        assert!(result.is_err());
     }
 }

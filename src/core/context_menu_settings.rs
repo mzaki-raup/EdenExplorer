@@ -174,8 +174,16 @@ pub fn next_entry_id(entries: &[CustomContextMenuEntry]) -> u64 {
     max_id(entries) + 1
 }
 
+/// Wraps `path` in double quotes for a Windows command line. Backslashes
+/// right before the closing quote are doubled so a path like `C:\` becomes
+/// `"C:\\"` rather than `"C:\"` - the latter's `\"` is read as an escaped
+/// quote by the standard Windows argument parser, which would swallow the
+/// closing quote and merge every following argument into this one. (Windows
+/// file names can't contain `"`, so no other escaping is needed.)
 fn quote(path: &Path) -> String {
-    format!("\"{}\"", path.display())
+    let text = path.display().to_string();
+    let trailing_backslashes = text.len() - text.trim_end_matches('\\').len();
+    format!("\"{}{}\"", text, "\\".repeat(trailing_backslashes))
 }
 
 /// Substitutes the classic shell verb tokens `%1`/`%V` (the "primary" path -
@@ -187,13 +195,38 @@ fn quote(path: &Path) -> String {
 /// with no quotes added) - it exists specifically for commands that want to
 /// do their own quoting, or none at all (e.g. `echo %L| clip` to copy a bare
 /// path with no surrounding quotes in the result).
+///
+/// Done in a single left-to-right pass over the template, so text that came
+/// *from* a path is never scanned for tokens again: file names may legally
+/// contain `%`, and a file named e.g. `report%*.txt` must not have its own
+/// `%*` expanded into the other selected paths (which would break the
+/// quoting and inject extra arguments into the launched command).
 fn substitute(template: &str, primary: &Path, all: &[PathBuf]) -> String {
-    let all_quoted = all.iter().map(|p| quote(p)).collect::<Vec<_>>().join(" ");
-    template
-        .replace("%1", &quote(primary))
-        .replace("%V", &quote(primary))
-        .replace("%L", &primary.display().to_string())
-        .replace("%*", &all_quoted)
+    let mut out = String::with_capacity(template.len());
+    let mut chars = template.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek() {
+            Some('1') | Some('V') => {
+                chars.next();
+                out.push_str(&quote(primary));
+            }
+            Some('L') => {
+                chars.next();
+                out.push_str(&primary.display().to_string());
+            }
+            Some('*') => {
+                chars.next();
+                let all_quoted = all.iter().map(|p| quote(p)).collect::<Vec<_>>().join(" ");
+                out.push_str(&all_quoted);
+            }
+            _ => out.push('%'),
+        }
+    }
+    out
 }
 
 fn launch(executable: &str, arguments: &str, run_as_admin: bool) {
@@ -260,6 +293,29 @@ mod substitute_tests {
             substitute("echo %L| clip", &primary, &all),
             r"echo C:\Some Folder\file.txt| clip"
         );
+    }
+
+    #[test]
+    fn tokens_inside_substituted_paths_are_not_expanded_again() {
+        let primary = PathBuf::from(r"C:\report%*.txt");
+        let all = vec![primary.clone(), PathBuf::from(r"C:\b.txt")];
+        assert_eq!(substitute("%1", &primary, &all), r#""C:\report%*.txt""#);
+        assert_eq!(
+            substitute("%*", &primary, &all),
+            r#""C:\report%*.txt" "C:\b.txt""#
+        );
+    }
+
+    #[test]
+    fn trailing_backslashes_are_doubled_before_the_closing_quote() {
+        let root = PathBuf::from(r"C:\");
+        assert_eq!(substitute("%1 next", &root, &[root.clone()]), r#""C:\\" next"#);
+    }
+
+    #[test]
+    fn unknown_percent_sequences_are_left_alone() {
+        let primary = PathBuf::from(r"C:\a.txt");
+        assert_eq!(substitute("100%% %x %", &primary, &[]), "100%% %x %");
     }
 
     #[test]

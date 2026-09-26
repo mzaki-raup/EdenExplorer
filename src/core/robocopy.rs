@@ -206,7 +206,7 @@ pub fn next_available_name(target_dir: &Path, name: &str) -> String {
 }
 
 fn spawn_job(job: &RobocopyJobSpec) -> std::io::Result<Child> {
-    let mut cmd = Command::new("robocopy");
+    let mut cmd = Command::new(crate::core::system_paths::robocopy_exe());
     cmd.arg(&job.source_dir).arg(&job.dest_dir);
 
     if job.is_folder_job {

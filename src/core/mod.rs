@@ -18,6 +18,7 @@ pub mod robocopy;
 pub mod send_to;
 pub mod shortcuts;
 pub mod syntax_highlight;
+pub mod system_paths;
 pub mod tab_groups;
 pub mod utils;
 pub mod video;
