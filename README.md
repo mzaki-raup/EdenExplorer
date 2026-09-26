@@ -25,11 +25,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/downloads/mtucciarone/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/v/release/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/stars/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/downloads/mzaki-raup/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/v/release/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/license/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/actions/workflow/status/mzaki-raup/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/stars/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
 </p>
 
 <p align="center">
@@ -93,9 +93,12 @@
 <h3 align="center">Download</h3>
 <p align="center">
   Grab the latest release from:<br>
-  <a href="https://github.com/mtucciarone/EdenExplorer/releases">
-    https://github.com/mtucciarone/EdenExplorer/releases
+  <a href="https://github.com/mzaki-raup/EdenExplorer/releases">
+    https://github.com/mzaki-raup/EdenExplorer/releases
   </a>
+</p>
+<p align="center">
+  <sub>This is a fork of <a href="https://github.com/mtucciarone/EdenExplorer">mtucciarone/EdenExplorer</a> by Matthew Tucciarone.</sub>
 </p>
 <p align="center">
   Just download and launch — no installation, no setup.
