@@ -1009,6 +1009,9 @@ impl MainWindow {
         crate::core::indexer::save_sidebar_visibility(
             &self.settings_window.current_settings.sidebar_visibility,
         );
+        crate::core::perf::save_performance_panel_visible(
+            self.settings_window.current_settings.show_performance_panel,
+        );
         crate::core::context_menu_order::save_context_menu_order(
             &self.settings_window.current_settings.context_menu_order,
         );
@@ -1064,6 +1067,9 @@ impl MainWindow {
             view.size_rx = None;
             view.pending_size_queue.clear();
             view.pending_size_set.clear();
+            view.load_started_at = None;
+            view.size_scan_started_at = None;
+            view.size_scan_folders = 0;
             view.is_loading = false;
             view.network_share_error = Arc::new(Mutex::new(None));
             view.scan_token = Arc::new(());
@@ -1212,6 +1218,7 @@ impl MainWindow {
         let view = self.active_tab_mut().view_mut(side);
         view.rx = Some(rx);
         view.is_loading = true;
+        view.load_started_at = Some(std::time::Instant::now());
         view.network_share_error = network_share_error;
 
         // Setup folder size calculation channels only if folder scanning is enabled
@@ -4875,8 +4882,58 @@ impl MainWindow {
         Some(paths)
     }
 
+    /// Shows/hides the Performance panel (Ctrl+Shift+P, or its close
+    /// button) and remembers the choice, same as the Settings checkbox.
+    pub(crate) fn toggle_performance_panel(&mut self) {
+        let settings = &mut self.settings_window.current_settings;
+        settings.show_performance_panel = !settings.show_performance_panel;
+        crate::core::perf::save_performance_panel_visible(settings.show_performance_panel);
+    }
+
+    /// Draws the Performance panel when it's switched on.
+    pub(crate) fn draw_performance_panel(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+        cpu_usage: Option<f32>,
+    ) {
+        if !self.settings_window.current_settings.show_performance_panel {
+            return;
+        }
+        self.performance_state.record_frame(cpu_usage);
+
+        let view = self.active_tab().view(self.focused_split);
+        let current = &view.nav.current;
+        let panel = crate::gui::windows::performance_ui::PanelContext {
+            current_folder: (!current.as_os_str().is_empty() && current.is_dir())
+                .then(|| current.clone()),
+            size_scan_in_progress: view
+                .size_scan_started_at
+                .map(|started| (view.size_scan_folders, started.elapsed())),
+            folder_scanning_enabled: self.settings_window.current_settings.folder_scanning_enabled,
+        };
+        if crate::gui::windows::performance_ui::draw_performance_panel(
+            ctx,
+            &self.i18n,
+            palette,
+            &mut self.performance_state,
+            panel,
+        ) {
+            self.toggle_performance_panel();
+        }
+    }
+
     pub fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
         if self.global_shortcuts_disabled(ctx) {
+            return;
+        }
+
+        if !ctx.egui_wants_keyboard_input()
+            && ctx.input(|input| {
+                input.modifiers.ctrl && input.modifiers.shift && input.key_pressed(egui::Key::P)
+            })
+        {
+            self.toggle_performance_panel();
             return;
         }
 
@@ -5119,6 +5176,7 @@ impl MainWindow {
             let view = self.active_tab_mut().view_mut(side);
             sort_files_by_keys(&mut view.files, &view.sort_keys);
         }
+        self.finish_size_scan_metric_if_done(side);
         updated
     }
 
@@ -5173,6 +5231,8 @@ impl MainWindow {
                     let view = self.active_tab_mut().view_mut(side);
                     if view.pending_size_set.insert(item.path.clone()) {
                         view.pending_size_queue.push_back(item.path.clone());
+                        view.size_scan_started_at.get_or_insert_with(std::time::Instant::now);
+                        view.size_scan_folders += 1;
                     }
                 }
             }
@@ -5188,9 +5248,38 @@ impl MainWindow {
             view.rx = None;
             view.is_loading = false;
             any_change = true;
+            if let Some(started) = view.load_started_at.take() {
+                let sample = crate::gui::windows::performance_ui::TimedSample {
+                    path: view.nav.current.clone(),
+                    count: view.files.len(),
+                    elapsed: started.elapsed(),
+                };
+                self.performance_state.last_listing = Some(sample);
+            }
+            self.finish_size_scan_metric_if_done(side);
         }
 
         any_change
+    }
+
+    /// Records the Performance panel's "Folder Size Scan" metric once every
+    /// folder in the current listing has reported its final size.
+    fn finish_size_scan_metric_if_done(&mut self, side: SplitSide) {
+        let view = self.active_tab_mut().view_mut(side);
+        if view.rx.is_some()
+            || !view.pending_size_set.is_empty()
+            || !view.pending_size_queue.is_empty()
+        {
+            return;
+        }
+        if let Some(started) = view.size_scan_started_at.take() {
+            let sample = crate::gui::windows::performance_ui::TimedSample {
+                path: view.nav.current.clone(),
+                count: view.size_scan_folders,
+                elapsed: started.elapsed(),
+            };
+            self.performance_state.last_size_scan = Some(sample);
+        }
     }
 }
 

@@ -173,6 +173,10 @@ pub struct AppSettings {
     /// `core::indexer::{load_sidebar_visibility, save_sidebar_visibility}`.
     #[serde(default)]
     pub sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
+    /// Loaded/saved separately from the rest of these fields - see
+    /// `core::perf::{load_performance_panel_visible, save_performance_panel_visible}`.
+    #[serde(default)]
+    pub show_performance_panel: bool,
 }
 
 fn default_true() -> bool {

@@ -164,6 +164,7 @@ impl Default for AppSettings {
             tag_icon_style: crate::core::indexer::TagIconStyle::default(),
             context_menu_order: crate::core::context_menu_order::default_order(),
             sidebar_visibility: crate::core::indexer::SidebarSectionVisibility::default(),
+            show_performance_panel: false,
         }
     }
 }
@@ -1552,5 +1553,21 @@ fn draw_advanced_section(
                 },
             );
         }
+    });
+
+    settings_section(ui, palette, |ui| {
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.show_performance_panel,
+                RichText::new(i18n.tr("settings_show_performance_panel"))
+                    .color(palette.text_normal),
+                "settings_show_performance_panel",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(ui, &i18n.tr("tooltip_settings_show_performance_panel"), palette);
+        });
     });
 }

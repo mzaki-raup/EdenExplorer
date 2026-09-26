@@ -110,7 +110,13 @@ const SHORTCUT_GROUPS: &[ShortcutGroup] = &[
     },
     ShortcutGroup {
         title_key: "shortcuts_group_window",
-        shortcuts: &[Shortcut { action_key: "shortcut_fullscreen", combos: &[&["F1"]] }],
+        shortcuts: &[
+            Shortcut { action_key: "shortcut_fullscreen", combos: &[&["F1"]] },
+            Shortcut {
+                action_key: "shortcut_performance_panel",
+                combos: &[&["Ctrl", "Shift", "P"]],
+            },
+        ],
     },
 ];
 

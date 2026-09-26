@@ -152,6 +152,14 @@ pub struct TabView {
     pub pending_size_queue: VecDeque<PathBuf>,
     pub pending_size_set: HashSet<PathBuf>,
     pub size_threads: Vec<std::thread::JoinHandle<()>>,
+    /// When this view's current folder listing started, for the Performance
+    /// panel's "Folder Load" metric; cleared once the listing finishes.
+    pub load_started_at: Option<std::time::Instant>,
+    /// When the first folder-size request of this navigation was queued,
+    /// and how many folders it has queued so far - for the Performance
+    /// panel's "Folder Size Scan" metric.
+    pub size_scan_started_at: Option<std::time::Instant>,
+    pub size_scan_folders: usize,
     /// State for `ItemViewerDisplayMode::Columns` (Finder-style column browser).
     pub columns_view_state: ColumnsViewState,
     /// Background loader/cache for `ItemViewerDisplayMode::Preview`'s preview pane.
@@ -212,6 +220,9 @@ impl TabView {
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
             size_threads: Vec::new(),
+            load_started_at: None,
+            size_scan_started_at: None,
+            size_scan_folders: 0,
             columns_view_state: ColumnsViewState::default(),
             preview_service: crate::core::preview::PreviewService::default(),
             preview_selection: None,

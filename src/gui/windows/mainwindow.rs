@@ -135,6 +135,8 @@ pub struct MainWindow {
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
+    /// Live metrics + folder benchmark for the Performance panel.
+    pub(crate) performance_state: crate::gui::windows::performance_ui::PerformanceState,
     /// Completed, reversible Rename/BulkRename/Move/Copy operations, most
     /// recent last - see `UndoableOperation`'s doc comment in
     /// `mainwindow_imp.rs`. Deliberately in-memory only (never persisted),
@@ -259,6 +261,7 @@ impl Default for MainWindow {
             tag_icon_style: crate::core::indexer::load_tag_icon_style(),
             context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
             sidebar_visibility: crate::core::indexer::load_sidebar_visibility(),
+            show_performance_panel: crate::core::perf::load_performance_panel_visible(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -392,6 +395,7 @@ impl Default for MainWindow {
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,
             notifications_state: NotificationsState::default(),
+            performance_state: Default::default(),
             undo_stack: std::collections::VecDeque::new(),
             redo_stack: std::collections::VecDeque::new(),
             theme_dirty: true,
@@ -1702,6 +1706,7 @@ impl eframe::App for MainWindow {
         }
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
+        self.draw_performance_panel(ui.ctx(), &palette, frame.info().cpu_usage);
         self.handle_global_shortcuts(ui.ctx());
 
         if tags_changed {

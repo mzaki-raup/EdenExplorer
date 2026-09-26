@@ -322,6 +322,73 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
     total_size
 }
 
+/// Lists one folder synchronously with the same `NtQueryDirectoryFile`
+/// call `scan_dir_async` uses, returning how many entries it holds and
+/// their total file size - or `None` if the folder can't be opened. Every
+/// entry's name, size, and timestamps are read (as the real listing does)
+/// so the Performance panel's benchmark compares like with like against
+/// `std::fs::read_dir`; it just skips building `FileItem`s and sending them
+/// to the UI.
+pub fn list_dir_nt_stats(path: &Path) -> Option<(usize, u64)> {
+    let handle = open_directory_handle(&path.to_path_buf())?;
+    let mut count = 0usize;
+    let mut total_bytes = 0u64;
+    let mut newest_write = 0i64;
+
+    unsafe {
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+        loop {
+            let status = NtQueryDirectoryFile(
+                handle.0 as *mut _,
+                std::ptr::null_mut(),
+                None,
+                std::ptr::null_mut(),
+                &mut io_status,
+                buffer.as_mut_ptr() as *mut _,
+                buffer.len() as u32,
+                1,
+                0,
+                std::ptr::null_mut(),
+                0,
+            );
+
+            if status == STATUS_NO_MORE_FILES || status < 0 {
+                break;
+            }
+
+            let mut offset = 0usize;
+            let end = io_status.Information as usize;
+            while offset < end {
+                let entry = &*(buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION);
+                let name = std::slice::from_raw_parts(
+                    entry.FileName.as_ptr(),
+                    entry.FileNameLength as usize / 2,
+                );
+                let is_dot = name == [b'.' as u16] || name == [b'.' as u16, b'.' as u16];
+                if !is_dot {
+                    count += 1;
+                    if entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 == 0 {
+                        total_bytes = total_bytes.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                    }
+                    newest_write = newest_write.max(*entry.LastWriteTime.QuadPart());
+                }
+
+                if entry.NextEntryOffset == 0 {
+                    break;
+                }
+                offset += entry.NextEntryOffset as usize;
+            }
+        }
+
+        let _ = CloseHandle(handle);
+    }
+
+    std::hint::black_box(newest_write);
+    Some((count, total_bytes))
+}
+
 /// 🚀 Async directory scan
 pub fn scan_dir_async(
     path: PathBuf,
