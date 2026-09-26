@@ -1,0 +1,171 @@
+# EdenExplorer Screenshots
+
+All screenshots were taken with sample data (the `Eden Demo` folder: photos, a small website project, a Rust project, invoices, music, a font, and an archive).
+
+## Walkthrough
+
+![EdenExplorer walkthrough](eden-explorer-walkthrough.gif)
+
+Browsing Photos in Gallery and Details + Preview, previewing a Markdown file with a Mermaid diagram and a Python file, running a search, opening a tag view, and opening Settings > Shortcuts.
+
+## Features
+
+### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
+
+![Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip](01-details-view-with-tags.png)
+
+### Gallery view with Large thumbnails
+
+![Gallery view with Large thumbnails](02-gallery-view.png)
+
+### Columns view - a Finder-style column browser
+
+![Columns view - a Finder-style column browser](03-columns-view.png)
+
+### Columns + Preview - drill down through folders with a live preview of the selected file
+
+![Columns + Preview - drill down through folders with a live preview of the selected file](04-columns-plus-preview.png)
+
+### Details + Preview - image preview
+
+![Details + Preview - image preview](05-details-plus-preview-image.png)
+
+### Preview pane Details tab - size, dimensions, created/modified dates
+
+![Preview pane Details tab - size, dimensions, created/modified dates](06-preview-details-tab.png)
+
+### Rendered Markdown preview with task lists, tables, and a Mermaid flowchart
+
+![Rendered Markdown preview with task lists, tables, and a Mermaid flowchart](07-markdown-mermaid-preview.png)
+
+### Syntax-highlighted code preview
+
+![Syntax-highlighted code preview](08-syntax-highlighting.png)
+
+### SVG preview
+
+![SVG preview](09-svg-preview.png)
+
+### Font file preview with sample text at several sizes
+
+![Font file preview with sample text at several sizes](10-font-preview.png)
+
+### Zip archive contents preview
+
+![Zip archive contents preview](11-archive-preview.png)
+
+### Find in preview - highlights matches with next/previous navigation
+
+![Find in preview - highlights matches with next/previous navigation](12-find-in-preview.png)
+
+### Split-pane view
+
+![Split-pane view](13-split-view.png)
+
+### File/folder right-click menu
+
+![File/folder right-click menu](14-context-menu.png)
+
+### Send To submenu plus Custom Context Menu commands in the right-click menu
+
+![Send To submenu plus Custom Context Menu commands in the right-click menu](15-send-to-menu.png)
+
+### Tab right-click menu - Pin, Favorites, Save Search, and Close / Close Other / Close Tabs To The Left / Close Tabs To The Right
+
+![Tab right-click menu - Pin, Favorites, Save Search, and Close / Close Other / Close Tabs To The Left / Close Tabs To The Right](16-tab-context-menu.png)
+
+### "+" button menu - open or replace your tabs with a saved Tab Group
+
+!["+" button menu - open or replace your tabs with a saved Tab Group](17-tab-groups-menu.png)
+
+### Multi-row tab strip when tabs no longer fit on one row
+
+![Multi-row tab strip when tabs no longer fit on one row](18-multi-row-tabs.png)
+
+### Multi-tagging - add an item to several tag groups at once
+
+![Multi-tagging - add an item to several tag groups at once](19-multi-tagging.png)
+
+### Tag color picker with hex, RGB, and HSL
+
+![Tag color picker with hex, RGB, and HSL](20-tag-color-picker.png)
+
+### Tag view - every item carrying a tag, from the sidebar's Tags section
+
+![Tag view - every item carrying a tag, from the sidebar's Tags section](21-tag-view.png)
+
+### Global search results tab (Saved Searches appear in the sidebar)
+
+![Global search results tab (Saved Searches appear in the sidebar)](22-search-results.png)
+
+### Bulk Rename in Regex mode with a live preview
+
+![Bulk Rename in Regex mode with a live preview](23-bulk-rename.png)
+
+### Checksums dialog verifying a pasted MD5
+
+![Checksums dialog verifying a pasted MD5](24-checksums.png)
+
+### Paste conflict dialog - Replace / Skip Existing / Rename
+
+![Paste conflict dialog - Replace / Skip Existing / Rename](25-paste-conflict.png)
+
+### Notification panel showing a completed operation
+
+![Notification panel showing a completed operation](26-notifications.png)
+
+### This PC with drive usage
+
+![This PC with drive usage](27-this-pc.png)
+
+### Light theme
+
+![Light theme](28-light-theme.png)
+
+### Settings - General
+
+![Settings - General](29-settings-general.png)
+
+### Settings - Behavior
+
+![Settings - Behavior](30-settings-behavior.png)
+
+### Settings - Startup & Window
+
+![Settings - Startup & Window](31-settings-startup-window.png)
+
+### Settings - Appearance, with prebuilt themes, color schemes, custom themes, and Live Preview
+
+![Settings - Appearance, with prebuilt themes, color schemes, custom themes, and Live Preview](32-settings-appearance.png)
+
+### Settings - Favorites
+
+![Settings - Favorites](33-settings-favorites.png)
+
+### Settings - Context Menu Order
+
+![Settings - Context Menu Order](34-settings-context-menu-order.png)
+
+### Settings - Custom Context Menu
+
+![Settings - Custom Context Menu](35-settings-custom-context-menu.png)
+
+### Settings - Send To
+
+![Settings - Send To](36-settings-send-to.png)
+
+### Settings - Tab Groups
+
+![Settings - Tab Groups](37-settings-tab-groups.png)
+
+### Settings - Tags
+
+![Settings - Tags](38-settings-tags.png)
+
+### Settings - Shortcuts
+
+![Settings - Shortcuts](39-settings-shortcuts.png)
+
+### Settings - Advanced
+
+![Settings - Advanced](40-settings-advanced.png)

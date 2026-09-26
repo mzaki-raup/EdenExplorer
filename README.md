@@ -105,6 +105,20 @@
   <img src="src/featureslist.png" width="1536" />
 </p>
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="Screenshots/eden-explorer-walkthrough.gif" width="900" alt="EdenExplorer walkthrough" />
+</p>
+
+| | |
+|---|---|
+| ![Details view with tags](Screenshots/01-details-view-with-tags.png) | ![Gallery view](Screenshots/02-gallery-view.png) |
+| ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
+| ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
+
+See the [Screenshots folder](Screenshots/README.md) for all 40 feature screenshots.
+
 ## Star History
 
 <a href="https://www.star-history.com/?repos=mtucciarone%2Fedenexplorer&type=date&legend=top-left">
