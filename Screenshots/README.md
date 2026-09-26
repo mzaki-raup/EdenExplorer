@@ -166,10 +166,14 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
-### Settings - Advanced
+### Settings - Advanced, with Reset Settings, Export/Import Settings, and the Reset Data card
 
 ![Settings - Advanced](40-settings-advanced.png)
 
 ### Settings - General > Sidebar Sections, with Saved Searches, Recent, and Shared Network hidden from the sidebar
 
 ![Sidebar sections hidden](41-sidebar-sections-hidden.png)
+
+### Reset Data confirmation - every reset explains exactly what it removes before anything is deleted
+
+![Reset Data confirmation](42-reset-data-confirm.png)

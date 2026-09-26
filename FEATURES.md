@@ -21,7 +21,8 @@
 <ul>
   <li><b>Real-time file and directory filtering</b> as you type</li>
   <li><b>Real-time file indexing</b> for fast search and filtering</li>
-  <li><b>Fuzzy matching</b> for intelligent search results</li>
+  <li><b>Predictable substring matching</b> when typing to filter a folder</li>
+  <li><b>Global search</b> with a built-in engine or voidtools Everything, <code>ext:</code>/<code>size:</code>/<code>modified:</code>/<code>content:</code> filters, and Saved Searches</li>
   <li><b>Lexicographic multi-column sorting</b> with Shift+Click to add sort columns and Ctrl+Click to remove them</li>
   <li><b>Persistent column sorting</b> across sessions</li>
   <li><b>Persistent column sizing and view settings</b> across sessions</li>
@@ -36,6 +37,9 @@
   <li><b>System font selection</b> using installed Windows fonts</li>
   <li><b>Persistent application settings</b> across restarts</li>
   <li><b>Custom folder colors</b> for visual organization</li>
+  <li><b>Prebuilt and custom themes</b> with a live preview of every themeable surface</li>
+  <li><b>Show or hide sidebar sections</b> (Favorites, Tags, Saved Searches, Recent, Shared Network)</li>
+  <li><b>Shortcuts page</b> listing every keyboard and mouse shortcut</li>
 </ul>
 
 <h3>Tags & Organization</h3>
@@ -45,7 +49,8 @@
   <li><b>Custom tag colors</b> with Explorer visualization</li>
   <li><b>Tag-aware Explorer views</b> that visually identify tagged objects</li>
   <li><b>Favorites management</b> with drag-and-drop reorganization</li>
-  <li><b>Favorite reset and reorganization</b> capabilities</li>
+  <li><b>Multi-tagging</b> - an item can belong to several tag groups at once</li>
+  <li><b>Reset Data</b> - clear Favorites, Custom Context Menu, Custom Themes, Send To, Tab Groups, or Tags individually</li>
 </ul>
 
 </td>
@@ -66,6 +71,8 @@
   <li><b>Media Gallery views</b> with small, medium, large, and extra-large thumbnail layouts</li>
   <li><b>Tabbed navigation</b> with independent loading states</li>
   <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
+  <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
+  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video</li>
 </ul>
 
 <h3>File Operations</h3>
@@ -76,6 +83,8 @@
   <li><b>Drag and drop into breadcrumb folders</b> and directory tabs</li>
   <li><b>Drag and drop to native Windows applications</b>, Desktop, File Explorer, and other OS objects</li>
   <li><b>Windows Shell integration</b> with optional native Windows registry context menu commands</li>
+  <li><b>Custom Context Menu</b> commands and <b>Send To</b> destinations, with a reorderable right-click menu</li>
+  <li><b>Bulk Rename</b>, <b>Checksums</b>, <b>Compress (Zip)</b>, and Undo/Redo for rename, move, and copy</li>
 </ul>
 
 <h3>Devices & Filesystems</h3>
@@ -98,6 +107,13 @@
   <li><b>Windows API integration</b> for native operating system functionality</li>
   <li><b>Custom executable icon and file association</b></li>
   <li><b>Persistent settings</b> using efficient binary cache</li>
+</ul>
+
+<h3>Security</h3>
+<ul>
+  <li><b>Safe command substitution</b> - file names can't inject arguments into Custom Context Menu commands</li>
+  <li><b>System tools launched by full path</b>, so a look-alike <code>.exe</code> next to the portable app is never run</li>
+  <li><b>Size-capped previews</b> that refuse decompression bombs instead of running out of memory</li>
 </ul>
 
 <h3>Localization</h3>
