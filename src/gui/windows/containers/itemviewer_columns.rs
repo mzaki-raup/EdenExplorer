@@ -593,13 +593,9 @@ fn load_column(path: &Path) -> ColumnEntry {
         }
     }
 
-    items.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| {
-            a.name
-                .to_ascii_lowercase()
-                .cmp(&b.name.to_ascii_lowercase())
-        })
-    });
+    // Folders first, then case-insensitive name. `sort_by_cached_key`
+    // lowercases each name once, instead of twice per comparison.
+    items.sort_by_cached_key(|item| (!item.is_dir, item.name.to_ascii_lowercase()));
 
     ColumnEntry {
         path: path.to_path_buf(),

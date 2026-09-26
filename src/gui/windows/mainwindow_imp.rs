@@ -1032,6 +1032,7 @@ impl MainWindow {
             view.pending_size_set.clear();
             view.is_loading = false;
             view.network_share_error = Arc::new(Mutex::new(None));
+            view.scan_token = Arc::new(());
             view.explorer_state.selected_paths.clear();
             view.explorer_state.selection_anchor = None;
             view.explorer_state.selection_focus = None;
@@ -1096,10 +1097,12 @@ impl MainWindow {
                     self.settings_window.current_settings.custom_date_format.clone(),
                 );
             } else {
+                let still_wanted = Arc::downgrade(&self.active_tab_mut().view_mut(side).scan_token);
                 crate::core::fs::search_builtin_async(
                     query,
                     scope_folder,
                     tx,
+                    still_wanted,
                     self.settings_window.current_settings.date_style,
                     self.settings_window.current_settings.time_format_24h,
                     self.settings_window.current_settings.custom_date_format.clone(),

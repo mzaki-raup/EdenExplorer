@@ -953,6 +953,7 @@ pub fn search_builtin_async(
     query: String,
     scope_folder: Option<PathBuf>,
     tx: Sender<FileItem>,
+    still_wanted: std::sync::Weak<()>,
     date_style: DateStyle,
     time_format_24h: bool,
     custom_date_format: String,
@@ -996,6 +997,9 @@ pub fn search_builtin_async(
         let mut stack = roots;
 
         'walk: while let Some(dir) = stack.pop() {
+            if still_wanted.strong_count() == 0 {
+                break 'walk;
+            }
             let entries = match std::fs::read_dir(&dir) {
                 Ok(e) => e,
                 Err(_) => continue,

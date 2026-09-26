@@ -141,6 +141,12 @@ pub struct TabView {
     /// location the user has already navigated away from can never write
     /// into what's currently being displayed.
     pub network_share_error: std::sync::Arc<std::sync::Mutex<Option<crate::core::network::ShareEnumError>>>,
+    /// Replaced on every navigation and dropped with the tab. Long-running
+    /// background work for this view (the built-in search's disk walk) holds
+    /// only a `Weak` to it and stops once it's gone - otherwise a search that
+    /// finds few matches kept walking the whole disk after its tab was closed
+    /// or replaced, since it only noticed when sending a match failed.
+    pub scan_token: std::sync::Arc<()>,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
@@ -200,6 +206,7 @@ impl TabView {
             is_loading: false,
             rx: None,
             network_share_error: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            scan_token: std::sync::Arc::new(()),
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),
