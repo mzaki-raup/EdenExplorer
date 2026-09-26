@@ -119,8 +119,9 @@
 | ![Details view with tags](Screenshots/01-details-view-with-tags.png) | ![Gallery view](Screenshots/02-gallery-view.png) |
 | ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
+| ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 43 feature screenshots.
+See the [Screenshots folder](Screenshots/README.md) for all 46 feature screenshots, plus a short [Performance panel benchmark GIF](Screenshots/performance-benchmark.gif).
 
 ## Star History
 
@@ -156,6 +157,7 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - Ctrl+F - Open the search box in the current pane
 - Ctrl+Z - Undo the last rename/move/copy
 - Ctrl+Y (Ctrl+Shift+Z) - Redo
+- Ctrl+Shift+P - Show/hide the Performance panel
 
 
 ### ✅ Implemented Features Changelog
@@ -172,7 +174,7 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
-- [x] **Performance benchmarking system** with real-time measurement and comparison tools
+- [x] **Performance panel with live metrics and a folder benchmark** - Settings > Advanced > Show Performance Panel (or Ctrl+Shift+P) opens a floating panel showing how long the current folder took to list (items/sec), how long its folder-size scan took, frame time and FPS, and the app's memory use. **Benchmark This Folder** lists the current folder 3, 5, or 10 times each with the app's own `NtQueryDirectoryFile` method, Rust's `std::fs::read_dir`, and `read_dir` plus a `metadata()` call per file, then shows min/avg/max and items/sec for each; **Copy Results** puts a plain-text report on the clipboard
 - [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
@@ -312,6 +314,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - [x] **Shift+Del now permanently deletes** - on Windows, egui turned Shift+Delete into a Cut command, so the shortcut silently marked the selection for cutting instead of deleting it; it now permanently deletes (skipping the Recycle Bin) after the usual confirmation
 - [x] **Safer delete confirmation** - answering No to a delete confirmation is now reported as Cancelled instead of Failed, can never fall through to a permanent delete, and no longer strips tags from the items that were kept; tags are only removed from items that are actually gone
 - [x] **Safer Undo/Redo** - Ctrl+Z/Ctrl+Y no longer undo a file operation while you're typing in a text field (address bar, search, filter, Settings), undo/redo refuses to overwrite an item that now occupies the name it would restore (the step stays available to retry), and a failed undo/redo now shows in the notification panel instead of failing silently
+- [x] **Undo/Redo in the notification panel and toast** - every undo and redo, successful or not, now appears in the notification panel and toast titled "Undo: ..." or "Redo: ..." (for example "Undo: Moving 3 Items to Documents"), including undoing a copy (shown as deleting the copies to the Recycle Bin) and attempts that are refused because a file now occupies the name
+- [x] **Performance panel** - live folder load, folder size scan, frame time, FPS, and memory metrics, plus Benchmark This Folder with min/avg/max per listing method and Copy Results (Settings > Advanced, or Ctrl+Shift+P)
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

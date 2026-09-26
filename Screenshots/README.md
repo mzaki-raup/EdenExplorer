@@ -1,12 +1,18 @@
 # EdenExplorer Screenshots
 
-All screenshots were taken with sample data (the `Eden Demo` folder: photos, a small website project, a Rust project, invoices, music, a font, and an archive).
+All screenshots were taken with sample data (the `Eden Demo` folder: photos, a small website project, a Rust project, invoices, music, a font, and an archive). The Performance panel shots use `C:\Windows\System32` so the benchmark has a few hundred entries to list.
 
 ## Walkthrough
 
 ![EdenExplorer walkthrough](eden-explorer-walkthrough.gif)
 
 Browsing Photos in Gallery and Details + Preview, previewing a Markdown file with a Mermaid diagram and a Python file, running a search, opening a tag view, opening Settings > Shortcuts, and hiding and re-showing sidebar sections from Settings > General.
+
+## Performance Panel Benchmark
+
+![Performance panel benchmark](performance-benchmark.gif)
+
+Choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel) runs while each listing method is timed, then the min/avg/max and items/sec table appears with the fastest method highlighted.
 
 ## Features
 
@@ -166,7 +172,7 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
-### Settings - Advanced, with Reset Settings, Export/Import Settings, and the Reset Data card
+### Settings - Advanced, with Reset Settings, Export/Import Settings, the Reset Data card, and Show Performance Panel
 
 ![Settings - Advanced](40-settings-advanced.png)
 
@@ -181,3 +187,15 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 ### Notification panel after deletes - answering No to the delete confirmation (Delete or Shift+Del) is reported as Cancelled and leaves the item and its tags untouched; answering Yes shows Completed
 
 ![Delete cancelled and completed in the notification panel](43-delete-cancelled-notifications.png)
+
+### Performance panel (Ctrl+Shift+P) - live folder load time and items/sec, folder size scan time, frame time, FPS, and memory for the current folder
+
+![Performance panel](44-performance-panel.png)
+
+### Benchmark This Folder - min/avg/max and items/sec for the app's NtQueryDirectoryFile listing, Rust's read_dir, and read_dir with per-file metadata, with Copy Results
+
+![Benchmark This Folder results](45-performance-benchmark.png)
+
+### Settings - Shortcuts, Window group with the new Show/Hide Performance Panel shortcut
+
+![Settings - Shortcuts, Performance Panel shortcut](46-settings-shortcuts-performance.png)
