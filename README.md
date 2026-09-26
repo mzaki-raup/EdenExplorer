@@ -132,6 +132,9 @@
 - Alt + Right Arrow (Mouse Button 4) - Navigate forwards
 - Alt + Up Arrow (Mouse Button 5) - Navigate upwards
 - Enter - If a file is selected, runs the default program
+- Ctrl+F - Open the search box in the current pane
+- Ctrl+Z - Undo the last rename/move/copy
+- Ctrl+Y (Ctrl+Shift+Z) - Redo
 
 
 ### ✅ Implemented Features Changelog
@@ -268,6 +271,18 @@
 - [x] **Master-detail Settings pages** - Favorites, Tags, Custom Context Menu, Tab Groups, and Send To now use a selectable list on the left with a dedicated editor for the selected entry on the right, instead of one long scrolling list of every entry's fields
 - [x] **Middle-click breadcrumb segments** - with "middle-click opens in new tab" enabled, middle-clicking any address-bar breadcrumb segment opens that folder in a new tab
 - [x] **Clear network share errors** - browsing a `\\SERVER` whose shares can't be listed now says why (e.g. "Access denied - this PC doesn't have permission to list this server's shares") instead of misleadingly showing "This folder is empty"
+- [x] **Six view layouts** - switch any pane between Details, Gallery, **Columns** (a macOS Finder-style column browser: clicking a folder opens its contents in a new column to the right), **Columns + Preview**, **Preview** (a simple file list with a preview pane beside it), and **Details + Preview** from the toolbar; each folder remembers its own layout, and the default for new folders is set in Settings
+- [x] **Preview pane** - shows the selected file's content with a **Preview** tab and a **Details** tab (size, image dimensions, created/modified dates). Supports images (PNG/JPG/BMP/WebP/TIFF/ICO/AVIF), animated GIFs, PDFs (first page rendered, with a text fallback), Office documents (`.docx`/`.xlsx`/`.pptx` and legacy `.doc`/`.xls`/`.ppt`, rendered through Windows' own thumbnail handlers, with a plain-text fallback for `.docx`), font files (family name plus sample text at several sizes), zip-based archives (`.zip`/`.jar`/`.war`/`.apk`/`.xpi`), and any plain-text file (detected by extension or by sniffing the content), plus a **Find in preview** bar for text
+- [x] **Video preview playback** - videos play right in the preview pane through Windows Media Foundation (the same decoders Windows Media Player and Photos use), with click-to-play/pause, a seek slider, and current/total time
+- [x] **Notification panel** - a bell icon in the title bar lists recent copy/move/delete/rename/compress operations with live status (In progress/Paused/Completed/Failed/Cancelled), a progress bar, source -> destination, and a Clear All button; a count badge shows how many are active
+- [x] **Multi-threaded, resumable copy/move engine** - pasting (Ctrl+C/Ctrl+X then Ctrl+V) copies and moves through Windows' own `robocopy` in multi-threaded, restartable mode, with real progress plus **Pause**, **Resume**, and **Cancel** buttons in the notification panel; resuming skips whatever was already copied and continues the interrupted file from its last checkpoint
+- [x] **Custom Context Menu** - add your own commands to the right-click menu from Settings: pick a program and arguments (`%1`/`%V` for the first selected path, `%*` for every selected path), a label and icon, which targets it shows for (Files, Folders, and/or folder background), and whether to **Run as administrator** or **Run once per selected item**; nest commands under named submenus
+- [x] **Status bar item counts** - the status bar shows file, folder, and total item counts plus the total size (including subfolder sizes that have already been scanned when folder size scanning is on), each with its own explanatory tooltip
+- [x] **Custom date format** - besides the built-in date styles (including a new US short style, `08/07/2026`), set your own strftime-style pattern (e.g. `%d/%m/%Y %H:%M`) for the Modified/Created columns; an invalid pattern shows a warning and falls back to the default format
+- [x] **Settings organized into categories** - General, Behavior, Startup & Window, Appearance, Favorites, Tags, Custom Context Menu, Send To, Tab Groups, Context Menu Order, and Advanced, each on its own page
+- [x] **Native file/folder pickers stay attached to the main window** - every Browse/Export/Import dialog is parented to EdenExplorer, so it can't hide behind the app or be lost behind other windows
+- [x] **Easier window resizing** - a wider, DPI-scaled grab area along the window edges, matching the resize border size of standard Windows windows
+- [x] **No duplicate raw drives** - a physical disk that already has a lettered drive is no longer listed a second time as a raw/unmounted drive
 
 
 ## Bulk Rename Guide
