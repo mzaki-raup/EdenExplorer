@@ -498,9 +498,36 @@ fn delete_paths_native_standalone(
         }
 
         file_op.PerformOperations()?;
+
+        // Declining the "are you sure?" confirmation doesn't always come back
+        // as an error - the operation can "succeed" with everything aborted.
+        // Report it the same way as an explicit cancel so callers can tell
+        // it apart from a real failure.
+        if file_op.GetAnyOperationsAborted()?.as_bool() {
+            return Err(user_cancelled_error());
+        }
     }
 
     Ok(())
+}
+
+/// `HRESULT_FROM_WIN32(ERROR_CANCELLED)` - the error a shell file operation
+/// returns when the user cancels it.
+const HRESULT_ERROR_CANCELLED: i32 = 0x8007_04C7_u32 as i32;
+/// `COPYENGINE_E_USER_CANCELLED` - the copy engine's own "user cancelled".
+const HRESULT_COPYENGINE_USER_CANCELLED: i32 = 0x8027_0000_u32 as i32;
+
+fn user_cancelled_error() -> windows::core::Error {
+    windows::core::Error::from(windows::core::HRESULT(HRESULT_ERROR_CANCELLED))
+}
+
+/// Whether a shell file operation error means the user cancelled it (e.g.
+/// answered No to the delete confirmation), as opposed to a real failure.
+fn is_user_cancelled(error: &windows::core::Error) -> bool {
+    matches!(
+        error.code().0,
+        HRESULT_ERROR_CANCELLED | HRESULT_COPYENGINE_USER_CANCELLED
+    )
 }
 
 /// Free-function core of `MainWindow::find_recycled_pidl` - pulled out for
@@ -1788,16 +1815,37 @@ impl MainWindow {
                 } else {
                     String::new()
                 };
-                let delete_status = if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo, false) {
-                    eprintln!("Native delete failed: {:?}", e);
-
-                    // fallback (rare, but safe)
-                    for path in &paths {
-                        self.delete_path(path);
+                use crate::gui::windows::containers::notifications::FileOpStatus;
+                // Whatever the shell API reports, the result on disk is what
+                // counts: answering No to the confirmation doesn't reliably
+                // come back as an error or an "aborted" flag, so a delete that
+                // left every item in place is reported as Cancelled rather
+                // than Completed, and one that removed only some as Failed.
+                let status_on_disk = |paths: &[PathBuf]| {
+                    let remaining = paths.iter().filter(|path| path.exists()).count();
+                    if remaining == 0 {
+                        FileOpStatus::Completed
+                    } else if remaining == paths.len() {
+                        FileOpStatus::Cancelled
+                    } else {
+                        FileOpStatus::Failed
                     }
-                    crate::gui::windows::containers::notifications::FileOpStatus::Failed
-                } else {
-                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                };
+                let delete_status = match self.delete_paths_native(paths.clone(), allow_undo, false) {
+                    Ok(()) => status_on_disk(&paths),
+                    // The user answered No to the confirmation: nothing was
+                    // deleted, and nothing else may be attempted.
+                    Err(e) if is_user_cancelled(&e) => FileOpStatus::Cancelled,
+                    Err(e) => {
+                        eprintln!("Native delete failed: {:?}", e);
+                        // Fallback for a genuinely broken native operation:
+                        // only ever the Recycle Bin (which asks for its own
+                        // confirmation), never a silent permanent delete.
+                        for path in &paths {
+                            self.delete_path(path);
+                        }
+                        status_on_disk(&paths)
+                    }
                 };
                 self.notifications_state.record_finished(
                     crate::gui::windows::containers::notifications::FileOpKind::Delete,
@@ -1809,8 +1857,11 @@ impl MainWindow {
                         .auto_open_notification_panel,
                 );
 
+                // Only untag items that are actually gone - a cancelled or
+                // partly failed delete must not strip tags from files that
+                // are still there.
                 let mut tags_changed = false;
-                for path in &paths {
+                for path in paths.iter().filter(|path| !path.exists()) {
                     tags_changed |= self.tags_state.remove_path_prefix(path);
                 }
 
@@ -2958,14 +3009,14 @@ impl MainWindow {
         pasted_paths
     }
 
-    pub fn delete_path(&self, path: &PathBuf) {
-        if !shell_delete_to_recycle_bin(path) {
-            if path.is_dir() {
-                let _ = std::fs::remove_dir_all(path);
-            } else {
-                let _ = std::fs::remove_file(path);
-            }
-        }
+    /// Fallback delete used only when the native `IFileOperation` delete
+    /// fails outright: moves `path` to the Recycle Bin via `SHFileOperation`
+    /// (which shows its own confirmation). Returns whether it succeeded.
+    /// Deliberately never falls back to `std::fs::remove_*` - that would
+    /// permanently delete files the user may just have declined to delete
+    /// in the confirmation dialog.
+    pub fn delete_path(&self, path: &PathBuf) -> bool {
+        shell_delete_to_recycle_bin(path)
     }
 
     /// `silent` suppresses any native "are you sure?" confirmation and
