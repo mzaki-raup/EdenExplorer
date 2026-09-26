@@ -511,6 +511,12 @@ fn delete_paths_native_standalone(
     Ok(())
 }
 
+/// Whether two paths name the same item on Windows, where file names are
+/// case-insensitive (`C:\a.txt` and `C:\A.TXT` are one file).
+fn same_path(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+}
+
 /// `HRESULT_FROM_WIN32(ERROR_CANCELLED)` - the error a shell file operation
 /// returns when the user cancels it.
 const HRESULT_ERROR_CANCELLED: i32 = 0x8007_04C7_u32 as i32;
@@ -3052,6 +3058,60 @@ impl MainWindow {
         self.redo_stack.clear();
     }
 
+    /// Whether undoing `op` would land on a name that something else now
+    /// occupies. A name freed by another item of the same batch (e.g. a
+    /// bulk rename that swapped two names) doesn't count, and neither does a
+    /// case-only rename (Windows names are case-insensitive, so the "old"
+    /// name still resolves to the very same item).
+    fn undo_target_occupied(op: &UndoableOperation) -> bool {
+        match op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                !same_path(old_path, new_path) && old_path.exists()
+            }
+            UndoableOperation::BulkRename { pairs } => pairs.iter().any(|(old, _)| {
+                old.exists() && !pairs.iter().any(|(_, new)| same_path(new, old))
+            }),
+            UndoableOperation::Move { pairs, .. } => pairs
+                .iter()
+                .any(|(orig, cur)| !same_path(orig, cur) && orig.exists()),
+            // Undoing a copy only removes the copies it created.
+            UndoableOperation::Copy { .. } => false,
+        }
+    }
+
+    /// Whether redoing `op` would land on a name that something else now
+    /// occupies. Destinations that were originally a Replace resolution are
+    /// expected to be occupied - redo recycles them again first.
+    fn redo_target_occupied(op: &UndoableOperation) -> bool {
+        match op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                !same_path(old_path, new_path) && new_path.exists()
+            }
+            UndoableOperation::BulkRename { pairs } => pairs.iter().any(|(_, new)| {
+                new.exists() && !pairs.iter().any(|(old, _)| same_path(old, new))
+            }),
+            UndoableOperation::Move { pairs, replaced, .. }
+            | UndoableOperation::Copy { pairs, replaced, .. } => pairs.iter().any(|(src, dest)| {
+                !same_path(src, dest) && dest.exists() && !replaced.contains_key(dest)
+            }),
+        }
+    }
+
+    /// Shows a Failed entry in the notification panel for an undo/redo that
+    /// couldn't be carried out, so it doesn't fail silently.
+    fn report_undo_redo_failure(&mut self, op: &UndoableOperation) {
+        use crate::gui::windows::containers::notifications::{FileOpKind, FileOpStatus};
+        let (kind, count) = match op {
+            UndoableOperation::Rename { .. } => (FileOpKind::Rename, 1),
+            UndoableOperation::BulkRename { pairs } => (FileOpKind::Rename, pairs.len()),
+            UndoableOperation::Move { pairs, .. } => (FileOpKind::Move, pairs.len()),
+            UndoableOperation::Copy { pairs, .. } => (FileOpKind::Copy, pairs.len()),
+        };
+        let auto_open = self.settings_window.current_settings.auto_open_notification_panel;
+        self.notifications_state
+            .record_finished(kind, count, String::new(), FileOpStatus::Failed, auto_open);
+    }
+
     /// Reverses the most recently completed reversible operation, if any -
     /// wired to Ctrl+Z (see `handle_global_shortcuts`). Pops the entry
     /// immediately (rather than waiting for the reversal itself to finish)
@@ -3061,6 +3121,15 @@ impl MainWindow {
         let Some(op) = self.undo_stack.pop_back() else {
             return;
         };
+
+        // Undo must never overwrite something that now occupies an original
+        // name (robocopy would silently replace it). Leave the entry on the
+        // stack so it can be retried once the user moves that item away.
+        if Self::undo_target_occupied(&op) {
+            self.report_undo_redo_failure(&op);
+            self.undo_stack.push_back(op);
+            return;
+        }
 
         match &op {
             UndoableOperation::Rename { old_path, new_path } => {
@@ -3073,6 +3142,7 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not rename back to original name");
+                    self.report_undo_redo_failure(&op);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3088,6 +3158,7 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not restore original names");
+                    self.report_undo_redo_failure(&op);
                 }
             }
             UndoableOperation::Move { pairs, side, .. } => {
@@ -3154,6 +3225,7 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not delete the copied item(s)");
+                    self.report_undo_redo_failure(&op);
                 }
             }
         }
@@ -3168,6 +3240,14 @@ impl MainWindow {
             return;
         };
 
+        // Same rule as `undo`: never overwrite something that now occupies
+        // the name the operation is about to recreate.
+        if Self::redo_target_occupied(&op) {
+            self.report_undo_redo_failure(&op);
+            self.redo_stack.push_back(op);
+            return;
+        }
+
         match &op {
             UndoableOperation::Rename { old_path, new_path } => {
                 let Some(new_name) = new_path.file_name().map(|n| n.to_string_lossy().to_string())
@@ -3179,6 +3259,7 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply rename");
+                    self.report_undo_redo_failure(&op);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3194,6 +3275,7 @@ impl MainWindow {
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply bulk rename");
+                    self.report_undo_redo_failure(&op);
                 }
             }
             UndoableOperation::Move { pairs, side, replaced } => {
@@ -4852,8 +4934,13 @@ impl MainWindow {
 
         // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not also fire while a rename/
         // bulk-rename dialog is actively open - same guard as F2 above.
-        let rename_ui_open =
-            self.rename_state.is_some() || self.pending_bulk_rename.is_some();
+        // Also skip them while any text field has keyboard focus (address
+        // bar, search, filter, Find in Preview, Settings fields): there,
+        // Ctrl+Z/Ctrl+Y belong to the text box's own undo, and must not also
+        // undo the last file rename/move/copy behind the user's back.
+        let rename_ui_open = self.rename_state.is_some()
+            || self.pending_bulk_rename.is_some()
+            || ctx.egui_wants_keyboard_input();
 
         if shortcuts.12 && !rename_ui_open {
             self.undo();
@@ -5919,5 +6006,83 @@ impl MainWindow {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod undo_redo_safety_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("eden_undo_test_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn undo_rename_is_blocked_when_a_new_item_took_the_old_name() {
+        let dir = scratch("rename");
+        let (old, new) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&new, "renamed").unwrap();
+        let op = UndoableOperation::Rename { old_path: old.clone(), new_path: new };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        std::fs::write(&old, "someone else's new file").unwrap();
+        assert!(MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn case_only_rename_can_still_be_undone() {
+        let dir = scratch("case");
+        let new = dir.join("Report.txt");
+        std::fs::write(&new, "x").unwrap();
+        let op = UndoableOperation::Rename { old_path: dir.join("report.txt"), new_path: new };
+        assert!(!MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn bulk_rename_that_swapped_names_is_not_blocked() {
+        let dir = scratch("swap");
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "was b").unwrap();
+        std::fs::write(&b, "was a").unwrap();
+        let op = UndoableOperation::BulkRename { pairs: vec![(a.clone(), b.clone()), (b, a)] };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        assert!(!MainWindow::redo_target_occupied(&op));
+    }
+
+    #[test]
+    fn undo_move_is_blocked_when_the_original_location_is_occupied() {
+        let dir = scratch("move");
+        let (orig, cur) = (dir.join("src").join("f.txt"), dir.join("dst").join("f.txt"));
+        std::fs::create_dir_all(orig.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(cur.parent().unwrap()).unwrap();
+        std::fs::write(&cur, "moved").unwrap();
+        let op = UndoableOperation::Move {
+            pairs: vec![(orig.clone(), cur)],
+            side: SplitSide::Primary,
+            replaced: HashMap::new(),
+        };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        std::fs::write(&orig, "new file at the old spot").unwrap();
+        assert!(MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn redo_copy_is_blocked_unless_the_destination_was_a_replace() {
+        let dir = scratch("copy");
+        let (src, dest) = (dir.join("src.txt"), dir.join("dest.txt"));
+        std::fs::write(&src, "source").unwrap();
+        std::fs::write(&dest, "something new").unwrap();
+        let mut op = UndoableOperation::Copy {
+            pairs: vec![(src, dest.clone())],
+            side: SplitSide::Primary,
+            replaced: HashMap::new(),
+        };
+        assert!(MainWindow::redo_target_occupied(&op));
+        if let UndoableOperation::Copy { replaced, .. } = &mut op {
+            replaced.insert(dest, Vec::new());
+        }
+        assert!(!MainWindow::redo_target_occupied(&op));
     }
 }

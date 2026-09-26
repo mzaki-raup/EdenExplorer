@@ -311,6 +311,7 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - [x] **Performance and stability fixes** - icons are requested once instead of every frame while loading, per-file icon textures are capped, the built-in search stops as soon as its tab is closed, text previews read only the part they show, and previews with CJK or emoji text no longer crash the preview loader
 - [x] **Shift+Del now permanently deletes** - on Windows, egui turned Shift+Delete into a Cut command, so the shortcut silently marked the selection for cutting instead of deleting it; it now permanently deletes (skipping the Recycle Bin) after the usual confirmation
 - [x] **Safer delete confirmation** - answering No to a delete confirmation is now reported as Cancelled instead of Failed, can never fall through to a permanent delete, and no longer strips tags from the items that were kept; tags are only removed from items that are actually gone
+- [x] **Safer Undo/Redo** - Ctrl+Z/Ctrl+Y no longer undo a file operation while you're typing in a text field (address bar, search, filter, Settings), undo/redo refuses to overwrite an item that now occupies the name it would restore (the step stays available to retry), and a failed undo/redo now shows in the notification panel instead of failing silently
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 
