@@ -258,6 +258,7 @@ impl Default for MainWindow {
             send_to_context_menu_enabled: loaded_send_to.1,
             tag_icon_style: crate::core::indexer::load_tag_icon_style(),
             context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
+            sidebar_visibility: crate::core::indexer::load_sidebar_visibility(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -885,6 +886,7 @@ impl eframe::App for MainWindow {
                                                     &mut self.saved_searches_state,
                                                     &self.recent_locations_state,
                                                     self.settings_window.current_settings.tag_icon_style,
+                                                    self.settings_window.current_settings.sidebar_visibility,
                                                 ));
                                             },
                                         );

@@ -169,6 +169,10 @@ pub struct AppSettings {
     /// `core::context_menu_order`.
     #[serde(default = "crate::core::context_menu_order::default_order")]
     pub context_menu_order: Vec<crate::core::context_menu_order::ContextMenuSection>,
+    /// Loaded/saved separately from the rest of these fields - see
+    /// `core::indexer::{load_sidebar_visibility, save_sidebar_visibility}`.
+    #[serde(default)]
+    pub sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
 }
 
 fn default_true() -> bool {

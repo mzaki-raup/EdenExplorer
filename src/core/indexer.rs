@@ -748,6 +748,62 @@ pub fn save_tag_icon_style(style: TagIconStyle) {
     }
 }
 
+/// Which optional sidebar sections are shown (Settings > General > Sidebar
+/// Sections). Places and Storage are always shown. A brand-new, dedicated
+/// file for the same reason `TabLayoutSnapshot` above is (and separate from
+/// `SidebarSectionsSnapshot`, which only remembers expanded/collapsed), so it can never
+/// break decoding of `ThemePalette`/`AppSettingsSnapshot`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarSectionVisibility {
+    pub favorites: bool,
+    pub tags: bool,
+    pub saved_searches: bool,
+    pub recent_locations: bool,
+    pub shared_network: bool,
+}
+
+impl Default for SidebarSectionVisibility {
+    fn default() -> Self {
+        Self {
+            favorites: true,
+            tags: true,
+            saved_searches: true,
+            recent_locations: true,
+            shared_network: true,
+        }
+    }
+}
+
+fn sidebar_visibility_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("sidebar_visibility.bin"))
+}
+
+pub fn load_sidebar_visibility() -> SidebarSectionVisibility {
+    let Some(path) = sidebar_visibility_cache_path() else {
+        return SidebarSectionVisibility::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SidebarSectionVisibility::default();
+    };
+    postcard::take_from_bytes::<SidebarSectionVisibility>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_sidebar_visibility(sections: &SidebarSectionVisibility) {
+    let Some(path) = sidebar_visibility_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(sections) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 /// Which `CustomThemeEntry` (by id, not name - a name can be edited later)
 /// the user most recently selected in Settings > Appearance > Custom
 /// Themes, so `ThemeCustomizer::new_custom_theme_name` can be pre-filled

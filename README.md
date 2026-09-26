@@ -303,6 +303,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - [x] **Easier window resizing** - a wider, DPI-scaled grab area along the window edges, matching the resize border size of standard Windows windows
 - [x] **No duplicate raw drives** - a physical disk that already has a lettered drive is no longer listed a second time as a raw/unmounted drive
 - [x] **Shortcuts page in Settings** - a Shortcuts category (between Tags and Advanced) lists every keyboard and mouse shortcut in the app, grouped into Tabs, Navigation, Files & Selection, Mouse, and Window, with each key combination drawn as keycaps
+- [x] **Show/hide sidebar sections** - Settings > General > Sidebar Sections lets you hide Favorites, Tags, Saved Searches, Recent, and Shared Network from the sidebar (Places and Storage are always shown)
+- [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 
 ## Bulk Rename Guide

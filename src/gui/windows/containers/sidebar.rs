@@ -68,6 +68,7 @@ pub fn draw_sidebar(
     saved_searches_state: &mut SavedSearchesState,
     recent_locations_state: &RecentLocationsState,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
@@ -302,6 +303,7 @@ pub fn draw_sidebar(
                         }
                     }
 
+                    if sidebar_visibility.favorites {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -491,7 +493,9 @@ pub fn draw_sidebar(
                         }
                     }
                     } // favorites_expanded
+                    } // sidebar_visibility.favorites
 
+                    if sidebar_visibility.tags {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -528,7 +532,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.tags
 
+                    if sidebar_visibility.saved_searches {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -644,6 +650,7 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.saved_searches
 
                     saved_searches_state.rename_state = saved_search_rename_state;
                     if let Some((id, new_name)) = saved_search_rename_committed {
@@ -659,6 +666,7 @@ pub fn draw_sidebar(
                         );
                     }
 
+                    if sidebar_visibility.recent_locations {
                     ui.add_space(6.0);
                     let (changed, recent_locations_header_resp) = draw_section_header(
                         ui,
@@ -729,7 +737,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.recent_locations
 
+                    if sidebar_visibility.shared_network {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -777,6 +787,7 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.shared_network
 
                     // Extra bottom padding so last items aren't clipped by scroll boundary.
                     ui.add_space(12.0);

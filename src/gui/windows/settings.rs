@@ -163,6 +163,7 @@ impl Default for AppSettings {
             send_to_context_menu_enabled: false,
             tag_icon_style: crate::core::indexer::TagIconStyle::default(),
             context_menu_order: crate::core::context_menu_order::default_order(),
+            sidebar_visibility: crate::core::indexer::SidebarSectionVisibility::default(),
         }
     }
 }
@@ -1011,6 +1012,38 @@ fn draw_general_section(
             }
             info_icon(ui, &i18n.tr("tooltip_settings_contextmenu"), palette);
         });
+    });
+
+    settings_section(ui, palette, |ui| {
+        setting_label(
+            ui,
+            &i18n.tr("settings_sidebar_sections"),
+            Some((&i18n.tr("tooltip_settings_sidebar_sections"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        let visibility = &mut settings.current_settings.sidebar_visibility;
+        let toggles: [(&mut bool, &str); 5] = [
+            (&mut visibility.favorites, "favorites"),
+            (&mut visibility.tags, "tags"),
+            (&mut visibility.saved_searches, "saved_searches"),
+            (&mut visibility.recent_locations, "recent_locations"),
+            (&mut visibility.shared_network, "shared_network"),
+        ];
+        for (index, (shown, label_key)) in toggles.into_iter().enumerate() {
+            if index > 0 {
+                ui.add_space(SETTINGS_FIELD_GAP);
+            }
+            if setting_checkbox(
+                ui,
+                palette,
+                shown,
+                RichText::new(i18n.tr(label_key)).color(palette.text_normal),
+                format!("settings_sidebar_section_{label_key}"),
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+        }
     });
 }
 

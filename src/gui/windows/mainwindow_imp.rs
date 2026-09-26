@@ -972,6 +972,9 @@ impl MainWindow {
         crate::core::indexer::save_tag_icon_style(
             self.settings_window.current_settings.tag_icon_style,
         );
+        crate::core::indexer::save_sidebar_visibility(
+            &self.settings_window.current_settings.sidebar_visibility,
+        );
         crate::core::context_menu_order::save_context_menu_order(
             &self.settings_window.current_settings.context_menu_order,
         );
