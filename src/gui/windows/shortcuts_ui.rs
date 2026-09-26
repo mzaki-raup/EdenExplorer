@@ -180,7 +180,7 @@ fn key_chip(ui: &mut egui::Ui, palette: &ThemePalette, key: &str) {
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(key)
-                    .monospace()
+                    .family(egui::FontFamily::Monospace)
                     .size(palette.text_size - 1.0)
                     .color(palette.text_normal),
             );
