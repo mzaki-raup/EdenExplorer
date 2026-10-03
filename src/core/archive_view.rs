@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 /// Shown instead of playing a video or song that's inside an archive.
+pub const MEDIA_ON_SERVER: &str = "This file is on a server - open it (double-click) to play it.";
 pub const MEDIA_IN_ARCHIVE: &str = "This file is inside an archive - open it (double-click) or extract it to play it.";
 
 /// Tar and 7z archives up to this size are extracted whole the first time
@@ -260,6 +261,10 @@ pub fn extract_for_open(path: &Path) -> Result<PathBuf, String> {
 /// A path the file system can read for `path`: itself, or for a file
 /// inside an archive, a temporary extracted copy.
 pub fn readable_path(path: &Path) -> Result<PathBuf, String> {
+    // A file on a remote server: a downloaded copy (small enough files only).
+    if crate::core::remote::is_remote(path) {
+        return crate::core::remote::preview_copy(path);
+    }
     if is_inside_archive(path) {
         extract_for_open(path)
     } else {

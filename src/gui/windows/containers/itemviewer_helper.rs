@@ -513,6 +513,47 @@ pub fn handle_context_menu_actions(
         return;
     }
 
+    // On a remote server (SFTP, FTP, WebDAV, S3): open, download, cut/copy
+    // (paste into a local folder to download), rename, delete, copy URL.
+    if context_paths.first().is_some_and(|p| crate::core::remote::is_remote(p)) {
+        let single = context_paths.len() == 1;
+        if single && menu_item_button(ui, regular::ARROW_SQUARE_OUT, &i18n.tr("archive_open_item")).clicked() {
+            *action = Some(if file.is_dir {
+                ItemViewerAction::Open(context_paths[0].clone())
+            } else {
+                ItemViewerAction::OpenWithDefault(context_paths.clone())
+            });
+            ui.close();
+        }
+        if menu_item_button(ui, regular::DOWNLOAD_SIMPLE, &i18n.tr("remote_download_to")).clicked() {
+            *action = Some(ItemViewerAction::RemoteDownloadTo(context_paths.clone()));
+            ui.close();
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(context_paths.clone())));
+            ui.close();
+        }
+        if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(context_paths.clone())));
+            ui.close();
+        }
+        if single && menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename")).clicked() {
+            *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
+            ui.close();
+        }
+        if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(context_paths.clone(), true)));
+            ui.close();
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::LINK, &i18n.tr("remote_copy_url")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::CopyPath(context_paths.clone())));
+            ui.close();
+        }
+        return;
+    }
+
     // Inside an archive (browsed like a folder): read-only, so just open,
     // extract and copy the path.
     // (One check on the folder, not one per selected item: this runs every

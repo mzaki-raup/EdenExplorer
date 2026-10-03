@@ -56,6 +56,8 @@ pub enum ItemViewerAction {
     RangeSelect(Vec<PathBuf>),
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
+    /// Download remote items to a folder the user picks.
+    RemoteDownloadTo(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
     OpenInSplitView(PathBuf),
     Context(ItemViewerContextAction),

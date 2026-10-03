@@ -1062,8 +1062,11 @@ fn draw_general_section(
         );
         ui.add_space(SETTINGS_FIELD_GAP);
         let visibility = &mut settings.current_settings.sidebar_visibility;
-        let toggles: [(&mut bool, &str); 6] = [
-            (&mut settings.current_settings.ui_prefs.folder_tree, "folder_tree_section"),
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let toggles: [(&mut bool, &str); 8] = [
+            (&mut prefs.folder_tree, "folder_tree_section"),
+            (&mut prefs.sidebar_cloud, "places_cloud"),
+            (&mut prefs.sidebar_linux, "places_linux"),
             (&mut visibility.favorites, "favorites"),
             (&mut visibility.tags, "tags"),
             (&mut visibility.saved_searches, "saved_searches"),
@@ -1306,6 +1309,16 @@ fn draw_behavior_section(
                     *action = Some(SettingsAction::ApplySettings);
                 }
             },
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.terminal.wsl_layout,
+            "settings_terminal_wsl_layout",
+            "tooltip_settings_terminal_wsl_layout",
+            action,
         );
     });
 

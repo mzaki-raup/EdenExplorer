@@ -12,6 +12,11 @@ use windows::Win32::System::Ole::{CF_HDROP, CF_UNICODETEXT};
 use windows::Win32::UI::Shell::DragQueryFileW;
 use windows::core::PCWSTR;
 
+/// Changes every time anything is put on the clipboard (by any app).
+pub fn clipboard_sequence() -> u32 {
+    unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
+}
+
 pub fn clear_clipboard_files() {
     unsafe {
         if OpenClipboard(None).is_ok() {

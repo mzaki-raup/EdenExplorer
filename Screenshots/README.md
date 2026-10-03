@@ -104,6 +104,18 @@ The toolbar's Flat View button lists every file under Eden Demo as one list with
 
 In a Git repository: M on modified and staged files, U on untracked ones, ignored files dimmed, and the branch with the number of changes in the status bar. Editing README.md outside the app and refreshing marks it M; a new docs folder shows U; hovering the status bar shows the repository.
 
+## Remote Locations
+
+![Remote locations](remote-locations.gif)
+
+Team Server, an SFTP location in the sidebar, opens like a folder; selecting beach.png in Photos previews it from a downloaded copy, and Copy then Paste in Downloads downloads it, with the progress in the notifications.
+
+## WSL Layout
+
+![WSL layout](wsl-layout.gif)
+
+Clicking Ubuntu in the sidebar's Linux section opens the distribution's files with its shell beside them; the address bar shows Ubuntu instead of `\\wsl$\Ubuntu`. (Recorded under Wine, which has no WSL, so the shell's output is a stand-in.)
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -497,3 +509,23 @@ In a Git repository: M on modified and staged files, U on untracked ones, ignore
 ### Flat view inside a Git repository - the letters stay, and the ignored build output is dimmed
 
 ![Flat view in a Git repository](98-flat-view-git.png)
+
+### Add Network Location - an SFTP server with Test Connection showing it connected
+
+![Add Network Location](99-network-location-dialog.png)
+
+### An S3 bucket browsed like a folder, with an image previewed from it
+
+![Remote location preview](100-remote-location-preview.png)
+
+### Sidebar places - Cloud (OneDrive, Dropbox), Linux (WSL distributions), and network locations: SFTP, FTP, WebDAV, S3, and a pinned network folder
+
+![Sidebar places](101-sidebar-places.png)
+
+### WSL layout - Ubuntu's files on the left and its shell on the right (the shell's output is a stand-in, recorded under Wine)
+
+![WSL layout](102-wsl-layout.png)
+
+### Deleting on a server asks first, since the files don't go to the Recycle Bin
+
+![Delete from the server](103-remote-delete-confirm.png)

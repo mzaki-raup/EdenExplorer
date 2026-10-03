@@ -1267,6 +1267,7 @@ impl MainWindow {
             view.flat_truncated = Default::default();
             view.git_repo = None;
             view.git = None;
+            view.remote_error = Default::default();
         }
         // Folder sizes are shared by both panes of a split: keep the other
         // pane's (its folder isn't being reloaded), drop everything else.
@@ -1348,6 +1349,26 @@ impl MainWindow {
             let view = self.active_tab_mut().view_mut(side);
             view.rx = Some(rx);
             view.is_loading = true;
+            return;
+        }
+
+        // A remote location's folder (SFTP, FTP, WebDAV, S3), listed by its
+        // connection's worker.
+        if crate::core::remote::is_remote(&current_path) {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            let dates = (settings.date_style, settings.time_format_24h, settings.custom_date_format.clone());
+            let ctx = self.egui_ctx.clone();
+            let error = Arc::clone(&self.active_tab().view(side).remote_error);
+            crate::core::remote::list_async(&current_path, tx, error, dates, move || {
+                if let Some(ctx) = &ctx {
+                    ctx.request_repaint();
+                }
+            });
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
             return;
         }
 
@@ -1627,6 +1648,11 @@ impl MainWindow {
     }
 
     pub fn create_new_folder(&mut self) {
+        // On a server: created there (then renamed in place, as here).
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            self.handle_remote_action(ItemViewerAction::CreateFolder);
+            return;
+        }
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
             || self.current_nav().is_tag_view()
@@ -1678,6 +1704,9 @@ impl MainWindow {
     /// New File > template: creates the file, reloads, selects it, and
     /// starts renaming it (same as the plain New File).
     pub fn create_file_from_template(&mut self, template: &crate::core::templates::Template) {
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            return;
+        }
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
             || self.current_nav().is_tag_view()
@@ -1786,6 +1815,9 @@ impl MainWindow {
     /// collapses to one step: the native picker's own default name already
     /// seeds a sensible shortcut name via `shortcut_file_name`.
     pub fn create_shortcut_here(&mut self) {
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            return;
+        }
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
             || self.current_nav().is_tag_view()
@@ -2057,6 +2089,9 @@ impl MainWindow {
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
             }
+            // (Not for files on a server.)
+            ItemViewerContextAction::BulkRenameRequest(paths)
+                if paths.iter().any(|p| crate::core::remote::is_remote(p)) => {}
             ItemViewerContextAction::BulkRenameRequest(paths) => {
                 self.pending_bulk_rename =
                     Some(crate::gui::windows::containers::bulk_rename::BulkRenameState::new(paths));
@@ -5239,8 +5274,26 @@ impl MainWindow {
         drag_sources: Option<&[PathBuf]>,
     ) {
         if let Some(action) = sidebar_action {
-            if action.folder_tree_toggled {
+            if action.folder_tree_toggled || action.places_toggled {
                 crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
+            }
+            if action.add_network_location {
+                self.open_network_location_dialog(None);
+            }
+            if let Some(id) = action.edit_remote {
+                self.open_network_location_dialog(Some(id));
+            }
+            if let Some(id) = action.disconnect_remote {
+                crate::core::remote::disconnect(id);
+            }
+            if let Some(id) = action.remove_remote {
+                self.remove_remote_connection(id);
+            }
+            if let Some(index) = action.remove_network_place {
+                self.remove_network_place(index);
+            }
+            if let Some(drive) = action.eject_drive {
+                crate::core::places::eject(&drive);
             }
             if let Some((from, to)) = action.reorder {
                 let len = self.sidebar_state.favorites.len();
@@ -5475,7 +5528,8 @@ impl MainWindow {
             && !view.nav.is_settings()
             && !view.nav.is_tag_view()
             && !view.nav.is_search_view()
-            && crate::core::archive_view::split(&current).is_none();
+            && crate::core::archive_view::split(&current).is_none()
+            && !crate::core::remote::is_remote(&current);
         if !real_folder && !view.is_flat() {
             return;
         }
@@ -5572,6 +5626,12 @@ impl MainWindow {
         let prefs = &mut self.settings_window.current_settings.ui_prefs;
         if let Some(height) = action.new_height {
             prefs.terminal.height = height.clamp(120.0, 2000.0);
+        }
+        if let Some(width) = action.new_width {
+            prefs.terminal.side_width = width.clamp(260.0, 3000.0);
+        }
+        if action.toggle_follow {
+            prefs.terminal.wsl_follow = !prefs.terminal.wsl_follow;
         }
         if let Some(id) = action.set_default_shell {
             prefs.terminal.default_shell = Some(id);
@@ -6034,8 +6094,11 @@ impl MainWindow {
             let use_size_cache = self.settings_window.current_settings.ui_prefs.persist_folder_sizes;
             // Inside an archive the listing already has each folder's total.
             let in_archive = crate::core::archive_view::split(&self.active_tab().view(side).nav.current).is_some();
+            // Folder sizes on a server would mean listing every subfolder.
+            let in_remote = crate::core::remote::is_remote(&self.active_tab().view(side).nav.current);
             for item in batch.iter_mut() {
-                if item.is_dir && in_archive {
+                if item.is_dir && in_remote {
+                } else if item.is_dir && in_archive {
                     if let Some(bytes) = item.file_size {
                         self.folder_sizes
                             .insert(item.path.clone(), ItemViewerFolderSizeState { bytes, done: true });
@@ -6236,6 +6299,8 @@ pub fn calculate_folder_sizes_parallel(
 }
 
 pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
+    // Remote locations (SFTP, FTP, WebDAV, S3) handle their own.
+    let pending_action = pending_action.and_then(|action| explorer.handle_remote_action(action));
     if let Some(action) = pending_action {
         let side = explorer.focused_split;
         let is_drive_view = explorer.current_nav().is_root();
@@ -6298,6 +6363,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         }
 
         match action {
+            // Handled by `handle_remote_action` (only offered for remote items).
+            ItemViewerAction::RemoteDownloadTo(_) => {}
             ItemViewerAction::OpenWithDefault(paths)
                 if !paths.is_empty() && paths.iter().all(|p| crate::core::archive_view::is_inside_archive(p)) =>
             {

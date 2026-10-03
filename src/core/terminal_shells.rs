@@ -61,7 +61,13 @@ impl ShellProfile {
                 env.push(("CHERE_INVOKING".into(), "1".into()));
             }
             ShellKind::Wsl(distro) => {
-                args.extend(["-d".to_string(), distro.clone(), "--cd".to_string(), dir.display().to_string()]);
+                let cd = match wsl_dir(distro, dir) {
+                    WslDir::Linux(path) => path,
+                    // Another distribution's files: start at home.
+                    WslDir::OtherDistro => "~".to_string(),
+                    WslDir::Windows => dir.display().to_string(),
+                };
+                args.extend(["-d".to_string(), distro.clone(), "--cd".to_string(), cd]);
             }
         }
         Launch { program: self.program.clone(), args, env, raw_args }
@@ -82,7 +88,11 @@ impl ShellProfile {
             ShellKind::GitBash | ShellKind::Msys2 | ShellKind::Cygwin => {
                 format!("\x15cd \"$(cygpath -u '{}')\"\r", single(&path, "'\\''"))
             }
-            ShellKind::Wsl(_) => format!("\x15cd \"$(wslpath -u '{}')\"\r", single(&path, "'\\''")),
+            ShellKind::Wsl(distro) => match wsl_dir(distro, dir) {
+                WslDir::Linux(linux) => format!("\x15cd '{}'\r", single(&linux, "'\\''")),
+                WslDir::OtherDistro => "\x15cd ~\r".to_string(),
+                WslDir::Windows => format!("\x15cd \"$(wslpath -u '{}')\"\r", single(&path, "'\\''")),
+            },
         }
     }
 
@@ -96,6 +106,23 @@ impl ShellProfile {
             ShellKind::Wsl(_) => regular::LINUX_LOGO,
             ShellKind::Msys2 | ShellKind::Cygwin => regular::CURRENCY_DOLLAR,
         }
+    }
+}
+
+enum WslDir {
+    /// Inside this distribution (`\\wsl$\Ubuntu\home` -> `/home`).
+    Linux(String),
+    /// Inside a different distribution.
+    OtherDistro,
+    /// A Windows folder (WSL sees it under `/mnt`).
+    Windows,
+}
+
+fn wsl_dir(distro: &str, dir: &Path) -> WslDir {
+    match crate::core::places::wsl_location(dir) {
+        Some((d, linux)) if d.eq_ignore_ascii_case(distro) => WslDir::Linux(linux),
+        Some(_) => WslDir::OtherDistro,
+        None => WslDir::Windows,
     }
 }
 
@@ -280,7 +307,7 @@ fn find_git_bash() -> Option<PathBuf> {
 /// Installed WSL distributions, default first, from the registry (no need
 /// to start WSL just to list them). Docker Desktop's internal ones are
 /// left out.
-fn wsl_distributions() -> Vec<String> {
+pub(crate) fn wsl_distributions() -> Vec<String> {
     use windows::Win32::System::Registry::*;
     use windows::core::HSTRING;
 
@@ -365,6 +392,10 @@ mod tests {
         assert_eq!(bash.env, [("CHERE_INVOKING".to_string(), "1".to_string())]);
         let wsl = profile(ShellKind::Wsl("Ubuntu".into())).launch(dir);
         assert_eq!(wsl.args, ["-d", "Ubuntu", "--cd", r"C:\Users\Me\My Docs"]);
+        let inside = profile(ShellKind::Wsl("Ubuntu".into())).launch(Path::new(r"\\wsl$\Ubuntu\home\me"));
+        assert_eq!(inside.args, ["-d", "Ubuntu", "--cd", "/home/me"]);
+        let other = profile(ShellKind::Wsl("Debian".into())).launch(Path::new(r"\\wsl$\Ubuntu\home\me"));
+        assert_eq!(other.args, ["-d", "Debian", "--cd", "~"]);
     }
 
     #[test]
@@ -382,6 +413,10 @@ mod tests {
         assert_eq!(
             profile(ShellKind::Wsl("Ubuntu".into())).cd_command(dir),
             "\x15cd \"$(wslpath -u 'C:\\Bob'\\''s Files')\"\r"
+        );
+        assert_eq!(
+            profile(ShellKind::Wsl("Ubuntu".into())).cd_command(Path::new(r"\\wsl$\Ubuntu\home\Bob's")),
+            "\x15cd '/home/Bob'\\''s'\r"
         );
     }
 

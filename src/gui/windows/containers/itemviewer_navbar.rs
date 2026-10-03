@@ -1367,6 +1367,21 @@ fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
             .collect();
     }
 
+    // A remote location: its name, then the folders inside it.
+    if let Some((id, segments)) = crate::core::remote::split(path) {
+        let name = crate::core::remote::connection(id)
+            .map(|c| c.display_name())
+            .unwrap_or_else(|| "?".into());
+        let mut crumbs = vec![Breadcrumb { label: name, path: crate::core::remote::path_for(id, &[]) }];
+        for i in 0..segments.len() {
+            crumbs.push(Breadcrumb {
+                label: segments[i].clone(),
+                path: crate::core::remote::path_for(id, &segments[..=i]),
+            });
+        }
+        return crumbs;
+    }
+
     let mut breadcrumbs = Vec::new();
     let mut current = PathBuf::new();
 
@@ -1384,10 +1399,12 @@ fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
                 // this breadcrumb's path is unambiguously the drive root.
                 current.push(Path::new("\\"));
 
-                breadcrumbs.push(Breadcrumb {
-                    label: prefix.as_os_str().to_string_lossy().into_owned(),
-                    path: current.clone(),
-                });
+                // A WSL distribution shows as its name (`Ubuntu`), not `\\wsl$\Ubuntu`.
+                let label = match crate::core::places::wsl_location(&current) {
+                    Some((distro, _)) => distro,
+                    None => prefix.as_os_str().to_string_lossy().into_owned(),
+                };
+                breadcrumbs.push(Breadcrumb { label, path: current.clone() });
             }
 
             Component::RootDir => {

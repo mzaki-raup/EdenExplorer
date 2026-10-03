@@ -85,6 +85,9 @@
   <li><b>Flat view</b> (<code>Ctrl+Shift+L</code>) - every file in all subfolders as one list, with a Folder column</li>
   <li><b>Git status</b> - the branch in the status bar and M/A/U/D/R/C letters on changed files (ignored files dimmed), read-only and without needing Git installed</li>
   <li><b>Portable tags</b> - tags stored with the files themselves (an NTFS stream, or a hidden file on other drives), so they travel to other folders, drives, and PCs</li>
+  <li><b>Remote locations</b> - SFTP, FTP, FTPS, WebDAV, and S3 in the sidebar, browsed like folders: preview, open, upload, download, rename, delete, and new folders, with passwords in Windows Credential Manager</li>
+  <li><b>More sidebar places</b> - Cloud (OneDrive, Dropbox, Google Drive, iCloud Drive, Box), Linux (WSL distributions), pinned network folders, and Eject for mounted ISOs</li>
+  <li><b>WSL layout</b> - inside a WSL distribution, the files on the left and that distribution's shell on the right, which can follow the folder you open</li>
   <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
   <li><b>Preview frame</b> - previews sit in a rounded, bordered frame; thickness, color, and corner radius are set in Settings &gt; Appearance, with the padding and inner corners worked out automatically</li>
   <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>

@@ -1,11 +1,13 @@
 //! The terminal pane docked under the file view: one or more shells per
 //! tab (Command Prompt, PowerShell, PowerShell 7, Git Bash, WSL distros,
 //! ...), each in its own session tab, drawn from `core::terminal`'s screen
-//! grid. While it has keyboard focus every key goes to the shell (the main
+//! grid. Inside a WSL distribution (`\\wsl$\Ubuntu`) it moves beside the
+//! files instead, running that distribution's shell, which can follow the
+//! folder shown on the left (the WSL layout). While it has keyboard focus every key goes to the shell (the main
 //! window hands it the frame's key events before anything else sees them).
 
 use crate::core::terminal::{Mods, TermKey, TerminalSession, default_color, key_bytes};
-use crate::core::terminal_shells::{self, ShellProfile};
+use crate::core::terminal_shells::{self, ShellKind, ShellProfile};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use alacritty_terminal::grid::{Dimensions, Scroll};
@@ -22,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const MIN_HEIGHT: f32 = 120.0;
+const MIN_WIDTH: f32 = 260.0;
 const SPLITTER: f32 = 6.0;
 const HEADER: f32 = 30.0;
 const PAD: f32 = 6.0;
@@ -41,11 +44,26 @@ struct Panel {
 pub struct PanelAction {
     /// The pane is being resized to this height.
     pub new_height: Option<f32>,
+    /// The side pane (WSL layout) is being resized to this width.
+    pub new_width: Option<f32>,
+    /// Turn Follow Folder on or off.
+    pub toggle_follow: bool,
     /// Save the settings (a resize ended or the default shell changed).
     pub persist: bool,
     /// Make this shell the one new terminals start with.
     pub set_default_shell: Option<String>,
     pub open_external: bool,
+}
+
+/// Where the pane goes and what it runs.
+#[derive(Clone, Debug, Default)]
+pub struct PaneLayout {
+    /// Beside the files (on the right) instead of under them.
+    pub side: bool,
+    /// The WSL distribution the folder is in (WSL layout).
+    pub wsl: Option<String>,
+    /// The shell changes to each folder opened on the left.
+    pub follow: bool,
 }
 
 #[derive(Default)]
@@ -65,6 +83,15 @@ pub struct TerminalPanels {
     tabs_seen: u64,
     /// The fonts already hold the terminal font family.
     family_ready: bool,
+    /// The WSL distribution each tab's folder was in, last frame.
+    wsl: HashMap<u64, String>,
+    /// Tabs whose pane opened by itself on entering WSL (and closes again
+    /// on leaving it, unless the user toggled it meanwhile).
+    auto_opened: HashSet<u64>,
+    /// Shell (profile id) to bring up in a tab's pane once shells are known.
+    want_profile: HashMap<u64, String>,
+    /// The folder each tab's shell was last sent to (Follow Folder).
+    followed: HashMap<u64, PathBuf>,
 }
 
 impl TerminalPanels {
@@ -73,11 +100,39 @@ impl TerminalPanels {
     }
 
     pub fn toggle(&mut self, tab: u64) {
+        self.auto_opened.remove(&tab);
         if !self.open.remove(&tab) {
             self.open.insert(tab);
             self.focus_next = true;
         } else {
             self.focused = false;
+        }
+    }
+
+    /// Called each frame with the WSL distribution the active tab's folder
+    /// is in (`None` when it isn't, or the WSL layout is off). Entering one
+    /// opens the pane with that distribution's shell; leaving it closes a
+    /// pane that opened by itself (its shells keep running).
+    pub fn track_wsl(&mut self, tab: u64, distro: Option<&str>) {
+        if self.wsl.get(&tab).map(String::as_str) == distro {
+            return;
+        }
+        match distro {
+            Some(distro) => {
+                self.wsl.insert(tab, distro.to_string());
+                if self.open.insert(tab) {
+                    self.auto_opened.insert(tab);
+                }
+                self.want_profile.insert(tab, format!("wsl:{distro}"));
+            }
+            None => {
+                self.wsl.remove(&tab);
+                self.want_profile.remove(&tab);
+                if self.auto_opened.remove(&tab) {
+                    self.open.remove(&tab);
+                    self.focused = false;
+                }
+            }
         }
     }
 
@@ -100,6 +155,10 @@ impl TerminalPanels {
             self.tabs_seen = seen;
             self.panels.retain(|id, _| tabs.contains(id));
             self.open.retain(|id| tabs.contains(id));
+            self.wsl.retain(|id, _| tabs.contains(id));
+            self.auto_opened.retain(|id| tabs.contains(id));
+            self.want_profile.retain(|id, _| tabs.contains(id));
+            self.followed.retain(|id, _| tabs.contains(id));
         }
         for (&tab, panel) in self.panels.iter_mut() {
             let shown = tab == active_tab && self.open.contains(&tab);
@@ -146,8 +205,14 @@ impl TerminalPanels {
         self.is_open(tab).then(|| height.clamp(MIN_HEIGHT, (available - 160.0).max(MIN_HEIGHT)))
     }
 
+    /// Width to keep for `tab`'s side pane out of `available`, if it's open.
+    pub fn reserved_width(&self, tab: u64, width: f32, available: f32) -> Option<f32> {
+        self.is_open(tab).then(|| width.clamp(MIN_WIDTH, (available - 320.0).max(MIN_WIDTH)))
+    }
+
     /// Draws `tab`'s pane in `rect`. `dir` is where new shells start and
-    /// where "Go To Current Folder" goes.
+    /// where "Go To Current Folder" goes; `size` is the pane's height (or
+    /// width beside the files).
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -155,7 +220,8 @@ impl TerminalPanels {
         rect: egui::Rect,
         tab: u64,
         dir: &Path,
-        height: f32,
+        size: f32,
+        layout: &PaneLayout,
         prefs: &crate::core::ui_prefs::TerminalPrefs,
         palette: &ThemePalette,
         i18n: &I18n,
@@ -171,30 +237,45 @@ impl TerminalPanels {
         let dark = ui.visuals().dark_mode;
         let start_dir = usable_dir(dir);
 
-        // --- Splitter: drag to resize ---
-        let splitter = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), SPLITTER));
+        // --- Splitter: drag to resize (the top edge, or the left one beside the files) ---
+        let splitter = if layout.side {
+            egui::Rect::from_min_size(rect.min, egui::vec2(SPLITTER, rect.height()))
+        } else {
+            egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), SPLITTER))
+        };
         let resp = ui.interact(splitter, ui.id().with(("terminal_splitter", tab)), egui::Sense::drag());
         if resp.hovered() || resp.dragged() {
-            ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            ctx.set_cursor_icon(if layout.side {
+                egui::CursorIcon::ResizeHorizontal
+            } else {
+                egui::CursorIcon::ResizeVertical
+            });
         }
-        ui.painter().hline(
-            rect.x_range(),
-            splitter.center().y,
-            egui::Stroke::new(
-                1.5,
-                if resp.hovered() || resp.dragged() { palette.borders_active } else { palette.borders_default },
-            ),
+        let stroke = egui::Stroke::new(
+            1.5,
+            if resp.hovered() || resp.dragged() { palette.borders_active } else { palette.borders_default },
         );
+        if layout.side {
+            ui.painter().vline(splitter.center().x, rect.y_range(), stroke);
+        } else {
+            ui.painter().hline(rect.x_range(), splitter.center().y, stroke);
+        }
         if resp.dragged() {
-            action.new_height = Some(height - resp.drag_delta().y);
+            if layout.side {
+                action.new_width = Some(size - resp.drag_delta().x);
+            } else {
+                action.new_height = Some(size - resp.drag_delta().y);
+            }
         }
         action.persist |= resp.drag_stopped();
+        let content = if layout.side {
+            egui::Rect::from_min_max(egui::pos2(splitter.right(), rect.top()), rect.max)
+        } else {
+            egui::Rect::from_min_max(egui::pos2(rect.left(), splitter.bottom()), rect.max)
+        };
 
         // --- Header: session tabs, new shell, actions ---
-        let header = egui::Rect::from_min_size(
-            egui::pos2(rect.left(), splitter.bottom()),
-            egui::vec2(rect.width(), HEADER),
-        );
+        let header = egui::Rect::from_min_size(content.min, egui::vec2(content.width(), HEADER));
         let mut close_session = None;
         let mut start_profile: Option<ShellProfile> = None;
         let mut go_to_folder = false;
@@ -274,7 +355,8 @@ impl TerminalPanels {
                             .on_hover_text(tip)
                             .clicked()
                     };
-                    if icon_button(ui, regular::CARET_DOWN, i18n.tr("terminal_hide")) {
+                    let hide_icon = if layout.side { regular::CARET_RIGHT } else { regular::CARET_DOWN };
+                    if icon_button(ui, hide_icon, i18n.tr("terminal_hide")) {
                         hide = true;
                     }
                     if icon_button(ui, regular::ARROW_SQUARE_OUT, i18n.tr("tooltip_open_terminal")) {
@@ -282,6 +364,17 @@ impl TerminalPanels {
                     }
                     if icon_button(ui, regular::FOLDER_OPEN, i18n.tr("terminal_go_to_folder")) {
                         go_to_folder = true;
+                    }
+                    if layout.wsl.is_some() {
+                        let (icon, tip) = if layout.follow {
+                            (regular::LINK, "terminal_follow_on")
+                        } else {
+                            (regular::LINK_BREAK, "terminal_follow_off")
+                        };
+                        if icon_button(ui, icon, i18n.tr(tip)) {
+                            action.toggle_follow = true;
+                            action.persist = true;
+                        }
                     }
                 });
             });
@@ -303,7 +396,7 @@ impl TerminalPanels {
         }
 
         // --- Terminal body ---
-        let body = egui::Rect::from_min_max(egui::pos2(rect.left(), header.bottom()), rect.max);
+        let body = egui::Rect::from_min_max(egui::pos2(content.left(), header.bottom()), content.max);
         let bg = term_background(dark, palette);
         ui.painter().rect_filled(body.shrink(2.0), palette.medium_radius, bg);
         // The terminal font family (see `fonts::apply_custom_font_definitions`);
@@ -328,6 +421,17 @@ impl TerminalPanels {
             Arc::new(move || ctx.request_repaint())
         };
 
+        // Entering a WSL distribution brings up its shell (switching to it
+        // if it's already running here).
+        if start_profile.is_none()
+            && let Some(list) = shells
+            && let Some(id) = self.want_profile.remove(&tab)
+        {
+            match panel.sessions.iter().position(|s| s.profile.id == id && s.exited.is_none()) {
+                Some(i) => panel.active = i,
+                None => start_profile = list.iter().find(|p| p.id == id).cloned(),
+            }
+        }
         // Start a shell: the picked one, or the default when the pane is empty.
         if start_profile.is_none()
             && panel.sessions.is_empty()
@@ -337,6 +441,7 @@ impl TerminalPanels {
             start_profile = terminal_shells::default_shell(list, prefs.default_shell.as_deref()).cloned();
         }
         if let Some(profile) = start_profile {
+            self.followed.remove(&tab);
             match TerminalSession::start(&profile, &start_dir, cols, rows, cell, repaint.clone()) {
                 Ok(session) => {
                     panel.sessions.push(session);
@@ -372,6 +477,19 @@ impl TerminalPanels {
             return action;
         };
         session.resize(cols, rows, cell);
+
+        // Follow Folder: the WSL shell changes to each folder opened on the
+        // left (not while a full-screen program like vim or less runs).
+        if matches!(session.profile.kind, ShellKind::Wsl(_)) && session.exited.is_none() {
+            let last = self.followed.insert(tab, start_dir.clone());
+            if layout.follow
+                && layout.wsl.is_some()
+                && last.as_ref().is_some_and(|last| *last != start_dir)
+                && !session.term.lock().mode().contains(TermMode::ALT_SCREEN)
+            {
+                session.write(session.profile.cd_command(&start_dir).into_bytes());
+            }
+        }
 
         // Focus: click to focus, click elsewhere to leave.
         let resp = ui.interact(body, view_id, egui::Sense::click_and_drag());

@@ -23,6 +23,8 @@ fn main() -> eframe::Result<()> {
     // Files opened from inside archives last session (in the background:
     // there may be many).
     std::thread::spawn(crate::core::archive_view::clean_temp);
+    // Remote files downloaded to open or preview last session.
+    std::thread::spawn(crate::core::remote::clean_temp);
 
     let launch_options = match parse_args(std::env::args()) {
         Ok(options) => options,

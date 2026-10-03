@@ -105,6 +105,7 @@ pub fn draw_item_viewer(
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
     let network_share_error = *view.network_share_error.lock().unwrap();
+    let remote_error = view.remote_error.lock().ok().and_then(|e| e.clone());
     // A flat view lists files from many folders, like search results, so
     // it shows the same Folder column and Open File Location.
     let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some() || is_flat;
@@ -237,7 +238,13 @@ pub fn draw_item_viewer(
     if visible_items_empty && !is_custom_layout {
         let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
-            if is_loading && files.is_empty() {
+            if let Some(error) = &remote_error {
+                // A remote folder that couldn't be listed: say why.
+                ui.label(
+                    egui::RichText::new(format!("{}\n\n{error}", i18n.tr("remote_error_title")))
+                        .color(ui.visuals().warn_fg_color),
+                );
+            } else if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
             } else if !files.is_empty() && filter_state.narrows() {
                 // The folder isn't empty; the filter hides everything (or

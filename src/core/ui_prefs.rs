@@ -72,6 +72,23 @@ pub struct UiPrefs {
     pub git_status: bool,
     /// Also store tags with the files themselves (see `core::portable_tags`).
     pub portable_tags: bool,
+    /// Saved remote locations (SFTP, FTP, WebDAV, S3); secrets are in
+    /// Windows Credential Manager.
+    pub remote_connections: Vec<crate::core::remote::RemoteConnection>,
+    /// Pinned network folders (`\\server\share\...`) in the sidebar.
+    pub network_places: Vec<NetworkPlace>,
+    /// Sidebar sections for cloud folders and WSL distributions.
+    pub sidebar_cloud: bool,
+    pub sidebar_cloud_expanded: bool,
+    pub sidebar_linux: bool,
+    pub sidebar_linux_expanded: bool,
+}
+
+/// A network folder pinned to the sidebar.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NetworkPlace {
+    pub name: String,
+    pub path: std::path::PathBuf,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -87,11 +104,26 @@ pub struct TerminalPrefs {
     pub font_size: f32,
     /// Height of the pane in points.
     pub height: f32,
+    /// Inside a WSL distribution (`\\wsl$\Ubuntu`), show the files and
+    /// that distribution's shell side by side.
+    pub wsl_layout: bool,
+    /// Width of the pane beside the files (WSL layout) in points.
+    pub side_width: f32,
+    /// In the WSL layout, the shell changes to each folder you open.
+    pub wsl_follow: bool,
 }
 
 impl Default for TerminalPrefs {
     fn default() -> Self {
-        Self { default_shell: None, font_name: None, font_size: 13.0, height: 260.0 }
+        Self {
+            default_shell: None,
+            font_name: None,
+            font_size: 13.0,
+            height: 260.0,
+            wsl_layout: true,
+            side_width: 560.0,
+            wsl_follow: true,
+        }
     }
 }
 
@@ -168,6 +200,12 @@ impl Default for UiPrefs {
             spring_load_ms: 800,
             git_status: true,
             portable_tags: false,
+            remote_connections: Vec::new(),
+            network_places: Vec::new(),
+            sidebar_cloud: true,
+            sidebar_cloud_expanded: true,
+            sidebar_linux: true,
+            sidebar_linux_expanded: true,
         }
     }
 }

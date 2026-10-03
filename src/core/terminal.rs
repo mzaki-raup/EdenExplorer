@@ -16,7 +16,7 @@ use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{NamedColor, Rgb};
 use crossbeam_channel::{Receiver, Sender};
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Scrollback kept per terminal.
@@ -70,6 +70,18 @@ pub struct TerminalSession {
     visible: Arc<AtomicBool>,
 }
 
+/// The folder a shell's process starts in. WSL takes its folder from
+/// `--cd` and cmd can't use a `\\server\share` path, so those start in the
+/// home folder when `dir` is on the network (or inside WSL).
+fn start_folder(profile: &ShellProfile, dir: &Path) -> Option<PathBuf> {
+    use crate::core::terminal_shells::ShellKind;
+    let unc = dir.to_string_lossy().starts_with(r"\\");
+    if unc && matches!(profile.kind, ShellKind::Wsl(_) | ShellKind::Cmd) {
+        return dirs::home_dir();
+    }
+    dir.is_dir().then(|| dir.to_path_buf())
+}
+
 impl TerminalSession {
     /// Starts `profile` in `dir` with a `cols` × `rows` screen.
     pub fn start(
@@ -84,7 +96,7 @@ impl TerminalSession {
         let program = format!("\"{}\"", launch.program.display());
         let options = tty::Options {
             shell: Some(tty::Shell::new(program, launch.args)),
-            working_directory: dir.is_dir().then(|| dir.to_path_buf()),
+            working_directory: start_folder(profile, dir),
             drain_on_exit: true,
             env: launch.env.into_iter().collect(),
             escape_args: !launch.raw_args,

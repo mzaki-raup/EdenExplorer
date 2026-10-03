@@ -134,6 +134,8 @@ pub struct TabView {
     /// That repository's latest status, refreshed each frame from the
     /// shared Git service (an `Arc`, so it's cheap).
     pub git: Option<std::sync::Arc<crate::core::git::RepoStatus>>,
+    /// Why a remote folder couldn't be listed (shown in the empty view).
+    pub remote_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     pub column_state: ItemViewerColumnState,
     pub display_mode: ItemViewerDisplayMode,
     pub gallery_state: GalleryState,
@@ -228,6 +230,7 @@ impl TabView {
             flat_truncated: Default::default(),
             git_repo: None,
             git: None,
+            remote_error: Default::default(),
             column_state: ItemViewerColumnState::default(),
             display_mode: ItemViewerDisplayMode::Details,
             gallery_state: GalleryState::default(),
@@ -1251,6 +1254,15 @@ pub struct SidebarAction {
     pub analyze_disk_usage: Option<PathBuf>,
     /// The Folders tree's header was clicked (save the expanded state).
     pub folder_tree_toggled: bool,
+    /// The Cloud or Linux section was expanded or collapsed.
+    pub places_toggled: bool,
+    pub add_network_location: bool,
+    pub edit_remote: Option<u64>,
+    pub disconnect_remote: Option<u64>,
+    pub remove_remote: Option<u64>,
+    pub remove_network_place: Option<usize>,
+    /// Unmount this mounted image (ISO/VHD).
+    pub eject_drive: Option<PathBuf>,
 }
 
 #[derive(Default)]

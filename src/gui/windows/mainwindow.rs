@@ -144,6 +144,15 @@ pub struct MainWindow {
     pub(crate) command_palette: Option<crate::gui::windows::command_palette::CommandPaletteState>,
     /// The docked terminal pane's shells, per tab.
     pub(crate) terminal: crate::gui::windows::terminal_panel::TerminalPanels,
+    /// Remote file operations in progress, by notification id.
+    pub(crate) remote_jobs: HashMap<u64, crate::gui::windows::remote_ops::RemoteJob>,
+    /// Ids for jobs without a notification (counting down from the top, so
+    /// they never meet notification ids).
+    pub(crate) next_silent_remote_job: u64,
+    pub(crate) remote_clipboard: Option<crate::gui::windows::remote_ops::RemoteClipboard>,
+    pub(crate) pending_remote_delete: Option<crate::gui::windows::remote_ops::PendingRemoteDelete>,
+    /// The Add/Edit Network Location dialog, when open.
+    pub(crate) network_location_dialog: Option<crate::gui::windows::network_location::NetworkLocationDialog>,
     /// Git status of the repositories being browsed.
     pub(crate) git: crate::core::git::GitService,
     /// For waking the window from background threads.
@@ -442,6 +451,11 @@ impl Default for MainWindow {
             command_palette: None,
             terminal: Default::default(),
             git: Default::default(),
+            network_location_dialog: None,
+            remote_jobs: HashMap::new(),
+            next_silent_remote_job: u64::MAX,
+            remote_clipboard: None,
+            pending_remote_delete: None,
             egui_ctx: None,
             portable_tags_inbox: crossbeam_channel::unbounded(),
             palette_recent: Vec::new(),
@@ -540,6 +554,7 @@ impl Default for MainWindow {
         } else {
             app.sidebar_state.favorites = stored;
         }
+        crate::core::remote::set_connections(&app.settings_window.current_settings.ui_prefs.remote_connections);
         crate::core::portable_tags::init(
             &app.tags_state.to_snapshot(),
             app.settings_window.current_settings.ui_prefs.portable_tags,
@@ -612,6 +627,8 @@ impl eframe::App for MainWindow {
                 || self.pending_bulk_rename.is_some()
                 || self.pending_checksum.is_some()
                 || self.select_by_pattern.is_some()
+                || self.network_location_dialog.is_some()
+                || self.pending_remote_delete.is_some()
                 || self.command_palette.is_some()
                 || self.disk_usage_state.is_open();
             ui.ctx().memory_mut(|mem| {
@@ -973,16 +990,26 @@ impl eframe::App for MainWindow {
                                                     .clone();
                                                 let current_settings = &mut self.settings_window.current_settings;
                                                 let spring_ms = current_settings.ui_prefs.spring_load_ms;
-                                                let folder_tree = current_settings.ui_prefs.folder_tree.then(|| {
+                                                let show_hidden = current_settings.show_hidden_files_folders;
+                                                let middle_click_new_tab = current_settings.middle_click_opens_new_tab;
+                                                let prefs = &mut current_settings.ui_prefs;
+                                                let folder_tree = prefs.folder_tree.then(|| {
                                                     crate::gui::windows::containers::sidebar::FolderTreeSidebar {
-                                                        expanded: &mut current_settings.ui_prefs.folder_tree_expanded,
+                                                        expanded: &mut prefs.folder_tree_expanded,
                                                         current: &tree_current,
-                                                        show_hidden: current_settings.show_hidden_files_folders,
+                                                        show_hidden,
                                                         spring_delay: (spring_ms > 0)
                                                             .then(|| std::time::Duration::from_millis(spring_ms as u64)),
-                                                        middle_click_new_tab: current_settings.middle_click_opens_new_tab,
+                                                        middle_click_new_tab,
                                                     }
                                                 });
+                                                let places = crate::gui::windows::containers::sidebar::SidebarPlaces {
+                                                    cloud_expanded: prefs.sidebar_cloud.then_some(&mut prefs.sidebar_cloud_expanded),
+                                                    linux_expanded: prefs.sidebar_linux.then_some(&mut prefs.sidebar_linux_expanded),
+                                                    connections: &prefs.remote_connections,
+                                                    network_places: &prefs.network_places,
+                                                    current: &tree_current,
+                                                };
                                                 sidebar_action = Some(draw_sidebar(
                                                     ui,
                                                     &self.i18n,
@@ -997,6 +1024,7 @@ impl eframe::App for MainWindow {
                                                     current_settings.tag_icon_style,
                                                     current_settings.sidebar_visibility,
                                                     folder_tree,
+                                                    places,
                                                 ));
                                             },
                                         );
@@ -1238,21 +1266,50 @@ impl eframe::App for MainWindow {
                                     container.show(ui, |ui| {
                                         // The terminal pane, if open, takes the bottom of the
                                         // file view (under both panes of a split).
+                                        // Inside a WSL distribution it sits beside the files
+                                        // instead, running that distribution's shell.
                                         let full = ui.available_rect_before_wrap();
                                         let tab_id = self.tabs[self.active_tab].id;
+                                        let dir = self.active_tab().view(self.focused_split).nav.current.clone();
                                         let prefs = &self.settings_window.current_settings.ui_prefs.terminal;
-                                        if let Some(height) = self.terminal.reserved_height(tab_id, prefs.height, full.height()) {
-                                            let rect = egui::Rect::from_min_max(
-                                                egui::pos2(full.left(), full.bottom() - height),
-                                                full.max,
-                                            );
-                                            let dir = self.active_tab().view(self.focused_split).nav.current.clone();
+                                        let wsl = prefs
+                                            .wsl_layout
+                                            .then(|| crate::core::places::wsl_location(&dir).map(|(distro, _)| distro))
+                                            .flatten();
+                                        self.terminal.track_wsl(tab_id, wsl.as_deref());
+                                        let layout = crate::gui::windows::terminal_panel::PaneLayout {
+                                            side: wsl.is_some(),
+                                            follow: prefs.wsl_follow,
+                                            wsl,
+                                        };
+                                        let reserved = if layout.side {
+                                            self.terminal.reserved_width(tab_id, prefs.side_width, full.width()).map(|width| {
+                                                let rect = egui::Rect::from_min_max(
+                                                    egui::pos2(full.right() - width, full.top()),
+                                                    full.max,
+                                                );
+                                                (width, rect)
+                                            })
+                                        } else {
+                                            self.terminal.reserved_height(tab_id, prefs.height, full.height()).map(|height| {
+                                                let rect = egui::Rect::from_min_max(
+                                                    egui::pos2(full.left(), full.bottom() - height),
+                                                    full.max,
+                                                );
+                                                (height, rect)
+                                            })
+                                        };
+                                        if let Some((size, rect)) = reserved {
                                             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                                             let action = self.terminal.draw(
-                                                &mut child, rect, tab_id, &dir, height, prefs, &palette, &self.i18n,
+                                                &mut child, rect, tab_id, &dir, size, &layout, prefs, &palette, &self.i18n,
                                             );
                                             self.handle_terminal_action(action, &dir);
-                                            ui.set_max_height((full.height() - height).max(0.0));
+                                            if layout.side {
+                                                ui.set_max_width((full.width() - size - 4.0).max(0.0));
+                                            } else {
+                                                ui.set_max_height((full.height() - size).max(0.0));
+                                            }
                                         }
                                         if has_split {
                                             let split_rect = ui.available_rect_before_wrap();
@@ -1650,7 +1707,15 @@ impl eframe::App for MainWindow {
                 true
             };
 
-            if !pointer_inside {
+            // Files on a server can't be handed to other apps (they'd get
+            // paths that don't exist); drag them to a local folder instead.
+            let has_remote = self.tabs[self.active_tab]
+                .primary_view
+                .drag_state
+                .source_items
+                .iter()
+                .any(|p| crate::core::remote::is_remote(p));
+            if !pointer_inside && !has_remote {
                 if let Some(backend) = self.dragdrop.as_ref() {
                     if backend.begin_file_drag(
                         &self.tabs[self.active_tab]
@@ -1816,6 +1881,7 @@ impl eframe::App for MainWindow {
         self.poll_pending_conflict_resolution();
         self.poll_pending_compress();
         self.poll_pending_extracts();
+        self.poll_remote_jobs();
         self.poll_archive_opens();
         self.poll_pending_verifies();
         self.poll_pending_checksum();
@@ -1823,6 +1889,8 @@ impl eframe::App for MainWindow {
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
         self.draw_select_by_pattern_modal(ui.ctx(), &palette);
+        self.draw_network_location_dialog(ui.ctx(), &palette);
+        self.draw_remote_delete_confirm(ui.ctx(), &palette);
         self.draw_quick_look(ui.ctx(), &palette);
         self.draw_command_palette(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {
