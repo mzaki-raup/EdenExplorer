@@ -1,6 +1,6 @@
 use crate::core::network;
 use crate::core::portable;
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Local, Offset, TimeZone, Utc};
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ pub fn filetime_to_string(
     }
 
     let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
-    let dt_local: DateTime<Local> = dt_utc.into();
+    let dt_local = dt_utc.with_timezone(&local_offset(&dt_utc));
 
     let time_fmt = if time_format_24h {
         "%H:%M"
@@ -160,6 +160,30 @@ pub fn filetime_to_string(
     )
 }
 
+/// The local time zone's offset from UTC at `utc`. Asking Windows for it
+/// (what `Local` does) is slow to repeat for every date of every file in a
+/// listing, so it's remembered per hour: offsets only change on the hour
+/// (daylight saving).
+fn local_offset(utc: &DateTime<Utc>) -> FixedOffset {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static OFFSETS: RefCell<(Option<Instant>, HashMap<i64, FixedOffset>)> = RefCell::new((None, HashMap::new()));
+    }
+    let hour = utc.timestamp().div_euclid(3600);
+    OFFSETS.with(|cell| {
+        let (since, offsets) = &mut *cell.borrow_mut();
+        // Forget them now and then, in case the time zone setting changes.
+        if since.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) || offsets.len() > 50_000 {
+            *since = Some(Instant::now());
+            offsets.clear();
+        }
+        *offsets
+            .entry(hour)
+            .or_insert_with(|| Local.offset_from_utc_datetime(&utc.naive_utc()).fix())
+    })
+}
+
 /// Renders the current moment with a custom pattern, for a live preview next
 /// to the pattern text field in Settings. Returns `None` if the pattern is
 /// empty or invalid, so the caller can show "invalid pattern" instead of a
@@ -176,7 +200,10 @@ pub fn preview_custom_date_format(pattern: &str) -> Option<String> {
 /// that as an error item rather than panicking) - the caller falls back to
 /// the default short format in that case, so a malformed custom pattern
 /// degrades gracefully instead of showing garbled or missing dates.
-fn format_with_pattern(dt_local: &DateTime<Local>, pattern: &str) -> Option<String> {
+fn format_with_pattern<Tz: TimeZone>(dt_local: &DateTime<Tz>, pattern: &str) -> Option<String>
+where
+    Tz::Offset: std::fmt::Display,
+{
     use chrono::format::{Item, StrftimeItems};
 
     if StrftimeItems::new(pattern).any(|item| matches!(item, Item::Error)) {
@@ -946,8 +973,9 @@ fn filetime_in_modified_range(raw: i64, range: ModifiedRange) -> bool {
     let Some(dt_utc) = Utc.timestamp_opt(unix_time, 0).single() else {
         return false;
     };
-    let entry_date = DateTime::<Local>::from(dt_utc).date_naive();
-    let today = Local::now().date_naive();
+    let entry_date = dt_utc.with_timezone(&local_offset(&dt_utc)).date_naive();
+    let now = Utc::now();
+    let today = now.with_timezone(&local_offset(&now)).date_naive();
 
     match range {
         ModifiedRange::Today => entry_date == today,
@@ -1541,5 +1569,22 @@ mod list_subfolders_tests {
         assert_eq!(names, ["Alpha", "beta", "gamma"]);
         assert!(list_subfolders(&dir.join("missing"), true).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod local_offset_tests {
+    use super::*;
+
+    #[test]
+    fn remembered_offsets_match_local_time() {
+        // Every 37 minutes through a year, across both daylight saving changes.
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap().timestamp();
+        for step in 0..(366 * 24 * 60 / 37) {
+            let t = start + step * 37 * 60;
+            let utc = Utc.timestamp_opt(t, 0).unwrap();
+            let expected: DateTime<Local> = utc.into();
+            assert_eq!(utc.with_timezone(&local_offset(&utc)).naive_local(), expected.naive_local(), "{utc}");
+        }
     }
 }

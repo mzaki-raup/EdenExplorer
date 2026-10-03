@@ -688,3 +688,23 @@ mod tests {
         assert_eq!(physical_drive_index_from_path(""), None);
     }
 }
+
+/// Whether `path` is on the network: a `\\server\share` path, or a drive
+/// letter mapped to one (`Z:`). Asking Windows for a drive's type is a
+/// local call, so this is safe to use before touching the folder.
+pub fn is_network_path(path: &std::path::Path) -> bool {
+    use windows::Win32::Storage::FileSystem::GetDriveTypeW;
+    use windows::core::HSTRING;
+    let s = path.to_string_lossy();
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+    if s.starts_with(r"\\") || s.starts_with("UNC\\") {
+        return true;
+    }
+    let bytes = s.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        const DRIVE_REMOTE: u32 = 4;
+        let root = format!("{}:\\", bytes[0] as char);
+        return unsafe { GetDriveTypeW(&HSTRING::from(root)) } == DRIVE_REMOTE;
+    }
+    false
+}

@@ -133,10 +133,11 @@ impl RepoStatus {
 
 /// The root of the Git working tree `dir` is in, if any: the nearest folder
 /// (from `dir` up) holding a `.git` folder or file (worktrees and
-/// submodules use a file). Network paths are skipped, as probing every
-/// parent over the network would slow down browsing.
+/// submodules use a file). Network paths (shares and mapped drives) are
+/// skipped, as probing every parent over the network would slow down
+/// browsing.
 pub fn find_workdir(dir: &Path) -> Option<PathBuf> {
-    if !dir.is_absolute() || dir.to_string_lossy().starts_with(r"\\") {
+    if !dir.is_absolute() || crate::core::drives::is_network_path(dir) {
         return None;
     }
     dir.ancestors()

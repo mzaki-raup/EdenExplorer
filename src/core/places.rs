@@ -217,10 +217,8 @@ impl<T> Cached<T> {
 static CLOUD: Mutex<Cached<Vec<CloudFolder>>> = Mutex::new(Cached::new());
 static WSL: Mutex<Cached<Vec<String>>> = Mutex::new(Cached::new());
 
-fn cached<T: Clone + Default + Send + 'static>(
-    slot: &'static Mutex<Cached<T>>,
-    find: fn() -> T,
-) -> T {
+/// Starts a background lookup if the list is due for one.
+fn refresh<T: Send + 'static>(slot: &'static Mutex<Cached<T>>, find: fn() -> T) {
     let mut cache = slot.lock().unwrap_or_else(|e| e.into_inner());
     let stale = cache.at.is_none_or(|at| at.elapsed() >= REFRESH);
     if stale && !cache.busy {
@@ -235,6 +233,14 @@ fn cached<T: Clone + Default + Send + 'static>(
             crate::gui::windows::windowsoverrides::request_repaint();
         });
     }
+}
+
+fn cached<T: Clone + Default + Send + 'static>(
+    slot: &'static Mutex<Cached<T>>,
+    find: fn() -> T,
+) -> T {
+    refresh(slot, find);
+    let cache = slot.lock().unwrap_or_else(|e| e.into_inner());
     cache.value.clone().unwrap_or_default()
 }
 
@@ -345,14 +351,23 @@ fn is_mounted_image_uncached(root: &Path) -> bool {
 /// Drives that are mounted images (looked up in the background, at most
 /// once a minute).
 pub fn is_mounted_image(root: &Path) -> bool {
-    let images = cached(&IMAGES, || {
-        crate::core::drives::get_drive_infos()
-            .into_iter()
-            .map(|d| d.path)
-            .filter(|d| is_mounted_image_uncached(d))
-            .collect()
-    });
-    images.iter().any(|p| p == root)
+    // Starts a lookup when due; the answer is read in place (this is asked
+    // for every drive, every frame).
+    refresh(&IMAGES, find_mounted_images);
+    IMAGES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .value
+        .as_ref()
+        .is_some_and(|images| images.iter().any(|p| p == root))
+}
+
+fn find_mounted_images() -> Vec<PathBuf> {
+    crate::core::drives::get_drive_infos()
+        .into_iter()
+        .map(|d| d.path)
+        .filter(|d| is_mounted_image_uncached(d))
+        .collect()
 }
 
 /// Ejects a mounted image (Windows' own Eject, as in Explorer).

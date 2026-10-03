@@ -33,7 +33,7 @@ use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
@@ -2965,21 +2965,49 @@ pub fn compute_item_viewer_column_layout(
     if is_search_view {
         column_state.pending_fit_request = None;
         let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, true);
-        let widths = compute_item_viewer_column_widths(
-            ui,
-            i18n,
-            files,
-            &filter_state.cached_indices,
-            folder_sizes,
+        // Worked out again only when the list, the filter, the folder
+        // sizes, or the font change - not every frame.
+        let key = (
+            files.as_ptr() as usize,
+            files.len(),
+            filter_state.cached_indices.as_ptr() as usize,
+            filter_state.cached_indices.len(),
+            folder_sizes.len(),
+            folder_sizes.values().fold(0u64, |acc, s| acc.wrapping_add(s.bytes)),
             is_drive_view,
             show_item_viewer_icons,
-            palette,
-            font_id,
-            file_type_cache,
-            file_size_text_cache,
-            folder_size_text_cache,
-            drive_size_text_cache,
+            font_id.size.to_bits(),
+            ui.ctx().pixels_per_point().to_bits(),
         );
+        // While the list is still growing (a big flat view or search
+        // streaming in), at most a few times a second.
+        const REFRESH: std::time::Duration = std::time::Duration::from_millis(250);
+        let widths = match column_state.search_widths {
+            Some((k, w, _)) if k == key => w,
+            Some((_, w, at)) if at.elapsed() < REFRESH => {
+                ui.ctx().request_repaint_after(REFRESH.saturating_sub(at.elapsed()));
+                w
+            }
+            _ => {
+                let w = compute_item_viewer_column_widths(
+                    ui,
+                    i18n,
+                    files,
+                    &filter_state.cached_indices,
+                    folder_sizes,
+                    is_drive_view,
+                    show_item_viewer_icons,
+                    palette,
+                    font_id,
+                    file_type_cache,
+                    file_size_text_cache,
+                    folder_size_text_cache,
+                    drive_size_text_cache,
+                );
+                column_state.search_widths = Some((key, w, std::time::Instant::now()));
+                w
+            }
+        };
         return ItemViewerColumnLayout {
             ordered_columns,
             name_width: widths.name,
@@ -3294,77 +3322,79 @@ fn compute_item_viewer_column_widths(
         0.0
     };
 
-    for &idx in filtered_indices {
-        let file = &files[idx];
+    // A column is as wide as its widest text. Measuring every row's text
+    // is far too slow for a big search or flat view (it ran every frame),
+    // so only each column's longest texts (by characters) are measured:
+    // the widest is practically always among them.
+    let measure_max = |ui: &mut egui::Ui, texts: Vec<&str>| -> f32 {
+        longest_texts(texts)
+            .into_iter()
+            .map(|t| measure_text_width(ui, t, font_id, palette.text_normal))
+            .fold(0.0, f32::max)
+    };
+    let shown = || filtered_indices.iter().map(|&i| &files[i]);
 
-        widths.name = widths
-            .name
-            .max(measure_text_width(ui, &file.name, font_id, palette.text_normal) + icon_padding);
+    widths.name = widths
+        .name
+        .max(measure_max(ui, shown().map(|f| f.name.as_str()).collect()) + icon_padding);
 
-        let type_text = if file.is_dir {
-            "Folder".to_string()
-        } else if let Some(ext) = file.path.extension().and_then(|ext| ext.to_str()) {
-            get_file_type_name(ext, file_type_cache).to_string()
+    // Types: one per extension, so look each extension up once.
+    let mut extensions: HashSet<&str> = HashSet::new();
+    let mut any_folder = false;
+    for file in shown() {
+        if file.is_dir {
+            any_folder = true;
         } else {
-            get_file_type_name("", file_type_cache).to_string()
-        };
-        widths.type_width = widths.type_width.max(measure_text_width(
-            ui,
-            &type_text,
-            font_id,
-            palette.text_normal,
-        ));
-
-        let size_text = resolve_size_text(
-            file,
-            folder_sizes,
-            file_size_text_cache,
-            folder_size_text_cache,
-            drive_size_text_cache,
-        );
-        widths.size_width = widths.size_width.max(measure_text_width(
-            ui,
-            &size_text,
-            font_id,
-            palette.text_normal,
-        ));
-
-        if is_drive_view {
-            widths.usage_width = widths.usage_width.max(
-                measure_text_width(
-                    ui,
-                    &i18n.tr("explorer_cols_usage"),
-                    font_id,
-                    palette.text_normal,
-                ) + 60.0,
-            );
-        } else {
-            widths.modified_width = widths.modified_width.max(measure_text_width(
-                ui,
-                file.modified_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.created_width = widths.created_width.max(measure_text_width(
-                ui,
-                file.created_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.deleted_width = widths.deleted_width.max(measure_text_width(
-                ui,
-                file.deleted_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.original_directory_width =
-                widths.original_directory_width.max(measure_text_width(
-                    ui,
-                    file.original_directory.as_deref().unwrap_or("—"),
-                    font_id,
-                    palette.text_normal,
-                ));
+            extensions.insert(file.path.extension().and_then(|e| e.to_str()).unwrap_or(""));
         }
+    }
+    let type_names: Vec<String> = extensions
+        .into_iter()
+        .map(|ext| get_file_type_name(ext, file_type_cache).to_string())
+        .chain(any_folder.then(|| "Folder".to_string()))
+        .collect();
+    widths.type_width = widths
+        .type_width
+        .max(measure_max(ui, type_names.iter().map(String::as_str).collect()));
+
+    let size_texts: Vec<String> = shown()
+        .map(|file| {
+            resolve_size_text(
+                file,
+                folder_sizes,
+                file_size_text_cache,
+                folder_size_text_cache,
+                drive_size_text_cache,
+            )
+        })
+        .collect();
+    widths.size_width = widths
+        .size_width
+        .max(measure_max(ui, size_texts.iter().map(String::as_str).collect()));
+
+    if is_drive_view {
+        if !filtered_indices.is_empty() {
+            widths.usage_width = widths.usage_width.max(
+                measure_text_width(ui, &i18n.tr("explorer_cols_usage"), font_id, palette.text_normal)
+                    + 60.0,
+            );
+        }
+    } else {
+        fn dash(t: &Option<String>) -> &str {
+            t.as_deref().unwrap_or("—")
+        }
+        widths.modified_width = widths
+            .modified_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.modified_time)).collect()));
+        widths.created_width = widths
+            .created_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.created_time)).collect()));
+        widths.deleted_width = widths
+            .deleted_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.deleted_time)).collect()));
+        widths.original_directory_width = widths
+            .original_directory_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.original_directory)).collect()));
     }
 
     widths.name = widths.name.max(220.0);
@@ -3377,6 +3407,17 @@ fn compute_item_viewer_column_widths(
     widths.original_directory_width = widths.original_directory_width.max(150.0);
 
     widths
+}
+
+/// The texts worth measuring for a column's width: the longest ones by
+/// character count (all of them when there are only a few).
+fn longest_texts(mut texts: Vec<&str>) -> Vec<&str> {
+    const KEEP: usize = 32;
+    if texts.len() > KEEP {
+        texts.select_nth_unstable_by_key(KEEP, |t| std::cmp::Reverse(t.chars().count()));
+        texts.truncate(KEEP);
+    }
+    texts
 }
 
 fn measure_text_width(

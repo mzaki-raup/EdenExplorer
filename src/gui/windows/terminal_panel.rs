@@ -92,6 +92,8 @@ pub struct TerminalPanels {
     want_profile: HashMap<u64, String>,
     /// The folder each tab's shell was last sent to (Follow Folder).
     followed: HashMap<u64, PathBuf>,
+    /// The folder last drawn for, and where shells start for it.
+    start_dir: Option<(PathBuf, PathBuf)>,
 }
 
 impl TerminalPanels {
@@ -235,7 +237,16 @@ impl TerminalPanels {
         let input = std::mem::take(&mut self.input);
         let panel = self.panels.entry(tab).or_default();
         let dark = ui.visuals().dark_mode;
-        let start_dir = usable_dir(dir);
+        // (Checked once per folder: on a network or WSL folder each check
+        // is a round trip, too slow to repeat every frame.)
+        let start_dir = match &self.start_dir {
+            Some((for_dir, usable)) if for_dir == dir => usable.clone(),
+            _ => {
+                let usable = usable_dir(dir);
+                self.start_dir = Some((dir.to_path_buf(), usable.clone()));
+                usable
+            }
+        };
 
         // --- Splitter: drag to resize (the top edge, or the left one beside the files) ---
         let splitter = if layout.side {

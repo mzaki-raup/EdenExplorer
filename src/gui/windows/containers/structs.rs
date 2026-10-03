@@ -425,7 +425,13 @@ pub struct ItemViewerColumnState {
     /// matter how the view ended up loaded (first tab on startup, switching
     /// to an already-open tab, a new tab, a split pane, etc).
     pub auto_fit_checked: bool,
+    /// Search and flat views size their columns to the contents; the last
+    /// widths worked out, what for, and when.
+    pub search_widths: Option<(SearchWidthsKey, ItemViewerColumnWidths, std::time::Instant)>,
 }
+
+/// What search/flat view column widths depend on (see `search_widths`).
+pub type SearchWidthsKey = (usize, usize, usize, usize, usize, u64, bool, bool, u32, u32);
 
 impl Default for ItemViewerColumnState {
     fn default() -> Self {
@@ -439,6 +445,7 @@ impl Default for ItemViewerColumnState {
             layout_generation: 0,
             pending_fit_request: None,
             auto_fit_checked: false,
+            search_widths: None,
         }
     }
 }

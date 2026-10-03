@@ -5589,7 +5589,7 @@ impl MainWindow {
     /// Looks for files in `dir` carrying tags this PC doesn't know yet
     /// (portable tags), in the background.
     fn scan_portable_tags(&self, dir: &std::path::Path) {
-        if !crate::core::portable_tags::is_enabled() || dir.to_string_lossy().starts_with(r"\\") {
+        if !crate::core::portable_tags::is_enabled() || crate::core::drives::is_network_path(dir) {
             return;
         }
         let known: std::collections::HashSet<PathBuf> = self
@@ -6044,9 +6044,12 @@ impl MainWindow {
             }
         }
 
+        // Only a sort by size moves anything.
         if updated {
             let view = self.active_tab_mut().view_mut(side);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            if view.sort_keys.iter().any(|k| k.column == SortColumn::Size) {
+                sort_files_by_keys(&mut view.files, &view.sort_keys);
+            }
         }
         self.finish_size_scan_metric_if_done(side);
         updated
@@ -6072,9 +6075,16 @@ impl MainWindow {
         let mut disconnected = false;
 
         {
+            // Take what has arrived, for up to a few milliseconds a frame:
+            // big folders and the flat view fill in quickly without the
+            // window stuttering.
             let view = self.active_tab().view(side);
             let rx = view.rx.as_ref().unwrap();
-            for _ in 0..128 {
+            let started = std::time::Instant::now();
+            loop {
+                if batch.len() % 256 == 255 && started.elapsed() >= std::time::Duration::from_millis(8) {
+                    break;
+                }
                 match rx.try_recv() {
                     Ok(item) => batch.push(item),
                     Err(crossbeam_channel::TryRecvError::Empty) => break,
@@ -6129,8 +6139,8 @@ impl MainWindow {
             }
 
             let view = self.active_tab_mut().view_mut(side);
-            view.files.extend(batch);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            let keys = view.sort_keys.clone();
+            crate::core::utils::sorting::merge_sorted(&mut view.files, batch, &keys);
             any_change = true;
         }
 
