@@ -143,37 +143,31 @@ jobs:
             prerelease = $false
           } | ConvertTo-Json -Depth 4
 
-          # Pushing an annotated tag already makes the forge list a release for
-          # it, so creating one can collide - and on v1.0.0 the POST's own name
-          # and body did not end up on the release at all (it kept the tag's
-          # name and no body). Look it up by tag first and PATCH it when it is
-          # already there, so this step owns those fields either way.
+          # The forge derives a release row from the pushed tag by itself -
+          # every release so far has a created_at equal to its tag's commit
+          # time, including ones this step then corrected successfully. That
+          # derivation is asynchronous, so a PATCH can land *before* it and get
+          # clobbered: v1.0.1 came out right and v1.0.2 came out with the tag's
+          # own name and no body, from byte-identical workflow code. So the
+          # metadata is applied last, after the assets, and then confirmed in a
+          # loop rather than once.
           $release = $null
           try {
             $release = Invoke-RestMethod -Method Get -Headers $headers `
               -Uri "$api/releases/tags/$([uri]::EscapeDataString($tag))"
           } catch { }
-
-          if ($release) {
-            $release = Invoke-RestMethod -Method Patch -Uri "$api/releases/$($release.id)" `
-              -Headers $headers -ContentType 'application/json' -Body $payload
-            Write-Host "Updated existing release $($release.id)"
-          } else {
+          if (-not $release) {
             $release = Invoke-RestMethod -Method Post -Uri "$api/releases" `
               -Headers $headers -ContentType 'application/json' -Body $payload
             Write-Host "Created release $($release.id)"
+          } else {
+            Write-Host "The forge already has a release for $tag (id $($release.id))"
           }
-
-          # Read it back rather than trusting the write.
-          $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
-          if ([string]::IsNullOrWhiteSpace($check.body)) {
-            throw "the release was published with empty notes - the forge did not keep what was sent."
-          }
-          Write-Host "Release '$($check.name)' at $($check.html_url) - $($check.body.Length) characters of notes"
 
           foreach ($file in Get-ChildItem release/dist -File) {
             # A re-run must not end up with the same asset attached twice.
-            foreach ($old in @($check.assets | Where-Object { $_.name -eq $file.Name })) {
+            $existing = Invoke-RestMethod -Method Get -Headers $headers -Uri "$api/releases/$($release.id)"
+            foreach ($old in @($existing.assets | Where-Object { $_.name -eq $file.Name })) {
               Invoke-RestMethod -Method Delete -Headers $headers `
                 -Uri "$api/releases/$($release.id)/assets/$($old.id)" | Out-Null
               Write-Host "Replaced the existing $($file.Name)"
@@ -182,6 +176,27 @@ jobs:
             Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Form @{ attachment = Get-Item $file.FullName } | Out-Null
             Write-Host "Attached $($file.Name)"
           }
+
+          # Now make the title and notes stick, re-checking after a pause so a
+          # late derivation that overwrites them is caught and undone.
+          $wanted = "EdenExplorer ${{ steps.plan.outputs.version }}"
+          $ok = $false
+          foreach ($attempt in 1..6) {
+            Invoke-RestMethod -Method Patch -Uri "$api/releases/$($release.id)" `
+              -Headers $headers -ContentType 'application/json' -Body $payload | Out-Null
+            Start-Sleep -Seconds 5
+            $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
+            if ($check.name -eq $wanted -and -not [string]::IsNullOrWhiteSpace($check.body)) {
+              Write-Host "Attempt ${attempt}: title and $($check.body.Length) characters of notes are in place."
+              $ok = $true
+              break
+            }
+            Write-Host "Attempt ${attempt}: still name='$($check.name)' body=$($check.body.Length) chars - retrying."
+          }
+          if (-not $ok) {
+            throw "could not make the release title and notes stick - the forge keeps overwriting them."
+          }
+          Write-Host "Release '$wanted' published at $($release.html_url)"
 
       - name: Nothing to release
         if: steps.plan.outputs.version == ''

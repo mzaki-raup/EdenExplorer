@@ -1632,13 +1632,23 @@ PowerShell process) rather than the app's own code - if you're using the
   on the fields you care about rather than trusting the write's own return
   value; (2) "the workflow went green" is not the same as "the release is
   right" - check a first release's actual rendered content, not just its exit
-  status.** Fixed by making the publish step look the release up by tag first,
-  `PATCH` it when it already exists and `POST` only when it does not, then
-  re-read it and throw if the body came back empty (so an empty-notes release
-  can never be published silently again), and by deleting any same-named asset
-  before re-uploading so a re-run cannot attach duplicates. v1.0.0's own notes
-  have to be fixed by hand in the forge's UI - the workflow will not revisit an
-  already-published tag.
+  status.** The first fix - look the release up by tag, `PATCH` when it
+  exists, `POST` when it does not, then read back once and throw on an empty
+  body - **was not enough, and the way it failed is the real lesson.** v1.0.1
+  came out perfect and v1.0.2 came out with the tag's own name and no body, from
+  byte-identical workflow code, with the job green both times and the read-back
+  guard passing both times. Every release row's `created_at` equals its tag's
+  commit time, including the ones that came out right, which says the forge
+  derives the row from the pushed tag **asynchronously** - so a `PATCH` can land
+  *before* that derivation and simply be overwritten by it seconds later, long
+  after a one-shot read-back has already confirmed it. **A single read-after-write
+  only proves the value was right at that instant; when something else is also
+  writing, it proves nothing about the value that survives.** The real fix
+  applies the metadata *last* (after the assets) and then confirms it in a
+  retry loop with a pause between attempts, re-`PATCH`ing until the title and a
+  non-empty body are still there when re-read, and failing the job if they never
+  stick. v1.0.0's and v1.0.2's own notes have to be fixed by hand in the forge's
+  UI - the workflow will not revisit an already-published tag.
 
 - **A startup cleanup that deletes the previous version's files races with the
   process it is cleaning up after.** `core::update::clean_leftovers` originally
