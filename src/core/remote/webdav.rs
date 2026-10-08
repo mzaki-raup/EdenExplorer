@@ -20,6 +20,14 @@ pub(super) fn agent() -> ureq::Agent {
         .tls_config(
             ureq::tls::TlsConfig::builder()
                 .provider(ureq::tls::TlsProvider::NativeTls)
+                // ureq defaults to `RootCerts::WebPki` (Mozilla's bundled
+                // roots), which native-tls treats as *user-specified* roots
+                // instead of falling back to the OS store - every request then
+                // fails with "unable to find any user-specified roots in the
+                // final cert chain", against perfectly valid certificates.
+                // `PlatformVerifier` is what makes native-tls use the roots it
+                // loads by default, i.e. the Windows certificate store.
+                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
                 .build(),
         )
         .http_status_as_error(false)
@@ -365,5 +373,28 @@ mod tests {
         assert_eq!(decode_path("/a%20b/%C3%BC.txt"), "/a b/ü.txt");
         assert_eq!(base64_padded(b"user:pass"), "dXNlcjpwYXNz");
         assert_eq!(base64_padded(b"a"), "YQ==");
+    }
+
+    /// Ignored because it needs the network. Run it on demand with:
+    ///
+    ///     cargo test --  --ignored tls_handshake
+    ///
+    /// It exists because a TLS misconfiguration here is invisible until a user
+    /// tries a real remote: ureq defaults `root_certs` to `RootCerts::WebPki`,
+    /// and native-tls rejects that bundle as "user-specified roots", failing
+    /// *every* request against an otherwise perfectly valid certificate. The
+    /// same bug shipped in `core::update` and was only caught by running the
+    /// app (see CLAUDE.md). `super::agent()` is shared with `core::remote::s3`,
+    /// so this covers both.
+    #[test]
+    #[ignore = "needs the network"]
+    fn the_shared_agent_can_complete_a_real_tls_handshake() {
+        let response = super::agent()
+            .get("https://git.zacx.net/api/v1/version")
+            .call();
+        match response {
+            Ok(r) => assert!(r.status().is_success(), "unexpected status {}", r.status()),
+            Err(e) => panic!("TLS/HTTP failed - check root_certs on the agent: {e}"),
+        }
     }
 }

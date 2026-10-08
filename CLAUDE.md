@@ -1585,14 +1585,20 @@ PowerShell process) rather than the app's own code - if you're using the
   whose certificate `curl` on the same machine accepts without complaint. The fix
   is one builder call - `.root_certs(ureq::tls::RootCerts::PlatformVerifier)` -
   which is what makes native-tls use the roots it loads by default, i.e. the
-  Windows certificate store. **`core::remote::webdav`'s and `core::remote::s3`'s
-  agents build their `TlsConfig` the same way and are missing the same call**, so
-  they are very likely carrying this bug too; only `core::update::agent` has been
-  fixed and verified so far. When adding any new `ureq::Agent` in this codebase,
-  copy `core::update::agent`'s config (which has the call) rather than the two
-  older ones, and if an HTTPS feature ever fails with a cert-chain error against
-  a host that plainly has a valid certificate, check this before suspecting the
-  server.
+  Windows certificate store. **`core::remote::webdav::agent()` had exactly the same bug, and
+  `core::remote::s3` shares that one function (`use super::webdav::agent`) - so
+  every HTTPS WebDAV *and* S3 remote was broken, not just suspected.** Confirmed
+  by reproducing it rather than reasoning from the shared code shape: a test
+  against the unfixed agent failed with the identical "unable to find any
+  user-specified roots" string, and passes with the call added. That test is
+  kept as `the_shared_agent_can_complete_a_real_tls_handshake` in `webdav.rs`,
+  `#[ignore]`d because it needs the network - run it with
+  `cargo test -- --ignored tls_handshake` after touching any agent config. There
+  are only ever two agent constructors in this codebase (`core::update::agent`
+  and `core::remote::webdav::agent`); both now carry the call, so copy either
+  when adding a third. If an HTTPS feature ever fails with a cert-chain error
+  against a host that plainly has a valid certificate, check this before
+  suspecting the server.
 - **A modal drawn with `egui::Area` renders in `MainWindow::ui`'s own call order,
   so a modal opened *from* another modal has to be drawn after it or it is
   painted over and looks like it never opened.** The update modal was first added
