@@ -1612,6 +1612,28 @@ PowerShell process) rather than the app's own code - if you're using the
   identical on screen. Fixed by moving `draw_update_modal` to immediately after
   `handle_draw_about_window`.
 
+- **The very first real release (v1.0.0) went out with empty release notes and
+  the wrong title, even though the workflow sent both and the job went green.**
+  The publish step POSTed `name` = "EdenExplorer 1.0.0" and `body` = the
+  generated notes; what actually landed on the release was `name` = "v1.0.0"
+  (the annotated tag's own message) and `body` = "". The cause is that pushing
+  an annotated tag already makes the forge list a release for that tag, so by
+  the time the publish step runs the release row exists and the fields the POST
+  carries are not the ones that stick. Nothing failed - the assets attached
+  correctly to that same release, so the job reported success and the defect was
+  only visible by actually reading the published release back. **Two lessons:
+  (1) after any write through the forge's API, read the object back and assert
+  on the fields you care about rather than trusting the write's own return
+  value; (2) "the workflow went green" is not the same as "the release is
+  right" - check a first release's actual rendered content, not just its exit
+  status.** Fixed by making the publish step look the release up by tag first,
+  `PATCH` it when it already exists and `POST` only when it does not, then
+  re-read it and throw if the body came back empty (so an empty-notes release
+  can never be published silently again), and by deleting any same-named asset
+  before re-uploading so a re-run cannot attach duplicates. v1.0.0's own notes
+  have to be fixed by hand in the forge's UI - the workflow will not revisit an
+  already-published tag.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

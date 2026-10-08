@@ -124,17 +124,60 @@ jobs:
         run: |
           $api = "${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
           $headers = @{ Authorization = "token $env:TOKEN" }
-          $body = @{
-            tag_name   = "${{ steps.plan.outputs.tag }}"
+          $tag = "${{ steps.plan.outputs.tag }}"
+
+          # The notes are the whole point of a release page, and an empty one
+          # published silently is exactly what happened on v1.0.0 - so refuse
+          # rather than ship another.
+          if (-not (Test-Path notes.md)) {
+            throw "notes.md is missing - scripts/next-release.ps1 should have written it."
+          }
+          $notes = Get-Content notes.md -Raw
+          if ([string]::IsNullOrWhiteSpace($notes)) { throw "notes.md is empty." }
+
+          $payload = @{
+            tag_name   = $tag
             name       = "EdenExplorer ${{ steps.plan.outputs.version }}"
-            body       = (Get-Content notes.md -Raw)
+            body       = $notes
             draft      = $false
             prerelease = $false
-          } | ConvertTo-Json
-          $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers `
-            -ContentType 'application/json' -Body $body
-          Write-Host "Release $($release.id) created at $($release.html_url)"
+          } | ConvertTo-Json -Depth 4
+
+          # Pushing an annotated tag already makes the forge list a release for
+          # it, so creating one can collide - and on v1.0.0 the POST's own name
+          # and body did not end up on the release at all (it kept the tag's
+          # name and no body). Look it up by tag first and PATCH it when it is
+          # already there, so this step owns those fields either way.
+          $release = $null
+          try {
+            $release = Invoke-RestMethod -Method Get -Headers $headers `
+              -Uri "$api/releases/tags/$([uri]::EscapeDataString($tag))"
+          } catch { }
+
+          if ($release) {
+            $release = Invoke-RestMethod -Method Patch -Uri "$api/releases/$($release.id)" `
+              -Headers $headers -ContentType 'application/json' -Body $payload
+            Write-Host "Updated existing release $($release.id)"
+          } else {
+            $release = Invoke-RestMethod -Method Post -Uri "$api/releases" `
+              -Headers $headers -ContentType 'application/json' -Body $payload
+            Write-Host "Created release $($release.id)"
+          }
+
+          # Read it back rather than trusting the write.
+          $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
+          if ([string]::IsNullOrWhiteSpace($check.body)) {
+            throw "the release was published with empty notes - the forge did not keep what was sent."
+          }
+          Write-Host "Release '$($check.name)' at $($check.html_url) - $($check.body.Length) characters of notes"
+
           foreach ($file in Get-ChildItem release/dist -File) {
+            # A re-run must not end up with the same asset attached twice.
+            foreach ($old in @($check.assets | Where-Object { $_.name -eq $file.Name })) {
+              Invoke-RestMethod -Method Delete -Headers $headers `
+                -Uri "$api/releases/$($release.id)/assets/$($old.id)" | Out-Null
+              Write-Host "Replaced the existing $($file.Name)"
+            }
             $uri = "$api/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($file.Name))"
             Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Form @{ attachment = Get-Item $file.FullName } | Out-Null
             Write-Host "Attached $($file.Name)"
