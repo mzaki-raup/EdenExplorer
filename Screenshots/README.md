@@ -18,7 +18,7 @@ Right-click the background of a folder > Analyze Disk Usage…, then a tour of t
 
 ![Performance panel benchmark](performance-benchmark.gif)
 
-Pressing Ctrl+K to open the panel, choosing 3 runs and clicking Benchmark This Folder (each listing method timed, the fastest highlighted), then switching to Benchmark This Drive and running it with a 64 MB test file: sequential and random 4K read/write, phase by phase, ending in MB/s and IOPS bars (recorded under Wine, which can't bypass its cache, so the numbers are cache speed).
+Pressing Ctrl+K to open the panel, choosing 3 runs and clicking Benchmark This Folder (each listing method timed, the fastest highlighted), then switching to Benchmark This Drive and running it with a 64 MB test file: sequential and random 4K read/write, phase by phase, ending in MB/s and IOPS bars, measured with the Windows cache bypassed.
 
 ## Animated GIF Preview Controls
 
@@ -30,7 +30,7 @@ Playing, pausing, stepping forward and back a frame, dragging the seek bar, stop
 
 ![Selection tools and New File templates](selection-and-templates.gif)
 
-Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ctrl+I), then right-click > New File > Excel Workbook (.xlsx), which goes straight into rename.
+Select By Pattern (Ctrl+Shift+S) selecting `*.txt`, Invert Selection (Ctrl+I), then right-click > New File > Word Document (.docx), which goes straight into rename.
 
 ## Quick Look
 
@@ -42,7 +42,7 @@ Selecting a photo and pressing Space opens Quick Look over the window; ↓ and �
 
 ![Command palette](command-palette.gif)
 
-Ctrl+Shift+P, then typing `pho` jumps to the Photos folder, `gal` switches to the Gallery view, `det` back to Details, and `setbeh` opens Settings on the Behavior page.
+Ctrl+Shift+P, then typing `pho` to find the Photos folder, `gal` switches to the Gallery view, `det` back to Details, and `setbeh` opens Settings on the Behavior page.
 
 ## Archives
 
@@ -72,7 +72,7 @@ From Photos, the arrow after Eden Demo lists its folders (Photos highlighted) an
 
 ![Terminal pane](terminal.gif)
 
-Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-style prompt, its icons from the automatically chosen Nerd Font); dragging the top edge makes it taller; the + menu lists every installed shell and starts Ubuntu (WSL) in a second session tab; switching tabs, selecting text, then Ctrl+` hides the pane and the toolbar's Terminal Pane button brings it back with both shells still there. Under Wine the shells can't take input, so the shell output here was fed to the terminal directly.
+Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-style prompt, its icons from the automatically chosen Nerd Font); dragging the top edge makes it taller; the + menu lists every installed shell and starts Ubuntu (WSL) in a second session tab; switching tabs, then Ctrl+` hides the pane and the toolbar's Terminal Pane button brings it back with both shells still there. Both are live shells running the commands shown.
 
 ## Sidebar Folders Tree
 
@@ -90,7 +90,7 @@ Ctrl+Shift+F opens the filter box: `app` filters by text, `*.json; *.md` by wild
 
 ![Spring-loaded folders](spring-loaded-folders.gif)
 
-Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo in the address bar goes back up, and resting on Projects in the sidebar's Folders tree expands it. Under Wine a held mouse button doesn't reach the app, so the drag here was started directly.
+Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo in the address bar goes back up, and resting on Projects in the sidebar's Folders tree expands it.
 
 ## Flat View
 
@@ -114,7 +114,7 @@ Team Server, an SFTP location in the sidebar, opens like a folder; selecting bea
 
 ![WSL layout](wsl-layout.gif)
 
-Clicking Ubuntu in the sidebar's Linux section opens the distribution's files with its shell beside them; the address bar shows Ubuntu instead of `\\wsl$\Ubuntu`. (Recorded under Wine, which has no WSL, so the shell's output is a stand-in.)
+Clicking Ubuntu in the sidebar's Linux section opens the distribution's files with its shell beside them; the address bar shows Ubuntu instead of `\\wsl$\Ubuntu`.
 
 ## Features
 
@@ -286,7 +286,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Reset Data confirmation](42-reset-data-confirm.png)
 
-### Notification panel after deletes - answering No to the delete confirmation (Delete or Shift+Del) is reported as Cancelled and leaves the item and its tags untouched; answering Yes shows Completed
+### Notification panel after deletes - answering Cancel to the delete confirmation is reported as Cancelled and leaves the item and its tags untouched; answering Delete shows Completed
 
 ![Delete cancelled and completed in the notification panel](43-delete-cancelled-notifications.png)
 
@@ -306,7 +306,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Animated GIF preview controls](47-gif-preview-controls.png)
 
-### Status bar - free space on the drive, and the active type-to-filter ("new", 2 of 9 items) with a button to clear it
+### Status bar - free space on the drive, and the active type-to-filter ("mo", 2 of 7 items) with a button to clear it
 
 ![Status bar with filter and free space](48-status-bar-filter-free-space.png)
 
@@ -402,7 +402,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Disk Usage - Clean Up](69-disk-usage-cleanup.png)
 
-### Performance panel > Benchmark This Drive - sequential and random 4K read/write speed and IOPS (this run is under Wine, which can't bypass its cache, so the numbers are cache speed)
+### Performance panel > Benchmark This Drive - sequential and random 4K read/write speed and IOPS, measured with the Windows cache bypassed
 
 ![Benchmark This Drive](70-drive-benchmark.png)
 
@@ -426,7 +426,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Archive item menu](77-archive-menu.png)
 
-### Paste conflict dialog - Keep Both, Apply To All, and Replace Only If The Pasted One Is Newer / Larger
+### Paste conflict dialog - Replace, Skip Existing, Keep Both, and Replace Only If The Pasted One Is Newer / Larger, applied to every listed item
 
 ![Paste conflict rules](78-paste-conflict.png)
 
@@ -454,7 +454,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Breadcrumb folder menu](84-breadcrumb-menu.png)
 
-### Terminal pane (Ctrl+`) - PowerShell 7 and Ubuntu (WSL) session tabs docked under the file view, with colors, wide characters, and the cursor (sample output: under Wine the shells can't take input, so this text was fed to the terminal directly)
+### Terminal pane (Ctrl+`) - PowerShell 7 and Ubuntu (WSL) session tabs docked under the file view, with colors, wide characters, and the cursor; both are live shells running the commands shown
 
 ![Terminal pane](85-terminal-pane.png)
 
@@ -462,7 +462,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Terminal shells](86-terminal-shells.png)
 
-### Terminal pane with an Oh My Posh-style prompt - powerline segments and Nerd Font icons, with Terminal Font on Automatic picking the installed Nerd Font (sample output fed to the terminal directly, as under Wine the shells can't take input)
+### Terminal pane with an Oh My Posh prompt - powerline segments and Nerd Font icons, with Terminal Font on Automatic picking the installed Nerd Font
 
 ![Terminal with Oh My Posh](87-terminal-oh-my-posh.png)
 
@@ -478,7 +478,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Sidebar Folders tree](90-folder-tree.png)
 
-### Filter bar - the kind chips: Code shows only code files (4 of 6), with the status bar's filter chip
+### Filter bar - the kind chips: Code shows only code files (3 of 11), with the status bar's filter chip
 
 ![Filter bar kind chips](91-filter-bar-kinds.png)
 
@@ -522,7 +522,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Sidebar places](101-sidebar-places.png)
 
-### WSL layout - Ubuntu's files on the left and its shell on the right (the shell's output is a stand-in, recorded under Wine)
+### WSL layout - Ubuntu's files on the left and its shell on the right
 
 ![WSL layout](102-wsl-layout.png)
 
