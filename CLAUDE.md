@@ -1672,6 +1672,35 @@ CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), no
 GitHub - see the recorded finding above for why nothing here may use a published
 action. Workflows live in `.forgejo/workflows/`.
 
+### The runner
+
+One runner serves every `owner/*` repository on the forge, including
+`flex-taskbar`. It is a Windows service on the development machine itself
+(`gitea-runner`, NSSM-wrapped, `C:\Apps\gitea-runner`, running as
+LocalSystem), registered at account scope rather than per repository - there
+were briefly two repo-scoped runners, which let the two projects build
+concurrently and defeated the single-runner serialization both their workflows
+assume. `C:\Apps\gitea-runner\make-global.ps1` is what collapsed them.
+
+- **A runner service needs `cargo`/`rustup` put on its PATH explicitly.** They
+  live in `C:\Rust\.cargo\bin`, which is on the *user* PATH only, and a
+  service running as LocalSystem sees just the machine PATH - which does have
+  `git` and `pwsh`, so the checkout and the version plan both succeed and the
+  job then dies at `rustup update stable` about eight seconds in. The working
+  service supplies a full PATH through NSSM's `AppEnvironmentExtra`; a runner
+  installed with a plain `nssm install` has none and fails exactly that way.
+  If a new runner is ever set up, copy that value from the existing service
+  rather than retyping it.
+- `runs-on: windows-latest` matches because the runner registers the label
+  `windows-latest:host` - `host` meaning jobs run directly on the machine, not
+  in Docker, which is what a Rust build here needs.
+- There is no `unregister` command. A replaced registration leaves a stale
+  runner entry that reads "offline" for ever in the forge UI; delete those by
+  hand.
+- Re-registering deletes `.runner`, and a bad token then leaves the machine
+  with no runner at all and both projects unable to build - back that file up
+  before touching it (`make-global.ps1` does, and restores it on failure).
+
 ### Workflow
 
 - After a change is tested (local `cargo test` + `cargo clippy --release
