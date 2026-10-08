@@ -1640,6 +1640,22 @@ PowerShell process) rather than the app's own code - if you're using the
   have to be fixed by hand in the forge's UI - the workflow will not revisit an
   already-published tag.
 
+- **A startup cleanup that deletes the previous version's files races with the
+  process it is cleaning up after.** `core::update::clean_leftovers` originally
+  made one attempt at deleting `EdenExplorer.old.exe` on the first frame. But
+  `restart()` spawns the new copy and *then* exits, so for a moment both are
+  alive and Windows still holds the old image open - the delete fails, the
+  `let _ =` swallows it, and ~65MB sits there until some later start happens to
+  win the race. Observed for real after the v1.0.1 self-update. The staged
+  download in `%TEMP%\EdenExplorer Update` had the opposite problem: nothing
+  removed it *at all*, so every update leaked another program-sized file. Fixed
+  by retrying the old-image delete on a helper thread (so the first frame never
+  waits on it) and by sweeping the staging directory both at startup and right
+  after a successful `install`. **When writing "clean up what the last run left
+  behind" code, check whether the thing being cleaned up could still be alive -
+  a single attempt at process start is not enough if your own restart path is
+  what created the file.**
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

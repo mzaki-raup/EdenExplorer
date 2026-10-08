@@ -23,6 +23,17 @@ const MAX_EXE: u64 = 256 << 20;
 const OLD_EXE: &str = "EdenExplorer.old.exe";
 /// How often the automatic check runs.
 const CHECK_EVERY: u64 = 24 * 60 * 60;
+/// How long to keep trying to delete the replaced image at startup. `restart`
+/// spawns the new copy and then exits, so for a moment both are alive and
+/// Windows still holds the old image open - a single attempt loses that race
+/// and leaves tens of megabytes behind until some later start happens to win it.
+const OLD_EXE_ATTEMPTS: u32 = 20;
+const OLD_EXE_RETRY: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Where a download is staged before it is installed.
+fn staging_dir() -> PathBuf {
+    std::env::temp_dir().join("EdenExplorer Update")
+}
 
 /// What a background check or download finished doing.
 #[derive(Debug)]
@@ -126,12 +137,33 @@ fn get(agent: &ureq::Agent, url: &str, max: u64) -> Result<Vec<u8>, String> {
     Ok(body)
 }
 
-/// Deletes the program a previous update replaced. Safe at startup, by which
-/// point nothing is running from it any more.
+/// Clears what a previous update left behind: the image it replaced, and any
+/// download that was staged but never installed. Both are the size of the whole
+/// program, so leaving them is not harmless.
+///
+/// Runs on a helper thread: deleting the old image has to be retried (see
+/// `OLD_EXE_ATTEMPTS`) and the first frame should not wait for that.
 pub fn clean_leftovers() {
-    if let Ok(current) = std::env::current_exe() {
-        let _ = std::fs::remove_file(current.with_file_name(OLD_EXE));
-    }
+    std::thread::spawn(|| {
+        // First, and without retrying: a download that was fetched but never
+        // installed is nobody's lock. Doing it before the retry loop also keeps
+        // this well clear of any download the user starts moments later.
+        let _ = std::fs::remove_dir_all(staging_dir());
+
+        let Ok(current) = std::env::current_exe() else {
+            return;
+        };
+        let old = current.with_file_name(OLD_EXE);
+        for _ in 0..OLD_EXE_ATTEMPTS {
+            if !old.exists() || std::fs::remove_file(&old).is_ok() {
+                return;
+            }
+            // Still held by the copy that is on its way out; give it a moment.
+            std::thread::sleep(OLD_EXE_RETRY);
+        }
+        // Still there: the next start tries again, which is why this is not an
+        // error anyone needs to see.
+    });
 }
 
 /// Whether this is a release the user chose to skip. Anything newer than the
@@ -247,7 +279,7 @@ fn download(update: &Update) -> Result<PathBuf, String> {
         ));
     }
 
-    let dir = std::env::temp_dir().join("EdenExplorer Update");
+    let dir = staging_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
     let file = dir.join(release::EXE_ASSET);
     std::fs::write(&file, &bytes).map_err(|e| format!("{e}"))?;
@@ -272,6 +304,11 @@ pub fn install(new: &Path) -> Result<(), String> {
         let _ = std::fs::rename(&old, &current);
         return Err(format!("{error}"));
     }
+    // The staged copy is now in place and is the size of the whole program.
+    // Only `remove_dir` so this never deletes anything it did not expect - it
+    // succeeds exactly when the directory holds nothing but that one file.
+    let _ = std::fs::remove_file(new);
+    let _ = std::fs::remove_dir(staging_dir());
     Ok(())
 }
 
@@ -301,6 +338,19 @@ mod tests {
         assert_eq!(
             hex(&Sha256::digest(b"")),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn download_and_cleanup_agree_on_where_a_download_is_staged() {
+        // `download` writes here and both `install` and `clean_leftovers` remove
+        // it; if they ever stopped agreeing, the symptom would be a silent
+        // program-sized file left in the temp directory after every update.
+        let dir = staging_dir();
+        assert!(dir.starts_with(std::env::temp_dir()));
+        assert_eq!(
+            dir.file_name().and_then(|n| n.to_str()),
+            Some("EdenExplorer Update")
         );
     }
 
