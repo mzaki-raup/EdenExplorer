@@ -6,7 +6,7 @@ use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, filter_match};
+use crate::gui::utils::draw_object_drag_ghost;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -85,6 +85,8 @@ pub fn draw_item_viewer(
     viewport_width: f32,
 ) -> Option<ItemViewerAction> {
     let display_mode = view.display_mode;
+    let is_flat = view.is_flat();
+    let git_status = view.git.clone();
     let files = &view.files;
     let sort_column = view.sort_column;
     let sort_ascending = view.sort_ascending;
@@ -98,10 +100,15 @@ pub fn draw_item_viewer(
     let audio_service = &mut view.audio_service;
     let find_in_preview = &mut view.find_in_preview;
     let preview_selection = &mut view.preview_selection;
+    let thumbnail_service = &mut view.thumbnail_service;
+    let hover_previews = settings_window.current_settings.ui_prefs.hover_previews;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
     let network_share_error = *view.network_share_error.lock().unwrap();
-    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
+    let remote_error = view.remote_error.lock().ok().and_then(|e| e.clone());
+    // A flat view lists files from many folders, like search results, so
+    // it shows the same Folder column and Open File Location.
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some() || is_flat;
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
@@ -140,12 +147,20 @@ pub fn draw_item_viewer(
         || filter_state.last_show_hidden_files_folders != show_hidden_files_folders;
 
     if filter_changed {
+        // Built once per change: text, wildcards, or regex, inverted or
+        // not, plus the kind chip (see `core::filter`).
+        let (compiled, error) = crate::core::filter::CompiledFilter::new(
+            &filter_state.query,
+            filter_state.regex,
+            filter_state.invert,
+            filter_state.kind,
+        );
+        filter_state.error = error;
         filter_state.cached_indices = files
             .iter()
             .enumerate()
             .filter(|(_, f)| {
-                (show_hidden_files_folders || !f.is_hidden)
-                    && filter_match(&f.name, &filter_state.query)
+                (show_hidden_files_folders || !f.is_hidden) && compiled.matches(&f.name, f.is_dir)
             })
             .map(|(i, _)| i)
             .collect();
@@ -202,6 +217,7 @@ pub fn draw_item_viewer(
     if !modal_input_blocked && is_focused {
         if let Some(global_action) = handle_global_actions(
             ui,
+            i18n,
             files,
             palette,
             tabbar_action,
@@ -222,8 +238,19 @@ pub fn draw_item_viewer(
     if visible_items_empty && !is_custom_layout {
         let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
-            if is_loading && files.is_empty() {
+            if let Some(error) = &remote_error {
+                // A remote folder that couldn't be listed: say why.
+                ui.label(
+                    egui::RichText::new(format!("{}\n\n{error}", i18n.tr("remote_error_title")))
+                        .color(ui.visuals().warn_fg_color),
+                );
+            } else if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
+            } else if !files.is_empty() && filter_state.narrows() {
+                // The folder isn't empty; the filter hides everything (or
+                // its regex doesn't compile).
+                let text = filter_state.error.clone().unwrap_or_else(|| i18n.tr("filter_no_matches"));
+                ui.label(text);
             } else {
                 ui.label(network_share_empty_state_text(i18n, network_share_error));
             }
@@ -375,7 +402,7 @@ pub fn draw_item_viewer(
             explorer_state,
             rename_state,
             drag_state,
-            &mut view.thumbnail_service,
+            thumbnail_service,
             &mut view.gallery_state,
             paste_enabled,
             clipboard_set,
@@ -397,6 +424,7 @@ pub fn draw_item_viewer(
             active_tab_id,
             current_dir,
             is_loading,
+            is_search_view,
         )
         .or(action);
     }
@@ -786,12 +814,44 @@ pub fn draw_item_viewer(
                                         folder_size_text_cache,
                                         drive_size_text_cache,
                                         tags_state,
+                                        git_status.as_deref(),
                                         &mut action,
                                     );
                                 });
                             }
 
                             let row_resp = row.response();
+
+                            // Hover preview (Settings > Behavior > Hover
+                            // Previews): a thumbnail tooltip for images and
+                            // videos, from the same shell thumbnails the
+                            // Gallery uses.
+                            if hover_previews
+                                && !file.is_dir
+                                && row_resp.hovered()
+                                && crate::core::utils::thumbnails::is_image_or_video(&file.path)
+                            {
+                                let ctx = row_resp.ctx.clone();
+                                thumbnail_service.pump_completed(&ctx);
+                                thumbnail_service.request(
+                                    file,
+                                    crate::core::utils::thumbnails::ThumbnailPriority::Visible,
+                                );
+                                if let Some(texture) = thumbnail_service.texture_for(&ctx, file) {
+                                    row_resp.clone().on_hover_ui_at_pointer(|ui| {
+                                        ui.add(
+                                            egui::Image::new(&texture)
+                                                .max_size(egui::vec2(256.0, 256.0))
+                                                .shrink_to_fit(),
+                                        );
+                                    });
+                                } else if thumbnail_service.is_pending(file) {
+                                    // Check back until it's ready - but not for a
+                                    // file that has no thumbnail, which would keep
+                                    // redrawing the window while the pointer rests.
+                                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                                }
+                            }
 
                             draw_tag_row_background(
                                 row_resp.rect,
@@ -1118,10 +1178,13 @@ pub fn draw_item_viewer(
                                     action = Some(ItemViewerAction::CreateFolder);
                                     ui.close();
                                 }
-                                if ui.button("New File").clicked() {
-                                    action = Some(ItemViewerAction::CreateFile);
-                                    ui.close();
-                                }
+                                crate::gui::windows::containers::itemviewer_helper::draw_new_file_menu(
+                                    ui,
+                                    i18n,
+                                    palette,
+                                    settings_window,
+                                    &mut action,
+                                );
                                 if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                                     action = Some(ItemViewerAction::CreateShortcutHere);
                                     ui.close();
@@ -1132,6 +1195,31 @@ pub fn draw_item_viewer(
                                 }
                                 if ui.button("Open Terminal").clicked() {
                                     action = Some(ItemViewerAction::OpenTerminal);
+                                    ui.close();
+                                }
+                                if view.nav.current.is_dir()
+                                    && ui.button(i18n.tr("disk_usage_menu")).clicked()
+                                {
+                                    action = Some(ItemViewerAction::Context(
+                                        ItemViewerContextAction::AnalyzeDiskUsage(
+                                            view.nav.current.clone(),
+                                        ),
+                                    ));
+                                    ui.close();
+                                }
+
+                                ui.separator();
+
+                                if ui.button(i18n.tr("select_all")).clicked() {
+                                    action = Some(ItemViewerAction::SelectAll);
+                                    ui.close();
+                                }
+                                if ui.button(i18n.tr("select_invert")).clicked() {
+                                    action = Some(ItemViewerAction::InvertSelection);
+                                    ui.close();
+                                }
+                                if ui.button(i18n.tr("select_by_pattern_menu")).clicked() {
+                                    action = Some(ItemViewerAction::SelectByPattern);
                                     ui.close();
                                 }
 
@@ -1182,6 +1270,42 @@ pub fn draw_item_viewer(
                                             view.display_mode = mode;
                                             ui.close();
                                         }
+                                    }
+
+                                    ui.separator();
+                                    // Flat view: every file in all subfolders.
+                                    let flat_color = if is_flat {
+                                        palette.primary
+                                    } else {
+                                        ui.visuals().text_color()
+                                    };
+                                    let flat_check = if is_flat { regular::CHECK } else { "" };
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(format!(
+                                                    "{flat_check:<2}{}",
+                                                    i18n.tr("shortcut_flat_view")
+                                                ))
+                                                .color(flat_color),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::NONE),
+                                        )
+                                        .clicked()
+                                    {
+                                        tabbar_action.get_or_insert_with(Default::default).toolbar_command =
+                                            Some(crate::core::toolbar::ToolbarItem::FlatView);
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button(i18n.tr("view_reset_folder_view")).clicked() {
+                                        action = Some(ItemViewerAction::ResetFolderView);
+                                        ui.close();
+                                    }
+                                    if ui.button(i18n.tr("view_use_as_default")).clicked() {
+                                        action = Some(ItemViewerAction::UseFolderViewAsDefault);
+                                        ui.close();
                                     }
                                 });
 
@@ -1353,6 +1477,7 @@ fn draw_item_viewer_row_column(
     folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     tags_state: &TagsState,
+    git_status: Option<&crate::core::git::RepoStatus>,
     action: &mut Option<ItemViewerAction>,
 ) {
     match column {
@@ -1369,6 +1494,7 @@ fn draw_item_viewer_row_column(
                 font_id,
                 rename_state,
                 show_item_viewer_icons,
+                git_status.and_then(|g| g.state_of(&file.path, file.is_dir)),
             ) {
                 *action = Some(a);
             }

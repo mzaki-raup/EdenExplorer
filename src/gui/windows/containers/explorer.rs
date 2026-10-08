@@ -23,6 +23,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
+const LEFT_MARGIN: f32 = 20.0;
 const RIGHT_MARGIN: f32 = 20.0;
 const COLUMN_SPACING: f32 = 20.0;
 const STATUS_ICON_GAP: f32 = 4.0;
@@ -101,7 +102,12 @@ pub fn draw_tab_content(
     const ADDRESS_BAR_SLACK: f32 = 10.0;
     let address_bar_row_height = ADDRESS_BAR_TOTAL_HEIGHT + ADDRESS_BAR_SLACK;
     let toolbar_row_height = 30.0;
-    let tabbar_height = if is_split_pane {
+    // The address bar gets its own row above the toolbar in a split pane
+    // (half width) and, by default, everywhere else too, so a toolbar with
+    // extra buttons (Settings > Toolbar) has the full width.
+    let address_bar_own_row =
+        is_split_pane || settings_window.current_settings.ui_prefs.address_bar_own_row;
+    let tabbar_height = if address_bar_own_row {
         address_bar_row_height + toolbar_row_height + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING
     } else {
         address_bar_row_height.max(toolbar_row_height) + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING
@@ -109,6 +115,8 @@ pub fn draw_tab_content(
 
     let old_spacing = ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y = 0.0;
+    let spring_ctx = ui.ctx().clone();
+    let spring_layer = egui::LayerId::new(egui::Order::Foreground, ui.id().with(("spring_bar", tab_id)));
 
     StripBuilder::new(ui)
         .size(Size::exact(tabbar_height)) // Tabbar
@@ -126,11 +134,18 @@ pub fn draw_tab_content(
                     is_favorited,
                     drag_active,
                     drag_hover_target.clone(),
-                    is_split_pane,
+                    address_bar_own_row,
                     &tags_state.groups,
                     saved_search_count,
                     settings_window.current_settings.middle_click_opens_new_tab,
                     settings_window.current_settings.tag_icon_style,
+                    crate::gui::windows::containers::itemviewer_navbar::BreadcrumbMenus {
+                        enabled: settings_window.current_settings.ui_prefs.breadcrumb_dropdowns,
+                        show_hidden: settings_window.current_settings.show_hidden_files_folders,
+                    },
+                    &crate::core::toolbar::drawn_layout(
+                        settings_window.current_settings.ui_prefs.toolbar.as_deref(),
+                    ),
                 ));
             });
 
@@ -279,6 +294,41 @@ pub fn draw_tab_content(
 
             drop_targets.item_target.target = hovered_drop_target.clone();
             drop_targets.item_target.rect = hovered_drop_target_rect;
+
+            // Spring-loaded folders: resting on a folder (a row or a
+            // breadcrumb) while dragging opens it, so the drop can go deeper.
+            let spring_ms = settings_window.current_settings.ui_prefs.spring_load_ms;
+            if spring_ms > 0 {
+                let breadcrumb = tabbar_action.as_ref().and_then(|a| a.drag_hover.clone());
+                let hovered = if drag_active {
+                    hovered_drop_target
+                        .clone()
+                        .zip(hovered_drop_target_rect)
+                        .or(breadcrumb)
+                        .filter(|(path, _)| path != &view.nav.current)
+                } else {
+                    None
+                };
+                let step = view.spring.update(
+                    hovered.as_ref().map(|(p, _)| p.as_path()),
+                    std::time::Instant::now(),
+                    std::time::Duration::from_millis(spring_ms as u64),
+                );
+                if let (Some((_, rect)), Some(remaining)) = (&hovered, step.remaining) {
+                    // A thin bar filling up along the folder's bottom edge.
+                    let bar = egui::Rect::from_min_size(
+                        egui::pos2(rect.left(), rect.bottom() - 2.0),
+                        egui::vec2(rect.width() * step.progress, 2.0),
+                    );
+                    spring_ctx.layer_painter(spring_layer).rect_filled(bar, 1.0, palette.primary);
+                    spring_ctx.request_repaint_after(remaining);
+                }
+                if let Some(open) = step.open {
+                    tabbar_action.get_or_insert_with(Default::default).nav_to = Some(open);
+                    // The folder opens after this frame; show it right away.
+                    spring_ctx.request_repaint();
+                }
+            }
             drop_targets.breadcrumb_target.target = tabbar_action
                 .as_ref()
                 .and_then(|a| a.move_files_to_breadcrumb_dir.clone());
@@ -287,24 +337,17 @@ pub fn draw_tab_content(
                 .and_then(|a| a.move_files_to_breadcrumb_dir_rect);
 
             strip.cell(|ui| {
-                // Not shown for the drive root ("This PC") or Settings - neither
-                // has a meaningful item/size count. Every other view (Details,
+                // The strip itself is always drawn - it carries the version
+                // (see the far-left block below), which has to stay visible on
+                // the drive root ("This PC", the startup view) and Settings too.
+                // Only the item/size counters are skipped for those two, since
+                // neither has a meaningful count. Every other view (Details,
                 // Columns, Gallery, Preview and their variants, Recycle Bin, and
                 // tag views) shares this same status bar, including each half of
                 // a split pane independently, since `draw_tab_content` is called
                 // once per pane.
-                if !is_drive_view && !is_settings_view {
-                    let counts = if let Some(group_id) = tag_view_group_id {
-                        // The tag view renders its own local row list (see
-                        // `tags::draw_tag_view`) rather than populating
-                        // `view.files`, so counts have to be computed from the
-                        // tag group's own item list instead - `view.files` would
-                        // just be stale data left over from whatever real
-                        // folder this tab last showed.
-                        status_counts_for_tag_group(tags_state, group_id, &view.explorer_state.selected_paths)
-                    } else {
-                        status_counts_for_view(view, folder_sizes)
-                    };
+                {
+                    let show_counts = !is_drive_view && !is_settings_view;
 
                     let text_color = palette.status_bar_text_color;
                     let icon_color = palette.status_bar_icon_color;
@@ -333,6 +376,18 @@ pub fn draw_tab_content(
                         })
                         .show(ui, |ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if show_counts {
+                            let counts = if let Some(group_id) = tag_view_group_id {
+                                // The tag view renders its own local row list (see
+                                // `tags::draw_tag_view`) rather than populating
+                                // `view.files`, so counts have to be computed from the
+                                // tag group's own item list instead - `view.files` would
+                                // just be stale data left over from whatever real
+                                // folder this tab last showed.
+                                status_counts_for_tag_group(tags_state, group_id, &view.explorer_state.selected_paths)
+                            } else {
+                                status_counts_for_view(view, folder_sizes)
+                            };
                         ui.add_space(RIGHT_MARGIN);
 
                         status_counter(
@@ -379,6 +434,28 @@ pub fn draw_tab_content(
                             }),
                         );
 
+                        // Free space on the drive holding this folder (not
+                        // for virtual views like the Recycle Bin or tags).
+                        if tag_view_group_id.is_none()
+                            && let Some((total, free)) = cached_drive_space(&view.nav.current)
+                        {
+                            ui.add_space(COLUMN_SPACING);
+                            let tooltip = format!(
+                                "{} ({} {})",
+                                i18n.tr("status_free_space_tooltip"),
+                                format_size(total),
+                                i18n.tr("status_total"),
+                            );
+                            ui.label(
+                                RichText::new(format!("{} {}", format_size(free), i18n.tr("status_free")))
+                                    .font(font_id.clone())
+                                    .color(text_color),
+                            )
+                            .on_hover_text(&tooltip);
+                            ui.label(RichText::new(regular::DATABASE).font(font_id.clone()).color(icon_color))
+                                .on_hover_text(&tooltip);
+                        }
+
                         if counts.selected_count > 0 {
                             ui.add_space(COLUMN_SPACING);
                             let selected_label = if counts.selected_count == 1 {
@@ -394,6 +471,201 @@ pub fn draw_tab_content(
                             );
                             ui.label(RichText::new(selected_text).font(font_id.clone()).color(text_color));
                         }
+
+                        // Active type-to-filter: what's being matched, how
+                        // many items it leaves, and a button to clear it.
+                        let filter = &view.item_viewer_filter_state;
+                        if tag_view_group_id.is_none() && filter.narrows() {
+                            ui.add_space(COLUMN_SPACING);
+                            let shown = counts.dir_count + counts.file_count;
+                            let chip = egui::Frame::NONE
+                                .fill(palette.primary.gamma_multiply(0.18))
+                                .stroke(egui::Stroke::new(1.0, palette.primary.gamma_multiply(0.6)))
+                                .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                .inner_margin(egui::Margin::symmetric(6, 1))
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    let clear = ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new(regular::X).font(font_id.clone()).color(text_color),
+                                            )
+                                            .frame(false),
+                                        )
+                                        .on_hover_text(i18n.tr("status_clear_filter"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked();
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{}{} \u{2022} {} {} {}",
+                                            i18n.tr("status_filter"),
+                                            // A kind chip alone has no text to quote.
+                                            if filter.query.is_empty() {
+                                                String::new()
+                                            } else {
+                                                format!(" \"{}\"", filter.query)
+                                            },
+                                            shown,
+                                            i18n.tr("status_of"),
+                                            view.files.len(),
+                                        ))
+                                        .font(font_id.clone())
+                                        .color(text_color),
+                                    );
+                                    ui.label(RichText::new(regular::FUNNEL).font(font_id.clone()).color(palette.primary));
+                                    clear
+                                });
+                            if chip.inner {
+                                view.item_viewer_filter_state = Default::default();
+                            }
+                        }
+
+                        // Flat view: how many files it lists, and a button
+                        // to go back to the normal view.
+                        if view.is_flat() {
+                            ui.add_space(COLUMN_SPACING);
+                            let truncated =
+                                view.flat_truncated.load(std::sync::atomic::Ordering::Relaxed);
+                            let chip = egui::Frame::NONE
+                                .fill(palette.primary.gamma_multiply(0.18))
+                                .stroke(egui::Stroke::new(1.0, palette.primary.gamma_multiply(0.6)))
+                                .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                .inner_margin(egui::Margin::symmetric(6, 1))
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    let close = ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new(regular::X).font(font_id.clone()).color(text_color),
+                                            )
+                                            .frame(false),
+                                        )
+                                        .on_hover_text(i18n.tr("status_flat_view_off"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked();
+                                    let mut text = format!(
+                                        "{} \u{2022} {} {}",
+                                        i18n.tr("status_flat_view"),
+                                        view.files.len(),
+                                        i18n.tr("status_flat_view_files"),
+                                    );
+                                    if truncated {
+                                        text.push_str(&format!(" ({})", i18n.tr("status_flat_view_truncated")));
+                                    }
+                                    ui.label(RichText::new(text).font(font_id.clone()).color(text_color));
+                                    ui.label(RichText::new(regular::STACK).font(font_id.clone()).color(palette.primary));
+                                    close
+                                });
+                            if chip.inner {
+                                tabbar_action.get_or_insert_with(Default::default).toolbar_command =
+                                    Some(crate::core::toolbar::ToolbarItem::FlatView);
+                            }
+                        }
+
+                        // Git: the branch, and how many files have changes.
+                        if let Some(git) = view.git.as_deref() {
+                            ui.add_space(COLUMN_SPACING);
+                            let mut tooltip = format!("{}\n{}", i18n.tr("status_git_repo"), git.workdir.display());
+                            if let Some(error) = &git.error {
+                                tooltip.push_str(&format!("\n{error}"));
+                            }
+                            if git.changed > 0 {
+                                ui.label(
+                                    RichText::new(format!("{} {}", git.changed, i18n.tr("status_git_changes")))
+                                        .font(font_id.clone())
+                                        .color(crate::gui::windows::containers::itemviewer_helper::git_state_color(
+                                            crate::core::git::GitState::Modified,
+                                            ui.visuals().dark_mode,
+                                        )),
+                                )
+                                .on_hover_text(&tooltip);
+                                ui.label(RichText::new("\u{2022}").font(font_id.clone()).color(text_color));
+                            }
+                            ui.label(RichText::new(&git.branch).font(font_id.clone()).color(text_color))
+                                .on_hover_text(&tooltip);
+                            ui.label(RichText::new(regular::GIT_BRANCH).font(font_id.clone()).color(icon_color))
+                                .on_hover_text(&tooltip);
+                        }
+                        }
+
+                        // Far left, so it never collides with the right-aligned
+                        // counters above however many of them a view shows. The
+                        // remaining space after a right_to_left pass is the left
+                        // end of the row, so a left_to_right layout over it
+                        // starts flush against the row's own left edge.
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.add_space(LEFT_MARGIN);
+                            let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+                            let tooltip =
+                                format!("{}: {}", i18n.tr("about_current_version"), version);
+                            ui.label(RichText::new(regular::INFO).font(font_id.clone()).color(icon_color))
+                                .on_hover_text(&tooltip);
+                            ui.label(RichText::new(version).font(font_id.clone()).color(text_color))
+                                .on_hover_text(&tooltip);
+
+                            // An available update, published here once per frame
+                            // by `update_ui::poll_update_events` - a memory flag
+                            // rather than another `draw_tab_content` parameter,
+                            // since this is several call sites deep.
+                            let newer = ui.ctx().memory(|mem| {
+                                mem.data
+                                    .get_temp::<Option<String>>(egui::Id::new(
+                                        crate::gui::windows::update_ui::UPDATE_BADGE_MEMORY_ID,
+                                    ))
+                                    .flatten()
+                            });
+                            if let Some(newer) = newer {
+                                ui.add_space(8.0);
+                                let label =
+                                    format!("{} v{newer}", i18n.tr("update_status_available"));
+                                let chip = egui::Frame::NONE
+                                    .fill(palette.primary.gamma_multiply(0.18))
+                                    .stroke(egui::Stroke::new(
+                                        1.0,
+                                        palette.primary.gamma_multiply(0.6),
+                                    ))
+                                    .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                    .inner_margin(egui::Margin::symmetric(6, 1))
+                                    .show(ui, |ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        ui.label(
+                                            RichText::new(regular::ARROW_CIRCLE_UP)
+                                                .font(font_id.clone())
+                                                .color(palette.primary),
+                                        );
+                                        // A bare label inside a clickable row
+                                        // steals that row's own clicks unless it
+                                        // opts out - see CLAUDE.md.
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&label)
+                                                    .font(font_id.clone())
+                                                    .color(text_color),
+                                            )
+                                            .selectable(false),
+                                        );
+                                    });
+                                if ui
+                                    .interact(
+                                        chip.response.rect,
+                                        ui.id().with("update_badge"),
+                                        egui::Sense::click(),
+                                    )
+                                    .on_hover_text(i18n.tr("update_status_available_hint"))
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    ui.ctx().memory_mut(|mem| {
+                                        mem.data.insert_temp(
+                                            egui::Id::new(
+                                                crate::gui::windows::update_ui::UPDATE_CLICKED_MEMORY_ID,
+                                            ),
+                                            true,
+                                        );
+                                    });
+                                }
+                            }
+                        });
                     });
                         });
                 }
@@ -403,6 +675,32 @@ pub fn draw_tab_content(
     ui.spacing_mut().item_spacing.y = old_spacing;
 
     (tabbar_action, pending_action)
+}
+
+/// Free/total space of the drive holding `path`, looked up at most every
+/// 10 seconds per drive (the status bar is drawn every frame).
+fn cached_drive_space(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static CACHE: RefCell<HashMap<PathBuf, (Instant, Option<(u64, u64)>)>> =
+            RefCell::new(HashMap::new());
+    }
+    if !path.is_absolute() {
+        return None;
+    }
+    let root = path.ancestors().last()?.to_path_buf();
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((at, space)) = cache.get(&root)
+            && at.elapsed() < Duration::from_secs(10)
+        {
+            return *space;
+        }
+        let space = crate::core::fs::get_drive_space(&path.to_path_buf());
+        cache.insert(root, (Instant::now(), space));
+        space
+    })
 }
 
 /// The status bar's four right-aligned counters plus the selection summary,

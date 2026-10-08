@@ -296,6 +296,16 @@ pub fn draw_preview_pane(
     selection: Option<&Path>,
     palette: &ThemePalette,
 ) {
+    // In Details + Preview a wide table can push this pane's cell partly
+    // past the window's right edge; lay the pane out in the part that's
+    // actually visible so full-width and right-aligned content (media
+    // controls, centered images) isn't cut off.
+    // (Less a few points for the view's own border.)
+    let visible_width = (ui.clip_rect().right() - ui.max_rect().left() - 6.0).max(0.0);
+    if visible_width < ui.available_width() {
+        ui.set_max_width(visible_width);
+    }
+
     let Some(path) = selection else {
         egui::Frame::NONE
             .fill(palette.preview_pane_bg_color)
@@ -897,7 +907,59 @@ fn arm_markdown_copy_on_right_click(ui: &mut egui::Ui) {
     }
 }
 
-fn draw_preview_content(
+fn preview_frame_id() -> egui::Id {
+    egui::Id::new("preview_frame_style")
+}
+
+/// Shares the Settings > Appearance > Preview Frame choice with this
+/// frame's preview drawing (the preview pane and Quick Look).
+pub(crate) fn set_preview_frame_style(ctx: &egui::Context, frame: crate::core::ui_prefs::PreviewFrame) {
+    ctx.data_mut(|d| d.insert_temp(preview_frame_id(), frame));
+}
+
+pub(crate) fn preview_frame_style(ctx: &egui::Context) -> crate::core::ui_prefs::PreviewFrame {
+    ctx.data(|d| d.get_temp(preview_frame_id())).unwrap_or_default()
+}
+
+/// The corner radius for images and panels inside the preview frame.
+fn preview_inner_radius(ui: &egui::Ui) -> egui::CornerRadius {
+    egui::CornerRadius::same(preview_frame_style(ui.ctx()).inner_radius().round() as u8)
+}
+
+/// Draws a file's preview inside the rounded, bordered frame set in
+/// Settings > Appearance (thickness, color, corner radius; the padding
+/// keeps content inside the rounded corners).
+pub(crate) fn draw_preview_content(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    preview_service: &mut PreviewService,
+    video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
+    path: &Path,
+    palette: &ThemePalette,
+) {
+    let style = preview_frame_style(ui.ctx());
+    if !style.enabled {
+        draw_preview_body(ui, i18n, preview_service, video_service, audio_service, find_in_preview, path, palette);
+        return;
+    }
+    let color = style
+        .color
+        .map(|[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a))
+        .unwrap_or(ui.visuals().widgets.noninteractive.bg_stroke.color);
+    egui::Frame::NONE
+        .fill(palette.input_field_bg)
+        .stroke(egui::Stroke::new(style.thickness(), color))
+        .corner_radius(egui::CornerRadius::same(style.radius().round() as u8))
+        .inner_margin(egui::Margin::same(style.padding().round() as i8))
+        .show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            draw_preview_body(ui, i18n, preview_service, video_service, audio_service, find_in_preview, path, palette);
+        });
+}
+
+fn draw_preview_body(
     ui: &mut egui::Ui,
     i18n: &I18n,
     preview_service: &mut PreviewService,
@@ -1013,6 +1075,7 @@ fn draw_preview_content(
                     egui::Image::new(&texture)
                         .max_size(ui.available_size())
                         .shrink_to_fit()
+                        .corner_radius(preview_inner_radius(ui))
                         .sense(egui::Sense::click()),
                 );
                 let clicked = resp.clicked();
@@ -1083,7 +1146,13 @@ fn draw_preview_content(
                 .id_salt("preview_pane_image")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit());
+                    // Centered in the space (Quick Look's is much wider
+                    // than most images).
+                    ui.allocate_ui_with_layout(
+                        avail,
+                        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                        |ui| ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit().corner_radius(preview_inner_radius(ui))),
+                    );
                 });
         } else {
             ui.weak(i18n.tr("preview_loading"));
@@ -1096,13 +1165,32 @@ fn draw_preview_content(
         Some(PreviewPayload::Animated { .. })
     ) {
         if let Some(texture) = preview_service.animated_texture_for(ui.ctx(), path) {
+            // Seek bar row + buttons row.
+            const CONTROLS_HEIGHT: f32 = 58.0;
             let avail = ui.available_size();
-            egui::ScrollArea::both()
-                .id_salt("preview_pane_animated")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit());
-                });
+            let image_area_height = (avail.y - CONTROLS_HEIGHT - 6.0).max(0.0);
+
+            let image_area = egui::vec2(avail.x, image_area_height);
+            ui.allocate_ui_with_layout(image_area, egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
+                let resp = ui.add(
+                    egui::Image::new(&texture)
+                        .max_size(image_area)
+                        .shrink_to_fit()
+                        .corner_radius(preview_inner_radius(ui))
+                        .sense(egui::Sense::click()),
+                );
+                let clicked = resp.clicked();
+                resp.on_hover_text(i18n.tr("preview_video_toggle_play"))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if clicked {
+                    preview_service.toggle_animation_paused(path);
+                }
+            });
+
+            ui.add_space(6.0);
+            if let Some(info) = preview_service.animation_info(path) {
+                draw_animation_controls(ui, i18n, palette, preview_service, path, info);
+            }
         } else {
             ui.weak(i18n.tr("preview_loading"));
         }
@@ -1153,34 +1241,7 @@ fn draw_preview_content(
             // Handled above before this clone; unreachable in practice.
         }
         Some(PreviewPayload::Archive { entries, truncated }) => {
-            egui::ScrollArea::both()
-                .id_salt("preview_pane_archive")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for entry in &entries {
-                        ui.horizontal(|ui| {
-                            ui.add_space(entry.depth as f32 * 16.0);
-                            let icon = if entry.is_dir {
-                                regular::FOLDER_SIMPLE
-                            } else {
-                                regular::FILE
-                            };
-                            ui.colored_label(palette.icon_colored_hover, icon);
-                            ui.label(egui::RichText::new(&entry.name).size(palette.text_size));
-                            if !entry.is_dir {
-                                ui.weak(
-                                    egui::RichText::new(format_file_size(entry.size))
-                                        .size(palette.tooltip_text_size),
-                                );
-                            }
-                        });
-                    }
-
-                    if truncated {
-                        ui.add_space(8.0);
-                        ui.weak(i18n.tr("preview_archive_truncated"));
-                    }
-                });
+            draw_archive_tree(ui, i18n, palette, path, &entries, truncated);
         }
         Some(PreviewPayload::Unsupported(message)) => {
             ui.add_space(8.0);
@@ -1676,6 +1737,87 @@ fn format_system_time(time: std::time::SystemTime) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
+/// Play/Pause, Stop, previous/next frame, a frame seek slider, and the
+/// current time/frame for an animated GIF in the preview pane.
+fn draw_animation_controls(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    preview_service: &mut crate::core::preview::PreviewService,
+    path: &Path,
+    info: crate::core::preview::AnimationInfo,
+) {
+    // Seek bar on its own full-width row, so it stays usable in a narrow pane.
+    ui.scope(|ui| {
+        ui.spacing_mut().slider_width = ui.available_width();
+        let mut frame = info.frame_index;
+        let slider_resp = ui
+            .add(egui::Slider::new(&mut frame, 0..=info.frame_count - 1).show_value(false))
+            .on_hover_text(i18n.tr("preview_anim_seek"));
+        if slider_resp.changed() && frame != info.frame_index {
+            preview_service.seek_animation(path, frame);
+        }
+    });
+    ui.add_space(4.0);
+
+    ui.horizontal(|ui| {
+        let control = |ui: &mut egui::Ui, icon: &str, tooltip: String| {
+            ui.add(egui::Button::new(egui::RichText::new(icon).size(16.0)))
+                .on_hover_text(tooltip)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+        };
+
+        let (icon, tooltip) = if info.paused {
+            (regular::PLAY, i18n.tr("preview_anim_play"))
+        } else {
+            (regular::PAUSE, i18n.tr("preview_anim_pause"))
+        };
+        if control(ui, icon, tooltip) {
+            preview_service.toggle_animation_paused(path);
+        }
+        if control(ui, regular::STOP, i18n.tr("preview_anim_stop")) {
+            preview_service.stop_animation(path);
+        }
+        if control(ui, regular::SKIP_BACK, i18n.tr("preview_anim_previous_frame")) {
+            preview_service.step_animation(path, false);
+        }
+        if control(ui, regular::SKIP_FORWARD, i18n.tr("preview_anim_next_frame")) {
+            preview_service.step_animation(path, true);
+        }
+
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!(
+                "{} / {}",
+                format_animation_time(info.position),
+                format_animation_time(info.duration)
+            ))
+            .monospace()
+            .size(palette.tooltip_text_size),
+        );
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} {} / {}",
+                    i18n.tr("preview_anim_frame"),
+                    info.frame_index + 1,
+                    info.frame_count
+                ))
+                .size(palette.tooltip_text_size)
+                .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        });
+    });
+}
+
+/// "0:01.2" - GIFs are usually seconds long, so tenths are shown.
+fn format_animation_time(duration: std::time::Duration) -> String {
+    let tenths = duration.as_millis() / 100;
+    format!("{}:{:02}.{}", tenths / 600, (tenths / 10) % 60, tenths % 10)
+}
+
 fn format_video_time(seconds: f64) -> String {
     let total = seconds.max(0.0).round() as u64;
     let hours = total / 3600;
@@ -1685,5 +1827,191 @@ fn format_video_time(seconds: f64) -> String {
         format!("{hours}:{minutes:02}:{secs:02}")
     } else {
         format!("{minutes}:{secs:02}")
+    }
+}
+
+#[cfg(test)]
+mod animation_time_tests {
+    use super::format_animation_time;
+    use std::time::Duration;
+
+    #[test]
+    fn shows_minutes_seconds_and_tenths() {
+        assert_eq!(format_animation_time(Duration::from_millis(0)), "0:00.0");
+        assert_eq!(format_animation_time(Duration::from_millis(1250)), "0:01.2");
+        assert_eq!(format_animation_time(Duration::from_millis(83_400)), "1:23.4");
+    }
+}
+
+/// Which folders are collapsed in an archive preview, and the rows that
+/// leaves showing (rebuilt only when a folder is toggled or the listing
+/// changes).
+#[derive(Default)]
+struct ArchiveTreeView {
+    listing: usize,
+    collapsed: std::collections::HashSet<usize>,
+    rows: Option<Vec<usize>>,
+    /// Files, folders, and total size of the files.
+    totals: (usize, usize, u64),
+}
+
+impl ArchiveTreeView {
+    fn rows(&mut self, entries: &[crate::core::preview::ArchiveEntry]) -> &[usize] {
+        self.rows.get_or_insert_with(|| {
+            let mut rows = Vec::with_capacity(entries.len());
+            let mut i = 0;
+            while i < entries.len() {
+                rows.push(i);
+                i += if self.collapsed.contains(&i) { entries[i].descendants as usize + 1 } else { 1 };
+            }
+            rows
+        })
+    }
+}
+
+/// An archive's contents as a tree like VS Code's explorer: Material Icon
+/// Theme icons for each file type and named folder, folders first, and
+/// folders that collapse on click. Only the rows on screen are laid out.
+fn draw_archive_tree(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    path: &Path,
+    entries: &std::sync::Arc<Vec<crate::core::preview::ArchiveEntry>>,
+    truncated: bool,
+) {
+    use std::sync::{Arc, Mutex};
+    let id = egui::Id::new(("preview_archive_tree", path));
+    let view = ui.data_mut(|d| d.get_temp_mut_or_default::<Arc<Mutex<ArchiveTreeView>>>(id).clone());
+    let Ok(mut view) = view.lock() else { return };
+    let listing = Arc::as_ptr(entries) as usize;
+    if view.listing != listing {
+        let files = entries.iter().filter(|e| !e.is_dir).count();
+        let size = entries.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
+        *view = ArchiveTreeView { listing, totals: (files, entries.len() - files, size), ..Default::default() };
+    }
+
+    let (files, folders, size) = view.totals;
+    // Inside the preview frame: a header strip with the summary and
+    // Expand/Collapse All (rounded to match the frame), then the rows
+    // with faint zebra stripes.
+    let header_radius = preview_inner_radius(ui);
+    let stripe_fill = ui.visuals().text_color().gamma_multiply(0.035);
+
+    let text_size = palette.text_size;
+    let row_height = (text_size + 9.0).round();
+    let icon_size = (text_size + 3.0).round();
+    let indent = 12.0;
+    let text_color = ui.visuals().text_color();
+    let weak_color = ui.visuals().weak_text_color();
+    let hover_fill = ui.visuals().widgets.hovered.weak_bg_fill;
+    let name_font = egui::FontId::proportional(text_size);
+    let size_font = egui::FontId::proportional(palette.tooltip_text_size);
+    let mut toggled = None;
+    ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            egui::Frame::NONE
+                .fill(palette.sidebar_bg_color)
+                .corner_radius(header_radius)
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.weak(
+                            egui::RichText::new(format!(
+                                "{files} {} · {folders} {} · {}",
+                                i18n.tr("preview_archive_files"),
+                                i18n.tr("preview_archive_folders"),
+                                format_file_size(size)
+                            ))
+                            .size(palette.tooltip_text_size),
+                        );
+                        if folders > 0 {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let small = |icon: &str| egui::Button::new(egui::RichText::new(icon).size(palette.tooltip_text_size)).frame(false);
+                                if ui.add(small(regular::ARROWS_OUT_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_expand_all")).clicked() {
+                                    view.collapsed.clear();
+                                    view.rows = None;
+                                }
+                                if ui.add(small(regular::ARROWS_IN_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_collapse_all")).clicked() {
+                                    view.collapsed = entries.iter().enumerate().filter(|(_, e)| e.is_dir).map(|(i, _)| i).collect();
+                                    view.rows = None;
+                                }
+                            });
+                        }
+                    });
+                });
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 0, right: 0, top: 4, bottom: 0 }).show(ui, |ui| {
+                // Counted after the header, whose buttons can change it.
+                let row_count = view.rows(entries).len();
+                egui::ScrollArea::both()
+                    .id_salt("preview_pane_archive")
+                    .auto_shrink([false, false])
+                    .show_rows(ui, row_height, row_count, |ui, range| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let first_row = range.start;
+                        let visible = view.rows(entries)[range].to_vec();
+                        for (k, i) in visible.into_iter().enumerate() {
+                            let entry = &entries[i];
+                            let collapsed = view.collapsed.contains(&i);
+                            let name = ui.painter().layout_no_wrap(entry.name.clone(), name_font.clone(), text_color);
+                            let size_text = (!entry.is_dir)
+                                .then(|| ui.painter().layout_no_wrap(format_file_size(entry.size), size_font.clone(), weak_color));
+                            let left = 4.0 + entry.depth as f32 * indent;
+                            let width = left + 16.0 + icon_size + 6.0 + name.size().x + size_text.as_ref().map_or(0.0, |g| 10.0 + g.size().x) + 8.0;
+                            let sense = if entry.is_dir { egui::Sense::click() } else { egui::Sense::hover() };
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(width.max(ui.available_width()), row_height), sense);
+                            if !ui.is_rect_visible(rect) {
+                                continue;
+                            }
+                            let painter = ui.painter();
+                            if response.hovered() {
+                                painter.rect_filled(rect, 3.0, hover_fill);
+                            } else if (first_row + k) % 2 == 1 {
+                                painter.rect_filled(rect, 0.0, stripe_fill);
+                            }
+                            // Indent guides, like VS Code's tree.
+                            for level in 0..entry.depth {
+                                let x = rect.left() + 4.0 + level as f32 * indent + 7.5;
+                                painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, weak_color.gamma_multiply(0.25)));
+                            }
+                            let mut x = rect.left() + left;
+                            if entry.is_dir {
+                                let caret = if collapsed { regular::CARET_RIGHT } else { regular::CARET_DOWN };
+                                painter.text(egui::pos2(x + 7.5, rect.center().y), egui::Align2::CENTER_CENTER, caret, size_font.clone(), weak_color);
+                            }
+                            x += 16.0;
+                            let icon = if entry.is_dir && !collapsed { entry.icon_open } else { entry.icon };
+                            if let Some(image) = crate::gui::material_icons::image(ui, icon, icon_size) {
+                                let icon_rect = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - icon_size / 2.0), egui::vec2(icon_size, icon_size));
+                                image.paint_at(ui, icon_rect);
+                            }
+                            x += icon_size + 6.0;
+                            let painter = ui.painter();
+                            let name_width = name.size().x;
+                            painter.galley(egui::pos2(x, rect.center().y - name.size().y / 2.0), name, text_color);
+                            if let Some(galley) = size_text {
+                                let pos = egui::pos2(x + name_width + 10.0, rect.center().y - galley.size().y / 2.0);
+                                painter.galley(pos, galley, weak_color);
+                            }
+                            if response.clicked() {
+                                toggled = Some(i);
+                            }
+                            if entry.is_dir {
+                                response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            }
+                        }
+                        if truncated {
+                            ui.add_space(8.0);
+                            ui.weak(i18n.tr("preview_archive_truncated"));
+                        }
+                    });
+            });
+        });
+    if let Some(i) = toggled {
+        if !view.collapsed.remove(&i) {
+            view.collapsed.insert(i);
+        }
+        view.rows = None;
     }
 }

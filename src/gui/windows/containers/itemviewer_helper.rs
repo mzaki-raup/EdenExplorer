@@ -33,7 +33,7 @@ use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
@@ -495,6 +495,14 @@ pub fn handle_context_menu_actions(
     context_paths.dedup();
 
     if is_drive_view {
+        if context_paths.len() == 1
+            && menu_item_button(ui, regular::CHART_PIE_SLICE, &i18n.tr("disk_usage_menu")).clicked()
+        {
+            *action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::AnalyzeDiskUsage(context_paths[0].clone()),
+            ));
+            ui.close();
+        }
         if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
             *action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::Properties(context_paths.clone()),
@@ -502,6 +510,89 @@ pub fn handle_context_menu_actions(
             ui.close();
         }
 
+        return;
+    }
+
+    // On a remote server (SFTP, FTP, WebDAV, S3): open, download, cut/copy
+    // (paste into a local folder to download), rename, delete, copy URL.
+    if context_paths.first().is_some_and(|p| crate::core::remote::is_remote(p)) {
+        let single = context_paths.len() == 1;
+        if single && menu_item_button(ui, regular::ARROW_SQUARE_OUT, &i18n.tr("archive_open_item")).clicked() {
+            *action = Some(if file.is_dir {
+                ItemViewerAction::Open(context_paths[0].clone())
+            } else {
+                ItemViewerAction::OpenWithDefault(context_paths.clone())
+            });
+            ui.close();
+        }
+        if menu_item_button(ui, regular::DOWNLOAD_SIMPLE, &i18n.tr("remote_download_to")).clicked() {
+            *action = Some(ItemViewerAction::RemoteDownloadTo(context_paths.clone()));
+            ui.close();
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(context_paths.clone())));
+            ui.close();
+        }
+        if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(context_paths.clone())));
+            ui.close();
+        }
+        if single && menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename")).clicked() {
+            *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
+            ui.close();
+        }
+        if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(context_paths.clone(), true)));
+            ui.close();
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::LINK, &i18n.tr("remote_copy_url")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::CopyPath(context_paths.clone())));
+            ui.close();
+        }
+        return;
+    }
+
+    // Inside an archive (browsed like a folder): read-only, so just open,
+    // extract and copy the path.
+    // (One check on the folder, not one per selected item: this runs every
+    // frame while the menu is open.)
+    if context_paths
+        .first()
+        .and_then(|p| p.parent())
+        .is_some_and(|dir| crate::core::archive_view::split(dir).is_some())
+    {
+        use crate::gui::windows::containers::enums::ExtractChoice;
+        if context_paths.len() == 1
+            && menu_item_button(ui, regular::ARROW_SQUARE_OUT, &i18n.tr("archive_open_item")).clicked()
+        {
+            *action = Some(if file.is_dir {
+                ItemViewerAction::Open(context_paths[0].clone())
+            } else {
+                ItemViewerAction::OpenWithDefault(context_paths.clone())
+            });
+            ui.close();
+        }
+        for (icon, key, choice) in [
+            (regular::ARROW_LINE_DOWN, "extract_selected_here", ExtractChoice::Here),
+            (regular::FOLDER_OPEN, "extract_selected_to", ExtractChoice::Pick),
+        ] {
+            if menu_item_button(ui, icon, &i18n.tr(key)).clicked() {
+                *action = Some(ItemViewerAction::Context(ItemViewerContextAction::ExtractEntries(
+                    context_paths.clone(),
+                    choice,
+                )));
+                ui.close();
+            }
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::LINK, &i18n.tr("disk_usage_copy_path")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::CopyPath(
+                context_paths.clone(),
+            )));
+            ui.close();
+        }
         return;
     }
 
@@ -697,6 +788,36 @@ pub fn handle_context_menu_actions(
                     ui.close();
                 }
             }
+            ContextMenuSection::Extract => {
+                use crate::gui::windows::containers::enums::ExtractChoice;
+                // `all_files` already holds the (per-frame) is-folder check;
+                // `can_extract` only looks at the name.
+                let archives = !context_paths.is_empty()
+                    && all_files
+                    && context_paths.iter().all(|p| crate::core::extract::can_extract(p));
+                if archives {
+                    let folder_label = if context_paths.len() == 1 {
+                        let name = context_paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let stem = crate::core::extract::ArchiveKind::of(name).map(|(_, s)| s).unwrap_or(name);
+                        format!("{} \"{stem}\\\"", i18n.tr("extract_to"))
+                    } else {
+                        i18n.tr("extract_each_to_folder")
+                    };
+                    for (icon, label, choice) in [
+                        (regular::ARROW_LINE_DOWN, i18n.tr("extract_here"), ExtractChoice::Here),
+                        (regular::FOLDER_SIMPLE, folder_label, ExtractChoice::OwnFolder),
+                        (regular::FOLDER_OPEN, format!("{}…", i18n.tr("extract_to")), ExtractChoice::Pick),
+                    ] {
+                        if menu_item_button(ui, icon, &label).clicked() {
+                            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Extract(
+                                context_paths.clone(),
+                                choice,
+                            )));
+                            ui.close();
+                        }
+                    }
+                }
+            }
             ContextMenuSection::SendTo => {
                 if settings_window.current_settings.send_to_context_menu_enabled
                     && !settings_window.current_settings.send_to.is_empty()
@@ -824,6 +945,18 @@ pub fn handle_context_menu_actions(
                     *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
                         context_paths[0].clone(),
                     )));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::AnalyzeDiskUsage => {
+                if context_paths.len() == 1
+                    && context_paths[0].is_dir()
+                    && menu_item_button(ui, regular::CHART_PIE_SLICE, &i18n.tr("disk_usage_menu"))
+                        .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::AnalyzeDiskUsage(context_paths[0].clone()),
+                    ));
                     ui.close();
                 }
             }
@@ -994,6 +1127,7 @@ pub fn handle_draw_col_name(
     font_id: &egui::FontId,
     rename_state: &mut Option<RenameState>,
     show_item_viewer_icons: bool,
+    git: Option<crate::core::git::GitState>,
 ) -> Option<ItemViewerAction> {
     const TEXT_LEFT_PADDING: f32 = 2.0;
     const ICON_HORIZONTAL_PADDING: f32 = 2.0;
@@ -1068,8 +1202,15 @@ pub fn handle_draw_col_name(
         }
     }
 
-    let text_width = available_width - text_offset_x;
-    let color = get_text_color(is_selected, is_cut, palette);
+    // Git: a letter badge at the end of the cell (M, A, U, ...); ignored
+    // items are dimmed instead, as in VS Code.
+    let badge = git.filter(|s| *s != crate::core::git::GitState::Ignored);
+    let badge_width = if badge.is_some() { 18.0 } else { 0.0 };
+    let text_width = available_width - text_offset_x - badge_width;
+    let mut color = get_text_color(is_selected, is_cut, palette);
+    if git == Some(crate::core::git::GitState::Ignored) && !is_selected {
+        color = color.gamma_multiply(0.55);
+    }
 
     let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
 
@@ -1080,8 +1221,40 @@ pub fn handle_draw_col_name(
         font_id.clone(),
         color,
     );
+    if let Some(state) = badge {
+        let dark = ui.visuals().dark_mode;
+        ui.painter().text(
+            egui::pos2(rect.max.x - 8.0, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            state.letter(),
+            egui::FontId::new(font_id.size - 1.0, egui::FontFamily::Proportional),
+            git_state_color(state, dark),
+        );
+        let badge_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.max.x - 8.0, rect.center().y),
+            egui::vec2(16.0, layout.row_height),
+        );
+        ui.interact(badge_rect, ui.id().with(("git_badge", &file.path)), egui::Sense::hover())
+            .on_hover_text(i18n.tr(state.i18n_key()));
+    }
 
     None
+}
+
+/// A Git state's badge color (VS Code's palette, darker on light themes).
+pub fn git_state_color(state: crate::core::git::GitState, dark: bool) -> egui::Color32 {
+    use crate::core::git::GitState::*;
+    let (d, l) = match state {
+        Modified => ([226, 192, 141], [168, 112, 20]),
+        Added => ([129, 184, 139], [40, 130, 60]),
+        Untracked => ([115, 201, 145], [30, 140, 70]),
+        Renamed => ([115, 201, 145], [30, 140, 70]),
+        Deleted => ([199, 78, 57], [180, 50, 35]),
+        Conflict => ([228, 103, 107], [190, 40, 50]),
+        Ignored => ([140, 140, 140], [120, 120, 120]),
+    };
+    let [r, g, b] = if dark { d } else { l };
+    egui::Color32::from_rgb(r, g, b)
 }
 
 pub fn handle_draw_col_type(
@@ -1641,6 +1814,7 @@ pub fn handle_editing_file_name(
 
 pub fn handle_global_actions(
     ui: &mut egui::Ui,
+    i18n: &crate::gui::i18n::I18n,
     files: &[FileItem],
     palette: &ThemePalette,
     tabbar_action: &mut Option<ItemViewerNavBarAction>,
@@ -1652,7 +1826,7 @@ pub fn handle_global_actions(
     is_drive_view: bool,
     is_recycle_bin_view: bool,
     find_in_preview_active: bool,
-    _settings_windows: &mut SettingsWindow,
+    settings_window: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
@@ -1717,8 +1891,14 @@ pub fn handle_global_actions(
         }
 
         let text_edit_id = ui.id().with("filter_input");
+        let border = if filter_state.error.is_some() {
+            egui::Color32::from_rgb(220, 90, 90)
+        } else {
+            palette.borders_active
+        };
+        let mut options_changed = false;
 
-        let response = egui::Frame::NONE
+        let frame = egui::Frame::NONE
             .fill(palette.input_field_bg)
             // Full-strength, opaque `borders_active` rather than the
             // low-alpha `borders_default` blend most other bordered
@@ -1730,7 +1910,7 @@ pub fn handle_global_actions(
             // except right at the anti-aliased edge. An opaque, undiluted
             // accent color plus a genuinely thicker stroke is what actually
             // reads as a real border here.
-            .stroke(egui::Stroke::new(2.0, palette.borders_active))
+            .stroke(egui::Stroke::new(2.0, border))
             .corner_radius(egui::CornerRadius::same(palette.medium_radius))
             .inner_margin(egui::Margin {
                 left: 10,
@@ -1759,20 +1939,70 @@ pub fn handle_global_actions(
                             .color(palette.icon_color),
                     );
                     ui.add_space(4.0);
-                    ui.add(
+                    let text = ui.add(
                         egui::TextEdit::singleline(&mut filter_state.query)
                             .id(text_edit_id)
                             .frame(egui::Frame::NONE)
                             .desired_width(200.0)
+                            .hint_text(i18n.tr("filter_hint"))
                             .font(FontId::new(
                                 palette.text_size,
                                 egui::FontFamily::Proportional,
                             )),
-                    )
+                    );
+                    if let Some(error) = &filter_state.error {
+                        text.clone().on_hover_text(error.as_str());
+                    }
+                    // Options: regex, hide matches, and kind chips.
+                    ui.add_space(6.0);
+                    ui.separator();
+                    let toggle = |ui: &mut egui::Ui, on: bool, label: &str, tip: String| {
+                        let text = egui::RichText::new(label).size(palette.text_size).color(if on {
+                            palette.item_viewer_row_text_selected
+                        } else {
+                            palette.icon_color
+                        });
+                        ui.add(egui::Button::selectable(on, text))
+                            .on_hover_text(tip)
+                            .clicked()
+                    };
+                    if toggle(ui, filter_state.regex, ".*", i18n.tr("filter_regex")) {
+                        filter_state.regex = !filter_state.regex;
+                        options_changed = true;
+                    }
+                    if toggle(ui, filter_state.invert, regular::EYE_SLASH, i18n.tr("filter_invert")) {
+                        filter_state.invert = !filter_state.invert;
+                        options_changed = true;
+                    }
+                    ui.separator();
+                    use crate::core::filter::KindChip;
+                    for chip in KindChip::ALL {
+                        let (icon, key) = match chip {
+                            KindChip::Folders => (regular::FOLDER, "filter_kind_folders"),
+                            KindChip::Images => (regular::IMAGE, "disk_usage_cat_images"),
+                            KindChip::Documents => (regular::FILE_TEXT, "disk_usage_cat_documents"),
+                            KindChip::Video => (regular::FILM_STRIP, "disk_usage_cat_video"),
+                            KindChip::Audio => (regular::MUSIC_NOTES, "disk_usage_cat_audio"),
+                            KindChip::Archives => (regular::FILE_ZIP, "disk_usage_cat_archives"),
+                            KindChip::Code => (regular::CODE, "disk_usage_cat_code"),
+                        };
+                        let on = filter_state.kind == Some(chip);
+                        if toggle(ui, on, icon, i18n.tr(key)) {
+                            filter_state.kind = if on { None } else { Some(chip) };
+                            options_changed = true;
+                        }
+                    }
+                    text
                 })
                 .inner
-            })
-            .inner;
+            });
+        let frame_rect = frame.response.rect;
+        let response = frame.inner;
+        if options_changed {
+            filter_state.dirty = true;
+            // Keep typing in the box after clicking an option.
+            response.request_focus();
+        }
 
         if !filter_state.focus_requested {
             response.request_focus();
@@ -1785,7 +2015,8 @@ pub fn handle_global_actions(
             let should_clear_filter = if let Some(pos) = click_pos {
                 let item_viewer_rect = ui.available_rect_before_wrap();
                 // Don't clear filter if clicking within the item viewer area
-                !item_viewer_rect.contains(pos)
+                // or on the box's own option buttons.
+                !item_viewer_rect.contains(pos) && !frame_rect.contains(pos)
             } else {
                 // If no click position, clear filter (fallback behavior)
                 true
@@ -1817,10 +2048,18 @@ pub fn handle_global_actions(
                     }
                 }
                 egui::Event::Cut => {
+                    // On Windows, egui delivers Shift+Delete as a Cut event
+                    // (see `windowsoverrides::take_shift_delete`) - treat it
+                    // as the permanent delete the user actually pressed.
+                    let shift_delete = crate::gui::windows::windowsoverrides::take_shift_delete();
                     if !is_drive_view && !explorer_state.selected_paths.is_empty() {
-                        action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-                            explorer_state.selected_paths.iter().cloned().collect(),
-                        )));
+                        let paths: Vec<PathBuf> =
+                            explorer_state.selected_paths.iter().cloned().collect();
+                        action = Some(ItemViewerAction::Context(if shift_delete {
+                            ItemViewerContextAction::Delete(paths, true)
+                        } else {
+                            ItemViewerContextAction::Cut(paths)
+                        }));
                     }
                 }
                 _ => {}
@@ -1830,18 +2069,18 @@ pub fn handle_global_actions(
     ui.input(|i| {
         let alt = i.modifiers.alt;
 
+        use crate::core::keymap::{ShortcutAction, pressed};
         if i.pointer.button_pressed(egui::PointerButton::Extra1)
-            || (alt && i.key_pressed(egui::Key::ArrowLeft))
-            || i.key_pressed(egui::Key::Backspace)
+            || pressed(i, ShortcutAction::Back)
         {
             set_nav_action(ItemViewerNavAction::Back);
         }
         if i.pointer.button_pressed(egui::PointerButton::Extra2)
-            || (alt && i.key_pressed(egui::Key::ArrowRight))
+            || pressed(i, ShortcutAction::Forward)
         {
             set_nav_action(ItemViewerNavAction::Forward);
         }
-        if alt && i.key_pressed(egui::Key::ArrowUp) {
+        if pressed(i, ShortcutAction::Up) {
             set_nav_action(ItemViewerNavAction::Up);
         }
 
@@ -1873,8 +2112,14 @@ pub fn handle_global_actions(
                 action = Some(ItemViewerAction::Open(dir_path.clone()));
             }
         }
-        if i.modifiers.command && i.key_pressed(egui::Key::A) {
+        if pressed(i, ShortcutAction::SelectAll) {
             action = Some(ItemViewerAction::SelectAll);
+        }
+        if pressed(i, ShortcutAction::InvertSelection) {
+            action = Some(ItemViewerAction::InvertSelection);
+        }
+        if pressed(i, ShortcutAction::SelectByPattern) {
+            action = Some(ItemViewerAction::SelectByPattern);
         }
         if i.modifiers.command
             && i.key_released(egui::Key::V)
@@ -1884,7 +2129,7 @@ pub fn handle_global_actions(
             // Any other key functions won't work with egui v0.33.x
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
         }
-        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
+        if pressed(i, ShortcutAction::CopyPath) {
             if is_recycle_bin_view || is_drive_view {
                 return;
             }
@@ -1896,7 +2141,11 @@ pub fn handle_global_actions(
                 ));
             }
         }
-        if i.key_pressed(egui::Key::Delete) {
+        // Shift+Delete: egui may deliver it as a Cut (handled above, which
+        // consumes the flag) or swallow it entirely. If the flag is still
+        // set here, no Cut arrived and this is the only chance to act on it.
+        let shift_delete = crate::gui::windows::windowsoverrides::take_shift_delete();
+        if i.key_pressed(egui::Key::Delete) || shift_delete {
             if is_drive_view {
                 return;
             }
@@ -1912,7 +2161,7 @@ pub fn handle_global_actions(
             // matching native Explorer; a plain Delete always goes to the
             // Recycle Bin (deleting while already inside the Recycle Bin is
             // handled separately and is already permanent either way).
-            let permanent = i.modifiers.shift || is_recycle_bin_view;
+            let permanent = i.modifiers.shift || shift_delete || is_recycle_bin_view;
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
                 paths, permanent,
             )));
@@ -1928,6 +2177,14 @@ pub fn handle_global_actions(
     // "type to filter" search.
     if ui.ctx().egui_wants_keyboard_input() {
         return action;
+    }
+
+    // Space opens Quick Look instead of starting a filter with a space
+    // (while a filter is being typed, the filter box has the key instead).
+    if settings_window.current_settings.ui_prefs.quick_look
+        && ui.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Space))
+    {
+        return action.or(Some(ItemViewerAction::ToggleQuickLook));
     }
 
     ui.input(|i| {
@@ -1997,9 +2254,13 @@ pub fn draw_item_viewer_header(
     for &column in ordered_columns {
         let label = match column {
             ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
-            ItemViewerHeaderColumn::OriginalDirectory => {
-                i18n.tr("explorer_cols_original_directory")
-            }
+            // Where a deleted item came from; elsewhere (search results,
+            // flat view) the folder each item is in.
+            ItemViewerHeaderColumn::OriginalDirectory => i18n.tr(if is_recycle_bin_view {
+                "explorer_cols_original_directory"
+            } else {
+                "explorer_cols_folder"
+            }),
             ItemViewerHeaderColumn::Type => i18n.tr("explorer_cols_type"),
             ItemViewerHeaderColumn::Size => i18n.tr("explorer_cols_size"),
             ItemViewerHeaderColumn::Modified => i18n.tr("explorer_cols_modified"),
@@ -2041,9 +2302,9 @@ fn draw_header_cell(
 ) {
     let column_action = match column {
         ItemViewerHeaderColumn::Name => Some(SortColumn::Name),
-        ItemViewerHeaderColumn::OriginalDirectory if is_recycle_bin_view => {
-            Some(SortColumn::OriginalDirectory)
-        }
+        // Where it was deleted from, or (search results, flat view) the
+        // folder it's in.
+        ItemViewerHeaderColumn::OriginalDirectory => Some(SortColumn::OriginalDirectory),
         ItemViewerHeaderColumn::Type => Some(SortColumn::Type),
         ItemViewerHeaderColumn::Size => Some(SortColumn::Size),
         ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),
@@ -2708,21 +2969,49 @@ pub fn compute_item_viewer_column_layout(
     if is_search_view {
         column_state.pending_fit_request = None;
         let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, true);
-        let widths = compute_item_viewer_column_widths(
-            ui,
-            i18n,
-            files,
-            &filter_state.cached_indices,
-            folder_sizes,
+        // Worked out again only when the list, the filter, the folder
+        // sizes, or the font change - not every frame.
+        let key = (
+            files.as_ptr() as usize,
+            files.len(),
+            filter_state.cached_indices.as_ptr() as usize,
+            filter_state.cached_indices.len(),
+            folder_sizes.len(),
+            folder_sizes.values().fold(0u64, |acc, s| acc.wrapping_add(s.bytes)),
             is_drive_view,
             show_item_viewer_icons,
-            palette,
-            font_id,
-            file_type_cache,
-            file_size_text_cache,
-            folder_size_text_cache,
-            drive_size_text_cache,
+            font_id.size.to_bits(),
+            ui.ctx().pixels_per_point().to_bits(),
         );
+        // While the list is still growing (a big flat view or search
+        // streaming in), at most a few times a second.
+        const REFRESH: std::time::Duration = std::time::Duration::from_millis(250);
+        let widths = match column_state.search_widths {
+            Some((k, w, _)) if k == key => w,
+            Some((_, w, at)) if at.elapsed() < REFRESH => {
+                ui.ctx().request_repaint_after(REFRESH.saturating_sub(at.elapsed()));
+                w
+            }
+            _ => {
+                let w = compute_item_viewer_column_widths(
+                    ui,
+                    i18n,
+                    files,
+                    &filter_state.cached_indices,
+                    folder_sizes,
+                    is_drive_view,
+                    show_item_viewer_icons,
+                    palette,
+                    font_id,
+                    file_type_cache,
+                    file_size_text_cache,
+                    folder_size_text_cache,
+                    drive_size_text_cache,
+                );
+                column_state.search_widths = Some((key, w, std::time::Instant::now()));
+                w
+            }
+        };
         return ItemViewerColumnLayout {
             ordered_columns,
             name_width: widths.name,
@@ -3037,77 +3326,79 @@ fn compute_item_viewer_column_widths(
         0.0
     };
 
-    for &idx in filtered_indices {
-        let file = &files[idx];
+    // A column is as wide as its widest text. Measuring every row's text
+    // is far too slow for a big search or flat view (it ran every frame),
+    // so only each column's longest texts (by characters) are measured:
+    // the widest is practically always among them.
+    let measure_max = |ui: &mut egui::Ui, texts: Vec<&str>| -> f32 {
+        longest_texts(texts)
+            .into_iter()
+            .map(|t| measure_text_width(ui, t, font_id, palette.text_normal))
+            .fold(0.0, f32::max)
+    };
+    let shown = || filtered_indices.iter().map(|&i| &files[i]);
 
-        widths.name = widths
-            .name
-            .max(measure_text_width(ui, &file.name, font_id, palette.text_normal) + icon_padding);
+    widths.name = widths
+        .name
+        .max(measure_max(ui, shown().map(|f| f.name.as_str()).collect()) + icon_padding);
 
-        let type_text = if file.is_dir {
-            "Folder".to_string()
-        } else if let Some(ext) = file.path.extension().and_then(|ext| ext.to_str()) {
-            get_file_type_name(ext, file_type_cache).to_string()
+    // Types: one per extension, so look each extension up once.
+    let mut extensions: HashSet<&str> = HashSet::new();
+    let mut any_folder = false;
+    for file in shown() {
+        if file.is_dir {
+            any_folder = true;
         } else {
-            get_file_type_name("", file_type_cache).to_string()
-        };
-        widths.type_width = widths.type_width.max(measure_text_width(
-            ui,
-            &type_text,
-            font_id,
-            palette.text_normal,
-        ));
-
-        let size_text = resolve_size_text(
-            file,
-            folder_sizes,
-            file_size_text_cache,
-            folder_size_text_cache,
-            drive_size_text_cache,
-        );
-        widths.size_width = widths.size_width.max(measure_text_width(
-            ui,
-            &size_text,
-            font_id,
-            palette.text_normal,
-        ));
-
-        if is_drive_view {
-            widths.usage_width = widths.usage_width.max(
-                measure_text_width(
-                    ui,
-                    &i18n.tr("explorer_cols_usage"),
-                    font_id,
-                    palette.text_normal,
-                ) + 60.0,
-            );
-        } else {
-            widths.modified_width = widths.modified_width.max(measure_text_width(
-                ui,
-                file.modified_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.created_width = widths.created_width.max(measure_text_width(
-                ui,
-                file.created_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.deleted_width = widths.deleted_width.max(measure_text_width(
-                ui,
-                file.deleted_time.as_deref().unwrap_or("—"),
-                font_id,
-                palette.text_normal,
-            ));
-            widths.original_directory_width =
-                widths.original_directory_width.max(measure_text_width(
-                    ui,
-                    file.original_directory.as_deref().unwrap_or("—"),
-                    font_id,
-                    palette.text_normal,
-                ));
+            extensions.insert(file.path.extension().and_then(|e| e.to_str()).unwrap_or(""));
         }
+    }
+    let type_names: Vec<String> = extensions
+        .into_iter()
+        .map(|ext| get_file_type_name(ext, file_type_cache).to_string())
+        .chain(any_folder.then(|| "Folder".to_string()))
+        .collect();
+    widths.type_width = widths
+        .type_width
+        .max(measure_max(ui, type_names.iter().map(String::as_str).collect()));
+
+    let size_texts: Vec<String> = shown()
+        .map(|file| {
+            resolve_size_text(
+                file,
+                folder_sizes,
+                file_size_text_cache,
+                folder_size_text_cache,
+                drive_size_text_cache,
+            )
+        })
+        .collect();
+    widths.size_width = widths
+        .size_width
+        .max(measure_max(ui, size_texts.iter().map(String::as_str).collect()));
+
+    if is_drive_view {
+        if !filtered_indices.is_empty() {
+            widths.usage_width = widths.usage_width.max(
+                measure_text_width(ui, &i18n.tr("explorer_cols_usage"), font_id, palette.text_normal)
+                    + 60.0,
+            );
+        }
+    } else {
+        fn dash(t: &Option<String>) -> &str {
+            t.as_deref().unwrap_or("—")
+        }
+        widths.modified_width = widths
+            .modified_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.modified_time)).collect()));
+        widths.created_width = widths
+            .created_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.created_time)).collect()));
+        widths.deleted_width = widths
+            .deleted_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.deleted_time)).collect()));
+        widths.original_directory_width = widths
+            .original_directory_width
+            .max(measure_max(ui, shown().map(|f| dash(&f.original_directory)).collect()));
     }
 
     widths.name = widths.name.max(220.0);
@@ -3120,6 +3411,17 @@ fn compute_item_viewer_column_widths(
     widths.original_directory_width = widths.original_directory_width.max(150.0);
 
     widths
+}
+
+/// The texts worth measuring for a column's width: the longest ones by
+/// character count (all of them when there are only a few).
+fn longest_texts(mut texts: Vec<&str>) -> Vec<&str> {
+    const KEEP: usize = 32;
+    if texts.len() > KEEP {
+        texts.select_nth_unstable_by_key(KEEP, |t| std::cmp::Reverse(t.chars().count()));
+        texts.truncate(KEEP);
+    }
+    texts
 }
 
 fn measure_text_width(
@@ -3217,6 +3519,50 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
 /// `bg_response` should come from `ui.interact(rect, id, Sense::click())`
 /// over the empty-state area, mirroring how each view already senses that
 /// area for the navigate-up double-click.
+/// The background menu's "New File" submenu: the built-in templates, every
+/// file in the templates folder, and a shortcut to that folder.
+pub fn draw_new_file_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    settings_window: &SettingsWindow,
+    action: &mut Option<ItemViewerAction>,
+) {
+    use crate::core::templates::{BuiltinTemplate, Template};
+    ui.menu_button(i18n.tr("new_file_menu"), |ui| {
+        apply_eden_text_overrides(ui, palette);
+        for builtin in BuiltinTemplate::ALL {
+            if ui.button(i18n.tr(builtin.i18n_key())).clicked() {
+                *action = Some(ItemViewerAction::CreateFileFromTemplate(Template::Builtin(builtin)));
+                ui.close();
+            }
+        }
+
+        let dir = crate::core::templates::templates_dir(
+            settings_window.current_settings.ui_prefs.templates_folder.as_deref(),
+        );
+        let user = dir
+            .as_deref()
+            .map(crate::core::templates::user_templates_cached)
+            .unwrap_or_default();
+        if !user.is_empty() {
+            ui.separator();
+            for path in user {
+                if ui.button(Template::file_label(&path)).clicked() {
+                    *action = Some(ItemViewerAction::CreateFileFromTemplate(Template::File(path)));
+                    ui.close();
+                }
+            }
+        }
+
+        ui.separator();
+        if ui.button(i18n.tr("new_file_open_templates_folder")).clicked() {
+            *action = Some(ItemViewerAction::OpenTemplatesFolder);
+            ui.close();
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_empty_folder_context_menu(
     i18n: &I18n,
@@ -3237,10 +3583,7 @@ pub fn draw_empty_folder_context_menu(
                 *action = Some(ItemViewerAction::CreateFolder);
                 ui.close();
             }
-            if ui.button("New File").clicked() {
-                *action = Some(ItemViewerAction::CreateFile);
-                ui.close();
-            }
+            draw_new_file_menu(ui, i18n, palette, settings_window, action);
             if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                 *action = Some(ItemViewerAction::CreateShortcutHere);
                 ui.close();

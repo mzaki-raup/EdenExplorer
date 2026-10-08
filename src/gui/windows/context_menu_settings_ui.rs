@@ -528,7 +528,7 @@ fn draw_entry_fields(
         if eden_button(ui, palette, &i18n.tr("custom_context_menu_icon_browse")).clicked() {
             if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                 .add_filter("Icon/Image", &["ico", "png", "jpg", "jpeg", "bmp", "gif"])
-                .add_filter("All files", &["*"])
+                .add_filter("All Files", &["*"])
                 .pick_file()
             {
                 // Copy into the app's own data folder so the icon keeps

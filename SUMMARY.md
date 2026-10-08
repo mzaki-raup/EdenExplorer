@@ -4,7 +4,7 @@
 EdenExplorer is an open-source, high-performance file manager for Windows 10/11, built in Rust with [egui](https://github.com/emilk/egui/) (immediate-mode GUI). It's positioned as a fast, modern, FOSS alternative to Windows File Explorer, using direct NT-level filesystem APIs for performance instead of relying on higher-level Windows shell abstractions.
 
 - **License:** MIT
-- **Current version:** 0.27.0 (`Cargo.toml`)
+- **Current version:** 0.28.0 (`Cargo.toml`) — bumped automatically by the release pipeline
 - **Status:** Public alpha, actively developed
 - **Repo owner:** mtucciarone/EdenExplorer
 
@@ -96,4 +96,27 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 Upcoming alpha features: multi-tag AND/OR filtering in the tag view. Detailed status lives in `CHECKLIST.md`; rationale and backlog ideas in `PRD.md`.
 
 ## Distribution
-Distributed as a standalone Windows executable (no install) via GitHub Releases at `github.com/mtucciarone/EdenExplorer/releases`, with an automated release workflow (GitHub Actions + semantic-release).
+Distributed as a standalone Windows executable (no install), published as a release on the
+self-hosted Forgejo instance that owns this repository.
+
+Releases are fully automated by Forgejo Actions (`.forgejo/workflows/`): pushing to `main`
+works out the next version from the commits since the last `v*` tag (`Add …` = minor,
+`Fix …`/other = patch, a `BREAKING CHANGE:` footer = major, docs/chore/refactor = no
+release), bumps `Cargo.toml` and `Cargo.lock`, runs the tests, builds, tags the bumped
+commit, and publishes three assets:
+
+- `EdenExplorer.exe` — the program, downloaded in place by the in-app update check
+- `SHA256SUMS.txt` — verified before anything is replaced (a release without it must not be installed)
+- `EdenExplorer-<version>-windows-x64.zip` — program plus docs, for updating by hand
+
+The app checks for its own updates against that same forge: `core::release` decides whether a
+published release is newer than the running copy, `core::update` fetches it, verifies it against
+`SHA256SUMS.txt` and installs it in place, and `gui::windows::update_ui` provides the status-bar
+indicator and the offer/download/install modal. The running version is shown at the far left of
+the status bar in every view, and About has "Check for Updates" plus a "check automatically"
+toggle (at most one automatic check a day, persisted in its own `update_state.bin`).
+
+Supporting scripts live in `scripts/`: `next-release.ps1` (decide the version and write the
+release notes), `update-version.ps1` (bump `Cargo.toml` + `Cargo.lock` together), and
+`build-and-package.ps1` (build and assemble the assets above). See **Releases & CI/CD** in
+`README.md` for the full rules.

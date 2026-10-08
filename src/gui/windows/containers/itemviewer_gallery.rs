@@ -63,8 +63,9 @@ pub fn draw_gallery_view(
     active_tab_id: u64,
     current_dir: PathBuf,
     is_loading: bool,
+    // Items come from many folders (search results, flat view).
+    is_search_view: bool,
 ) -> Option<ItemViewerAction> {
-    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
 
     // Top padding so the Sort By/thumbnail-size row doesn't sit flush
@@ -312,6 +313,49 @@ pub fn draw_gallery_view(
                             action = Some(a);
                         }
 
+                        // Selection checkbox in the tile's corner (Settings >
+                        // Show Selection Checkboxes), like the Details view's
+                        // checkbox column: shown while hovering, on selected
+                        // tiles, and on every tile once anything is selected.
+                        if settings_window.current_settings.show_selection_checkboxes && !modal_input_blocked {
+                            let is_selected = explorer_state.selected_paths.contains(&file.path);
+                            let hovered = pointer_pos.is_some_and(|p| rect.contains(p));
+                            if hovered || is_selected || !explorer_state.selected_paths.is_empty() {
+                                let box_rect = egui::Rect::from_min_size(
+                                    rect.min + egui::vec2(8.0, 8.0),
+                                    egui::vec2(20.0, 20.0),
+                                );
+                                // A dark, outlined backdrop so the box reads
+                                // clearly over any thumbnail.
+                                ui.painter().rect(
+                                    box_rect,
+                                    egui::CornerRadius::same(6),
+                                    egui::Color32::from_black_alpha(160),
+                                    egui::Stroke::new(1.0, egui::Color32::from_white_alpha(140)),
+                                    egui::StrokeKind::Inside,
+                                );
+                                let mut checked = is_selected;
+                                let clicked = ui
+                                    .scope_builder(egui::UiBuilder::new().max_rect(box_rect), |ui| {
+                                        crate::core::utils::widgets::draw_checkbox(
+                                            ui,
+                                            palette,
+                                            &mut checked,
+                                            ("gallery_checkbox", &file.path),
+                                        )
+                                    })
+                                    .inner
+                                    .clicked();
+                                if clicked {
+                                    action = Some(if checked {
+                                        ItemViewerAction::Select(file.path.clone())
+                                    } else {
+                                        ItemViewerAction::Deselect(file.path.clone())
+                                    });
+                                }
+                            }
+                        }
+
                         if drag_hover_active {
                             if let Some(target) = hovered_target_ref {
                                 if &file.path == target && file.is_dir {
@@ -457,10 +501,13 @@ pub fn draw_gallery_view(
                                 action = Some(ItemViewerAction::CreateFolder);
                                 ui.close();
                             }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
+                            crate::gui::windows::containers::itemviewer_helper::draw_new_file_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                settings_window,
+                                &mut action,
+                            );
                             if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                                 action = Some(ItemViewerAction::CreateShortcutHere);
                                 ui.close();
@@ -471,6 +518,21 @@ pub fn draw_gallery_view(
                             }
                             if ui.button("Open Terminal").clicked() {
                                 action = Some(ItemViewerAction::OpenTerminal);
+                                ui.close();
+                            }
+
+                            ui.separator();
+
+                            if ui.button(i18n.tr("select_all")).clicked() {
+                                action = Some(ItemViewerAction::SelectAll);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_invert")).clicked() {
+                                action = Some(ItemViewerAction::InvertSelection);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_by_pattern_menu")).clicked() {
+                                action = Some(ItemViewerAction::SelectByPattern);
                                 ui.close();
                             }
 

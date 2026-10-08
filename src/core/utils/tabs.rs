@@ -63,6 +63,21 @@ fn tab_title_for(nav: &Navigation, i18n: &I18n, tags_state: &TagsState) -> Strin
         return format!("{} {}", i18n.tr("search_tab_title_prefix"), query);
     }
 
+    // A remote location: its folder, or its name at the top.
+    if let Some((id, segments)) = crate::core::remote::split(&nav.current) {
+        return match segments.last() {
+            Some(name) => name.clone(),
+            None => crate::core::remote::connection(id).map(|c| c.display_name()).unwrap_or_default(),
+        };
+    }
+
+    // A WSL distribution's top folder: its name (`Ubuntu`).
+    if let Some((distro, linux)) = crate::core::places::wsl_location(&nav.current)
+        && linux == "/"
+    {
+        return distro;
+    }
+
     nav.current
         .file_name()
         .map(|n| n.to_string_lossy().to_string())

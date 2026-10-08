@@ -8,7 +8,7 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::os::windows::ffi::OsStrExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, RwLock},
     thread,
@@ -45,8 +45,20 @@ struct IconRequest {
 
 type IconKey = String;
 
+/// Per-file icons (`uniqueicon:` keys - one texture per .exe/.dll/.lnk/...)
+/// are dropped once the cache holds more than this many textures, so
+/// browsing a folder like System32 can't grow GPU memory without bound.
+/// Shared icons (`ext:`, `folder`, drives) are always kept; dropped per-file
+/// icons are simply loaded again if they scroll back into view.
+const MAX_ICON_TEXTURES: usize = 4096;
+
 pub struct IconCache {
     textures: Arc<Mutex<HashMap<IconKey, egui::TextureHandle>>>,
+    /// Keys already sent to the loader thread. `get` is called every frame for
+    /// every visible row, so without this each still-loading icon was queued
+    /// again every frame (thousands of duplicate requests per second), and an
+    /// icon that failed to load was retried forever.
+    requested: Arc<Mutex<HashSet<IconKey>>>,
     #[allow(dead_code)]
     icon_indices: Arc<Mutex<HashMap<IconKey, i32>>>,
     sender: Sender<IconRequest>,
@@ -55,10 +67,13 @@ pub struct IconCache {
 impl IconCache {
     pub fn new(ctx: egui::Context) -> Self {
         let (tx, rx) = unbounded::<IconRequest>();
-        let textures = Arc::new(Mutex::new(HashMap::new()));
+        let textures: Arc<Mutex<HashMap<IconKey, egui::TextureHandle>>> =
+            Arc::new(Mutex::new(HashMap::new()));
         let icon_indices = Arc::new(Mutex::new(HashMap::new()));
+        let requested: Arc<Mutex<HashSet<IconKey>>> = Arc::new(Mutex::new(HashSet::new()));
 
         let textures_bg = textures.clone();
+        let requested_bg = requested.clone();
         let icon_indices_bg = icon_indices.clone();
         let ctx_bg = ctx.clone();
 
@@ -69,6 +84,17 @@ impl IconCache {
             };
 
             while let Ok(req) = rx.recv() {
+                {
+                    let mut textures = textures_bg.lock().unwrap();
+                    if textures.len() > MAX_ICON_TEXTURES {
+                        textures.retain(|key, _| !key.starts_with("uniqueicon:"));
+                        requested_bg
+                            .lock()
+                            .unwrap()
+                            .retain(|key| !key.starts_with("uniqueicon:"));
+                    }
+                }
+
                 if req.custom_file {
                     let key = custom_file_icon_key(&req.path);
                     if textures_bg.lock().unwrap().contains_key(&key) {
@@ -161,6 +187,7 @@ impl IconCache {
 
         Self {
             textures,
+            requested,
             icon_indices,
             sender: tx,
         }
@@ -174,7 +201,10 @@ impl IconCache {
             return Some(tex.clone());
         }
 
-        // Send request for background thread
+        // Send request for background thread (once per key)
+        if !self.requested.lock().unwrap().insert(key) {
+            return None;
+        }
         let _ = self.sender.send(IconRequest {
             path: path.to_path_buf(),
             is_dir,
@@ -195,6 +225,9 @@ impl IconCache {
             return Some(tex.clone());
         }
 
+        if !self.requested.lock().unwrap().insert(key) {
+            return None;
+        }
         let _ = self.sender.send(IconRequest {
             path: path.to_path_buf(),
             is_dir: false,

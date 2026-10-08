@@ -1,0 +1,145 @@
+name: Release
+
+# Pushing to main releases automatically. The commits since the last v* tag
+# decide the version (scripts/next-release.ps1): an "Add ..." subject is a minor
+# bump, "Fix ..." and most other verbs a patch, a BREAKING CHANGE footer a major,
+# and a push with nothing release-worthy in it (docs, chores, refactors) simply
+# publishes nothing and stops.
+#
+# What a release publishes - the app's update check reads these exact names, so
+# they are a contract:
+#
+#   EdenExplorer.exe                         the program, downloaded in place
+#   SHA256SUMS.txt                           checked before anything is replaced
+#   EdenExplorer-<version>-windows-x64.zip   for people who update by hand
+#
+# Never publish the program without SHA256SUMS.txt beside it: an updater has
+# nothing to verify the download against and must refuse to install it.
+#
+# As in ci.yml, nothing here uses a published action - this instance cannot fetch
+# them from code.forgejo.org (forgejo#2809).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  # The forge decides who a release is "from" by matching the tag's own author
+  # email to an account - a tag made with an email no account owns is published
+  # by "Ghost". This is the email on the account that owns this repository.
+  TAGGER_NAME: EdenExplorer Release
+  TAGGER_EMAIL: owner@zacx.net
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out main, with the history and tags the version needs
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Get-ChildItem -Force . | Remove-Item -Recurse -Force
+          git init --quiet --initial-branch=release .
+          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:TOKEN"))
+          $auth = "http.extraheader=Authorization: Basic $basic"
+          # Not shallow, and with every tag: the version and the notes are both
+          # worked out from the commits since the last tag.
+          git -c $auth fetch --quiet --tags origin
+          git checkout --quiet --detach ${{ github.sha }}
+          git log --oneline -1
+
+      - name: Work out the version to release
+        id: plan
+        run: pwsh -NoProfile -File scripts/next-release.ps1
+
+      - name: Use the latest stable Rust
+        if: steps.plan.outputs.version != ''
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustc --version
+
+      # Advisory for the same reason as in ci.yml - see the note there.
+      - name: Formatting (advisory)
+        if: steps.plan.outputs.version != ''
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::cargo fmt --check reports formatting differences."
+          }
+          exit 0
+
+      - name: Tests
+        if: steps.plan.outputs.version != ''
+        run: cargo test --locked
+
+      - name: Clippy
+        if: steps.plan.outputs.version != ''
+        run: cargo clippy --release --all-targets --locked
+
+      # Before the build, so the binary carries the released version: the app
+      # compares a release's tag against its own CARGO_PKG_VERSION, and a
+      # mismatch would offer the same update for ever.
+      - name: Set the version, then commit and tag it locally
+        if: steps.plan.outputs.version != ''
+        run: |
+          pwsh -NoProfile -File scripts/update-version.ps1 -Version ${{ steps.plan.outputs.version }}
+          git config user.name "$env:TAGGER_NAME"
+          git config user.email "$env:TAGGER_EMAIL"
+          git add Cargo.toml Cargo.lock
+          # [skip ci] so pushing this back to main does not start another release.
+          git commit --quiet -m "chore(release): ${{ steps.plan.outputs.version }} [skip ci]"
+          # Annotated, and on the bumped commit, so the tag and the Cargo.toml
+          # at that tag always agree. Nothing is pushed until the build succeeds.
+          git tag -a ${{ steps.plan.outputs.tag }} -m "${{ steps.plan.outputs.tag }}"
+          git log --oneline -1
+
+      - name: Build and package
+        if: steps.plan.outputs.version != ''
+        run: pwsh -NoProfile -File scripts/build-and-package.ps1 -Version ${{ steps.plan.outputs.version }}
+
+      - name: Push the version commit and the tag
+        if: steps.plan.outputs.version != ''
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:TOKEN"))
+          $auth = "http.extraheader=Authorization: Basic $basic"
+          git -c $auth push --quiet origin HEAD:main
+          git -c $auth push --quiet origin ${{ steps.plan.outputs.tag }}
+          Write-Host "Pushed ${{ steps.plan.outputs.tag }} and the version commit to main."
+
+      - name: Publish the release
+        if: steps.plan.outputs.version != ''
+        env:
+          # Forgejo hands the workflow a token with write access to this
+          # repository; the API below is their /api/v1, not GitHub's.
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $api = "${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
+          $headers = @{ Authorization = "token $env:TOKEN" }
+          $body = @{
+            tag_name   = "${{ steps.plan.outputs.tag }}"
+            name       = "EdenExplorer ${{ steps.plan.outputs.version }}"
+            body       = (Get-Content notes.md -Raw)
+            draft      = $false
+            prerelease = $false
+          } | ConvertTo-Json
+          $release = Invoke-RestMethod -Method Post -Uri "$api/releases" -Headers $headers `
+            -ContentType 'application/json' -Body $body
+          Write-Host "Release $($release.id) created at $($release.html_url)"
+          foreach ($file in Get-ChildItem release/dist -File) {
+            $uri = "$api/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($file.Name))"
+            Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Form @{ attachment = Get-Item $file.FullName } | Out-Null
+            Write-Host "Attached $($file.Name)"
+          }
+
+      - name: Nothing to release
+        if: steps.plan.outputs.version == ''
+        run: Write-Host "No release-worthy commits since the last tag - published nothing."

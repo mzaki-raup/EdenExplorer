@@ -8,9 +8,29 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// A delete the user has asked for but not yet confirmed.
+///
+/// Windows only shows its own "are you sure?" for a recycle when the user
+/// has turned the Recycle Bin's confirmation on (it is off by default), so
+/// the app asks for itself and tells the shell not to ask again.
+pub struct PendingLocalDelete {
+    pub paths: Vec<PathBuf>,
+    /// Skips the Recycle Bin - the delete cannot be undone.
+    pub permanent: bool,
+    /// Set when the Disk Usage dashboard asked, so its results can be
+    /// pruned once the delete actually happens.
+    pub from_disk_usage: bool,
+}
+
 #[derive(Default)]
 pub struct AboutWindow {
     pub open: bool,
+    /// Set by the "Check for Updates" button; `handle_draw_about_window` takes
+    /// it and starts the check, so `about.rs` stays free of `MainWindow`.
+    pub check_requested: bool,
+    /// The persisted "check automatically" flag (`core::indexer`), read the
+    /// first frame this window is open rather than every frame.
+    pub auto_check: Option<bool>,
 }
 
 pub struct ThemeCustomizer {
@@ -32,6 +52,9 @@ pub struct ThemeCustomizer {
     /// `core::indexer::TabLayoutSnapshot::min_tab_width`) - same file as
     /// `tab_gap` above, for the same reason.
     pub min_tab_width: f32,
+    /// Draft copy of the preview frame (border around previews), saved in
+    /// `ui_prefs.json` - see `core::ui_prefs::PreviewFrame`.
+    pub preview_frame: crate::core::ui_prefs::PreviewFrame,
     /// User-created named themes (name + accent + secondary, like a
     /// built-in `ThemePresetDef`) - persisted in their own file via
     /// `core::indexer::{load_custom_themes, save_custom_themes}`, not part
@@ -80,6 +103,7 @@ impl Default for ThemeCustomizer {
             sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
             tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
             min_tab_width: crate::core::indexer::load_tab_layout().min_tab_width,
+            preview_frame: crate::core::ui_prefs::load_ui_prefs().preview_frame,
             custom_themes_next_id: custom_themes_snapshot.map(|s| s.next_id).unwrap_or(1),
             custom_themes,
             new_custom_theme_name,
@@ -169,6 +193,22 @@ pub struct AppSettings {
     /// `core::context_menu_order`.
     #[serde(default = "crate::core::context_menu_order::default_order")]
     pub context_menu_order: Vec<crate::core::context_menu_order::ContextMenuSection>,
+    /// Loaded/saved separately from the rest of these fields - see
+    /// `core::indexer::{load_sidebar_visibility, save_sidebar_visibility}`.
+    #[serde(default)]
+    pub sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
+    /// Loaded/saved separately from the rest of these fields - see
+    /// `core::perf::{load_performance_panel_visible, save_performance_panel_visible}`.
+    #[serde(default)]
+    pub show_performance_panel: bool,
+    /// Loaded/saved separately (as JSON) - see `core::ui_prefs`.
+    #[serde(default)]
+    pub ui_prefs: crate::core::ui_prefs::UiPrefs,
+    /// Bumped whenever a folder's remembered view changes, so the main
+    /// window can save it shortly after (see
+    /// `MainWindow::save_folder_views_if_due`). Never saved itself.
+    #[serde(skip)]
+    pub folder_views_revision: u64,
 }
 
 fn default_true() -> bool {
@@ -178,7 +218,8 @@ fn default_true() -> bool {
 #[derive(Default)]
 pub struct SettingsWindow {
     pub current_settings: AppSettings,
-    pub show_reset_favorites_confirmation: bool,
+    /// Which Reset Data row is waiting for its confirmation dialog, if any.
+    pub pending_reset_confirmation: Option<crate::gui::windows::enums::ResetTarget>,
     /// An action produced while drawing the Settings tab's content, picked up and
     /// handled once per frame after all tabs have been drawn.
     pub pending_action: Option<crate::gui::windows::enums::SettingsAction>,
@@ -198,6 +239,15 @@ pub struct SettingsWindow {
     pub selected_tab_group_id: Option<u64>,
     pub selected_tag_group_id: Option<u64>,
     pub selected_send_to_id: Option<u64>,
+    /// Result of the last Portable Mode switch (Settings > Advanced):
+    /// `(succeeded, message)`, shown under the checkbox.
+    pub portable_mode_status: Option<(bool, String)>,
+    /// Settings > Shortcuts: the action waiting for a new key combination,
+    /// the last message shown there, and the frame the page was last drawn
+    /// (to cancel recording when the user leaves the page).
+    pub recording_shortcut: Option<crate::core::keymap::ShortcutAction>,
+    pub shortcut_message: Option<(bool, String)>,
+    pub shortcuts_page_last_pass: u64,
 }
 
 pub struct SidebarState {
@@ -218,6 +268,8 @@ pub struct SidebarState {
     pub shared_network_expanded: bool,
     pub saved_searches_expanded: bool,
     pub recent_locations_expanded: bool,
+    /// The Folders section's tree (expanded folders, loaded subfolders).
+    pub folder_tree: crate::gui::windows::containers::folder_tree::FolderTreeState,
 }
 
 impl Default for SidebarState {
@@ -238,6 +290,7 @@ impl Default for SidebarState {
             cached_drives: Vec::new(),
             last_drive_refresh: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
             non_ntfs_popup_path: None,
+            folder_tree: Default::default(),
         }
     }
 }

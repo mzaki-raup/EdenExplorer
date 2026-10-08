@@ -272,7 +272,7 @@ pub fn draw_favorites_settings(
                                         "Icon/Image",
                                         &["ico", "png", "jpg", "jpeg", "bmp", "gif"],
                                     )
-                                    .add_filter("All files", &["*"])
+                                    .add_filter("All Files", &["*"])
                                     .pick_file()
                                 {
                                     // Copy into the app's own data folder so the

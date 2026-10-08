@@ -1,6 +1,6 @@
 use crate::core::network;
 use crate::core::portable;
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Local, Offset, TimeZone, Utc};
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ pub fn filetime_to_string(
     }
 
     let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
-    let dt_local: DateTime<Local> = dt_utc.into();
+    let dt_local = dt_utc.with_timezone(&local_offset(&dt_utc));
 
     let time_fmt = if time_format_24h {
         "%H:%M"
@@ -160,6 +160,30 @@ pub fn filetime_to_string(
     )
 }
 
+/// The local time zone's offset from UTC at `utc`. Asking Windows for it
+/// (what `Local` does) is slow to repeat for every date of every file in a
+/// listing, so it's remembered per hour: offsets only change on the hour
+/// (daylight saving).
+fn local_offset(utc: &DateTime<Utc>) -> FixedOffset {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static OFFSETS: RefCell<(Option<Instant>, HashMap<i64, FixedOffset>)> = RefCell::new((None, HashMap::new()));
+    }
+    let hour = utc.timestamp().div_euclid(3600);
+    OFFSETS.with(|cell| {
+        let (since, offsets) = &mut *cell.borrow_mut();
+        // Forget them now and then, in case the time zone setting changes.
+        if since.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) || offsets.len() > 50_000 {
+            *since = Some(Instant::now());
+            offsets.clear();
+        }
+        *offsets
+            .entry(hour)
+            .or_insert_with(|| Local.offset_from_utc_datetime(&utc.naive_utc()).fix())
+    })
+}
+
 /// Renders the current moment with a custom pattern, for a live preview next
 /// to the pattern text field in Settings. Returns `None` if the pattern is
 /// empty or invalid, so the caller can show "invalid pattern" instead of a
@@ -176,7 +200,10 @@ pub fn preview_custom_date_format(pattern: &str) -> Option<String> {
 /// that as an error item rather than panicking) - the caller falls back to
 /// the default short format in that case, so a malformed custom pattern
 /// degrades gracefully instead of showing garbled or missing dates.
-fn format_with_pattern(dt_local: &DateTime<Local>, pattern: &str) -> Option<String> {
+fn format_with_pattern<Tz: TimeZone>(dt_local: &DateTime<Tz>, pattern: &str) -> Option<String>
+where
+    Tz::Offset: std::fmt::Display,
+{
     use chrono::format::{Item, StrftimeItems};
 
     if StrftimeItems::new(pattern).any(|item| matches!(item, Item::Error)) {
@@ -187,14 +214,14 @@ fn format_with_pattern(dt_local: &DateTime<Local>, pattern: &str) -> Option<Stri
 }
 
 /// Convert PathBuf -> UTF-16
-fn path_to_wide(path: &Path) -> Vec<u16> {
+pub(crate) fn path_to_wide(path: &Path) -> Vec<u16> {
     let mut w: Vec<u16> = path.as_os_str().encode_wide().collect();
     w.push(0);
     w
 }
 
 /// Open directory handle
-fn open_directory_handle(path: &PathBuf) -> Option<HANDLE> {
+pub(crate) fn open_directory_handle(path: &PathBuf) -> Option<HANDLE> {
     let wide = path_to_wide(path);
     let pcw = PCWSTR(wide.as_ptr());
 
@@ -320,6 +347,73 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
     }
 
     total_size
+}
+
+/// Lists one folder synchronously with the same `NtQueryDirectoryFile`
+/// call `scan_dir_async` uses, returning how many entries it holds and
+/// their total file size - or `None` if the folder can't be opened. Every
+/// entry's name, size, and timestamps are read (as the real listing does)
+/// so the Performance panel's benchmark compares like with like against
+/// `std::fs::read_dir`; it just skips building `FileItem`s and sending them
+/// to the UI.
+pub fn list_dir_nt_stats(path: &Path) -> Option<(usize, u64)> {
+    let handle = open_directory_handle(&path.to_path_buf())?;
+    let mut count = 0usize;
+    let mut total_bytes = 0u64;
+    let mut newest_write = 0i64;
+
+    unsafe {
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+        loop {
+            let status = NtQueryDirectoryFile(
+                handle.0 as *mut _,
+                std::ptr::null_mut(),
+                None,
+                std::ptr::null_mut(),
+                &mut io_status,
+                buffer.as_mut_ptr() as *mut _,
+                buffer.len() as u32,
+                1,
+                0,
+                std::ptr::null_mut(),
+                0,
+            );
+
+            if status == STATUS_NO_MORE_FILES || status < 0 {
+                break;
+            }
+
+            let mut offset = 0usize;
+            let end = io_status.Information as usize;
+            while offset < end {
+                let entry = &*(buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION);
+                let name = std::slice::from_raw_parts(
+                    entry.FileName.as_ptr(),
+                    entry.FileNameLength as usize / 2,
+                );
+                let is_dot = name == [b'.' as u16] || name == [b'.' as u16, b'.' as u16];
+                if !is_dot {
+                    count += 1;
+                    if entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 == 0 {
+                        total_bytes = total_bytes.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                    }
+                    newest_write = newest_write.max(*entry.LastWriteTime.QuadPart());
+                }
+
+                if entry.NextEntryOffset == 0 {
+                    break;
+                }
+                offset += entry.NextEntryOffset as usize;
+            }
+        }
+
+        let _ = CloseHandle(handle);
+    }
+
+    std::hint::black_box(newest_write);
+    Some((count, total_bytes))
 }
 
 /// 🚀 Async directory scan
@@ -879,8 +973,9 @@ fn filetime_in_modified_range(raw: i64, range: ModifiedRange) -> bool {
     let Some(dt_utc) = Utc.timestamp_opt(unix_time, 0).single() else {
         return false;
     };
-    let entry_date = DateTime::<Local>::from(dt_utc).date_naive();
-    let today = Local::now().date_naive();
+    let entry_date = dt_utc.with_timezone(&local_offset(&dt_utc)).date_naive();
+    let now = Utc::now();
+    let today = now.with_timezone(&local_offset(&now)).date_naive();
 
     match range {
         ModifiedRange::Today => entry_date == today,
@@ -953,6 +1048,7 @@ pub fn search_builtin_async(
     query: String,
     scope_folder: Option<PathBuf>,
     tx: Sender<FileItem>,
+    still_wanted: std::sync::Weak<()>,
     date_style: DateStyle,
     time_format_24h: bool,
     custom_date_format: String,
@@ -996,6 +1092,9 @@ pub fn search_builtin_async(
         let mut stack = roots;
 
         'walk: while let Some(dir) = stack.pop() {
+            if still_wanted.strong_count() == 0 {
+                break 'walk;
+            }
             let entries = match std::fs::read_dir(&dir) {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -1067,6 +1166,89 @@ pub fn search_builtin_async(
                 }
                 sent += 1;
                 if sent >= BUILTIN_SEARCH_MAX_RESULTS {
+                    break 'walk;
+                }
+            }
+        }
+    });
+}
+
+/// The most files a flat view lists; past this, the walk stops and the view
+/// says the list is incomplete.
+pub const FLAT_VIEW_MAX_FILES: usize = 100_000;
+
+/// Flat view: every file under `root`, in all its subfolders, as one list.
+/// Each item's `original_directory` is its folder relative to `root` (empty
+/// for files directly in it), shown in the Folder column. Folders themselves
+/// aren't listed; hidden folders are skipped unless hidden items are shown,
+/// version control folders (`.git`, ...) always, and links/junctions are
+/// never followed. Stops when `still_wanted` is
+/// dropped (the view moved on) or after `FLAT_VIEW_MAX_FILES`, setting
+/// `truncated`.
+#[allow(clippy::too_many_arguments)]
+pub fn flat_scan_async(
+    root: PathBuf,
+    tx: Sender<FileItem>,
+    still_wanted: std::sync::Weak<()>,
+    show_hidden: bool,
+    truncated: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+    custom_date_format: String,
+) {
+    use std::os::windows::fs::MetadataExt;
+
+    thread::spawn(move || {
+        let mut sent = 0usize;
+        let mut stack = vec![root.clone()];
+        'walk: while let Some(dir) = stack.pop() {
+            if still_wanted.strong_count() == 0 {
+                break;
+            }
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let relative = dir
+                .strip_prefix(&root)
+                .map(|r| r.to_string_lossy().to_string())
+                .unwrap_or_default();
+            for entry in entries.flatten() {
+                let Ok(metadata) = entry.metadata() else { continue };
+                let attributes = metadata.file_attributes();
+                let is_dir = attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
+                let is_hidden = attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0;
+                if is_dir {
+                    let is_reparse = attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+                    // Version control internals are never wanted here.
+                    let is_vcs = matches!(entry.file_name().to_str(), Some(".git" | ".svn" | ".hg"));
+                    if !is_reparse && !is_vcs && (show_hidden || !is_hidden) {
+                        stack.push(entry.path());
+                    }
+                    continue;
+                }
+                let modified_raw = metadata.modified().ok().and_then(system_time_to_filetime_raw);
+                let created_raw = metadata.created().ok().and_then(system_time_to_filetime_raw);
+                let item = FileItem::new(
+                    entry.file_name().to_string_lossy().to_string(),
+                    entry.path(),
+                    false,
+                    is_hidden,
+                    None,
+                    Some(metadata.len()),
+                    modified_raw
+                        .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format)),
+                    created_raw
+                        .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format)),
+                    None,
+                    modified_raw,
+                    created_raw,
+                    None,
+                    Some(relative.clone()),
+                );
+                if tx.send(item).is_err() {
+                    break 'walk;
+                }
+                sent += 1;
+                if sent >= FLAT_VIEW_MAX_FILES {
+                    truncated.store(true, std::sync::atomic::Ordering::Relaxed);
                     break 'walk;
                 }
             }
@@ -1333,5 +1515,76 @@ mod content_search_tests {
             "needle"
         ));
         let _ = std::fs::remove_file(&text_path);
+    }
+}
+
+/// The folders directly inside `dir` (name, path), sorted by name the way
+/// the file list sorts: for the address bar's breadcrumb menus. Works
+/// inside archives too. Hidden folders are left out unless `show_hidden`.
+pub fn list_subfolders(dir: &Path, show_hidden: bool) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut folders = Vec::new();
+    if let Some((archive, inner)) = crate::core::archive_view::split(dir) {
+        let items = crate::core::archive_view::listing(&archive)?;
+        for item in crate::core::archive_view::children(&items, &inner) {
+            if item.is_dir {
+                let name = item.path.rsplit('/').next().unwrap_or(&item.path).to_string();
+                folders.push((name.clone(), dir.join(name)));
+            }
+        }
+    } else {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            // Junctions and directory links count as folders, as in the list.
+            let is_dir = kind.is_dir() || (kind.is_symlink() && entry.path().is_dir());
+            if !is_dir {
+                continue;
+            }
+            if !show_hidden
+                && entry.metadata().is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+            {
+                continue;
+            }
+            folders.push((entry.file_name().to_string_lossy().into_owned(), entry.path()));
+        }
+    }
+    folders.sort_by_cached_key(|(name, _)| name.to_lowercase());
+    Ok(folders)
+}
+
+#[cfg(test)]
+mod list_subfolders_tests {
+    use super::*;
+
+    #[test]
+    fn lists_only_folders_sorted_by_name() {
+        let dir = std::env::temp_dir().join(format!("eden_subfolders_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for name in ["beta", "Alpha", "gamma"] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        std::fs::write(dir.join("file.txt"), b"x").unwrap();
+        let names: Vec<String> = list_subfolders(&dir, true).unwrap().into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, ["Alpha", "beta", "gamma"]);
+        assert!(list_subfolders(&dir.join("missing"), true).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod local_offset_tests {
+    use super::*;
+
+    #[test]
+    fn remembered_offsets_match_local_time() {
+        // Every 37 minutes through a year, across both daylight saving changes.
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap().timestamp();
+        for step in 0..(366 * 24 * 60 / 37) {
+            let t = start + step * 37 * 60;
+            let utc = Utc.timestamp_opt(t, 0).unwrap();
+            let expected: DateTime<Local> = utc.into();
+            assert_eq!(utc.with_timezone(&local_offset(&utc)).naive_local(), expected.naive_local(), "{utc}");
+        }
     }
 }

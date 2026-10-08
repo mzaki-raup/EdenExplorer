@@ -10,9 +10,57 @@ use std::thread;
 const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
 const MAX_PREVIEW_IMAGE_DIM: u32 = 1600;
 const PREVIEW_CACHE_CAPACITY: usize = 12;
-const MAX_ARCHIVE_ENTRIES: usize = 5000;
+const MAX_ARCHIVE_ENTRIES: usize = 20_000;
 const MAX_GIF_PREVIEW_BYTES: usize = 200 * 1024 * 1024;
 const MIN_GIF_FRAME_DELAY_MS: u64 = 20;
+/// Upper bound on how much a single compressed entry (a .docx's
+/// `document.xml`, one EPUB chapter, a whole .svgz) may inflate to while
+/// being previewed. Without a cap, a small crafted "zip bomb" expands to
+/// gigabytes in memory the moment it's merely selected.
+const MAX_DECOMPRESSED_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Reads at most `limit` bytes from `reader`, failing (rather than
+/// allocating without bound) if there is more.
+fn read_capped(reader: impl Read, limit: u64) -> Result<Vec<u8>, String> {
+    let mut data = Vec::new();
+    reader
+        .take(limit + 1)
+        .read_to_end(&mut data)
+        .map_err(|err| err.to_string())?;
+    if data.len() as u64 > limit {
+        return Err(format!(
+            "content is larger than {} MB and can't be previewed",
+            limit / (1024 * 1024)
+        ));
+    }
+    Ok(data)
+}
+
+/// Shortens `text` to at most `max_bytes`, backing off to the previous
+/// character boundary - `String::truncate` panics when the cut lands inside
+/// a multi-byte character (common in CJK text or emoji).
+fn truncate_at_char_boundary(text: &mut String, max_bytes: usize) {
+    if text.len() <= max_bytes {
+        return;
+    }
+    let mut cut = max_bytes;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
+}
+
+/// Reads at most `MAX_TEXT_PREVIEW_BYTES` (plus one byte, to detect that the
+/// file continues) instead of the whole file - selecting a multi-gigabyte
+/// log shouldn't load all of it into memory just to show the first 512 KB.
+fn read_text_prefix(path: &Path) -> std::io::Result<(Vec<u8>, bool)> {
+    let file = std::fs::File::open(path)?;
+    let mut bytes = Vec::with_capacity(MAX_TEXT_PREVIEW_BYTES.min(64 * 1024));
+    file.take(MAX_TEXT_PREVIEW_BYTES as u64 + 1).read_to_end(&mut bytes)?;
+    let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
+    bytes.truncate(MAX_TEXT_PREVIEW_BYTES);
+    Ok((bytes, truncated))
+}
 
 /// One entry (file or folder) listed inside a previewed archive.
 #[derive(Clone)]
@@ -21,6 +69,12 @@ pub struct ArchiveEntry {
     pub is_dir: bool,
     pub size: u64,
     pub depth: usize,
+    /// How many entries below this one are inside it (a folder's contents
+    /// follow it directly), so a collapsed folder can be skipped at once.
+    pub descendants: u32,
+    pub icon: crate::core::material_icons::MaterialIcon,
+    /// The icon for an expanded folder (the same as `icon` for files).
+    pub icon_open: crate::core::material_icons::MaterialIcon,
 }
 
 /// One decoded frame of an animated image, with how long it should be shown for.
@@ -49,9 +103,10 @@ pub enum PreviewPayload {
         size: [usize; 2],
         frames: Vec<AnimatedFrame>,
     },
-    /// The file/folder listing of a zip-format archive.
+    /// The file/folder listing of an archive, as an expanded tree.
     Archive {
-        entries: Vec<ArchiveEntry>,
+        /// Shared, so the per-frame copy of the payload doesn't copy the list.
+        entries: std::sync::Arc<Vec<ArchiveEntry>>,
         truncated: bool,
     },
     /// A file type we don't know how to preview.
@@ -64,6 +119,29 @@ pub enum PreviewPayload {
 struct AnimationPlayback {
     frame_index: usize,
     next_frame_at: std::time::Instant,
+    /// Frozen on `frame_index` - set by Pause, Stop, and frame stepping.
+    paused: bool,
+    /// The frame was changed by a control (seek/stop/step) rather than by
+    /// playback, so the texture must be refreshed on the next draw.
+    dirty: bool,
+}
+
+/// Where an animated preview's playback is, for the preview pane's media
+/// controls - see `PreviewService::animation_info`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnimationInfo {
+    pub frame_index: usize,
+    pub frame_count: usize,
+    /// Time from the start of the animation to the start of the current frame.
+    pub position: std::time::Duration,
+    /// One full loop of the animation.
+    pub duration: std::time::Duration,
+    pub paused: bool,
+}
+
+/// Time from the first frame to the start of `frame_index`.
+fn animation_offset(frames: &[AnimatedFrame], frame_index: usize) -> std::time::Duration {
+    frames.iter().take(frame_index).map(|f| f.delay).sum()
 }
 
 /// Background loader for the preview pane: extracting text from a PDF/Word
@@ -118,7 +196,18 @@ impl PreviewService {
         let owned = path.to_path_buf();
 
         thread::spawn(move || {
-            let payload = load_preview_payload(&owned);
+            // A decoder panicking on a malformed file must not leave this
+            // path stuck on "Loading" forever - report it as an error.
+            // A file inside an archive is previewed from a temporary
+            // extracted copy (see `core::archive_view`).
+            let readable = crate::core::archive_view::readable_path(&owned);
+            let payload = std::panic::catch_unwind(|| match &readable {
+                Ok(path) => load_preview_payload(path),
+                Err(e) => PreviewPayload::Error(e.clone()),
+            })
+                .unwrap_or_else(|_| {
+                    PreviewPayload::Error("Couldn't preview this file (it may be damaged).".to_string())
+                });
             let _ = tx.send((owned, payload));
         });
     }
@@ -170,11 +259,19 @@ impl PreviewService {
             .or_insert_with(|| AnimationPlayback {
                 frame_index: 0,
                 next_frame_at: now + frames[0].delay,
+                paused: false,
+                dirty: false,
             });
+
+        let mut advanced = std::mem::take(&mut playback.dirty);
+        if playback.paused {
+            let frame_index = playback.frame_index;
+            let size = *size;
+            return Some(self.upload_animation_texture(ctx, path, size, frame_index, advanced));
+        }
 
         // Advance however many frames have elapsed (bounded by frame count so
         // a huge gap - e.g. the app was minimized - doesn't spin forever).
-        let mut advanced = false;
         for _ in 0..frames.len() {
             if now < playback.next_frame_at {
                 break;
@@ -192,23 +289,122 @@ impl PreviewService {
         let next_frame_at = playback.next_frame_at;
         ctx.request_repaint_after(next_frame_at.saturating_duration_since(now));
 
-        let color_image =
-            egui::ColorImage::from_rgba_unmultiplied(*size, frames[frame_index].rgba.as_slice());
+        let size = *size;
+        Some(self.upload_animation_texture(ctx, path, size, frame_index, advanced))
+    }
 
-        if let Some(texture) = self.textures.get_mut(path) {
-            if advanced || texture.size() != *size {
-                texture.set(color_image, egui::TextureOptions::LINEAR);
+    /// Updates (or first creates) the single texture an animated preview
+    /// reuses for every frame. The frame's pixels are only converted when
+    /// the texture actually changes - not on every repaint, which would
+    /// copy the whole frame each time the mouse moves over a paused GIF.
+    fn upload_animation_texture(
+        &mut self,
+        ctx: &egui::Context,
+        path: &Path,
+        size: [usize; 2],
+        frame_index: usize,
+        changed: bool,
+    ) -> egui::TextureHandle {
+        let cache = &self.cache;
+        let frame_image = || match cache.peek(path) {
+            Some(PreviewPayload::Animated { frames, .. }) if frame_index < frames.len() => {
+                egui::ColorImage::from_rgba_unmultiplied(size, frames[frame_index].rgba.as_slice())
             }
-            return Some(texture.clone());
+            _ => egui::ColorImage::new(size, vec![egui::Color32::TRANSPARENT; size[0] * size[1]]),
+        };
+        if let Some(texture) = self.textures.get_mut(path) {
+            if changed || texture.size() != size {
+                texture.set(frame_image(), egui::TextureOptions::LINEAR);
+            }
+            return texture.clone();
         }
 
         let texture = ctx.load_texture(
             format!("preview-anim:{}", path.display()),
-            color_image,
+            frame_image(),
             egui::TextureOptions::LINEAR,
         );
         self.textures.insert(path.to_path_buf(), texture.clone());
-        Some(texture)
+        texture
+    }
+
+    fn animation_frames(&self, path: &Path) -> Option<&[AnimatedFrame]> {
+        match self.cache.peek(path)? {
+            PreviewPayload::Animated { frames, .. } if !frames.is_empty() => Some(frames),
+            _ => None,
+        }
+    }
+
+    /// Playback position of an animated preview, for the media controls.
+    /// `None` if `path` isn't a loaded animation.
+    pub fn animation_info(&self, path: &Path) -> Option<AnimationInfo> {
+        let frames = self.animation_frames(path)?;
+        let (frame_index, paused) = self
+            .animations
+            .get(path)
+            .map(|p| (p.frame_index, p.paused))
+            .unwrap_or((0, false));
+        Some(AnimationInfo {
+            frame_index,
+            frame_count: frames.len(),
+            position: animation_offset(frames, frame_index),
+            duration: animation_offset(frames, frames.len()),
+            paused,
+        })
+    }
+
+    /// Runs `update` on this animation's playback state (creating it if it
+    /// hasn't been drawn yet) and restarts the current frame's timer, so a
+    /// resumed or sought animation shows the new frame for its full delay.
+    fn update_playback(&mut self, path: &Path, update: impl FnOnce(&mut AnimationPlayback, usize)) {
+        let delays: Vec<std::time::Duration> = match self.animation_frames(path) {
+            Some(frames) => frames.iter().map(|f| f.delay).collect(),
+            None => return,
+        };
+        let now = std::time::Instant::now();
+        let playback = self
+            .animations
+            .entry(path.to_path_buf())
+            .or_insert_with(|| AnimationPlayback {
+                frame_index: 0,
+                next_frame_at: now,
+                paused: false,
+                dirty: false,
+            });
+        update(playback, delays.len());
+        playback.frame_index = playback.frame_index.min(delays.len() - 1);
+        playback.next_frame_at = now + delays[playback.frame_index];
+        playback.dirty = true;
+    }
+
+    pub fn toggle_animation_paused(&mut self, path: &Path) {
+        self.update_playback(path, |playback, _| playback.paused = !playback.paused);
+    }
+
+    /// Stops playback and rewinds to the first frame.
+    pub fn stop_animation(&mut self, path: &Path) {
+        self.update_playback(path, |playback, _| {
+            playback.paused = true;
+            playback.frame_index = 0;
+        });
+    }
+
+    /// Jumps to `frame_index`, keeping the current play/pause state.
+    pub fn seek_animation(&mut self, path: &Path, frame_index: usize) {
+        self.update_playback(path, |playback, _| playback.frame_index = frame_index);
+    }
+
+    /// Pauses and moves one frame forward (`forward`) or back, wrapping at
+    /// either end.
+    pub fn step_animation(&mut self, path: &Path, forward: bool) {
+        self.update_playback(path, |playback, frame_count| {
+            playback.paused = true;
+            playback.frame_index = if forward {
+                (playback.frame_index + 1) % frame_count
+            } else {
+                (playback.frame_index + frame_count - 1) % frame_count
+            };
+        });
     }
 }
 
@@ -228,9 +424,12 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
         "pdf" => load_pdf_preview(path),
         "md" | "markdown" => load_markdown_preview(path),
         "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" => load_office_preview(path),
-        "zip" | "jar" | "war" | "apk" | "xpi" => load_archive_preview(path),
+        "zip" => load_archive_preview(path, false),
+        "jar" | "war" | "apk" | "xpi" => load_archive_preview(path, true),
         "epub" => load_epub_preview(path),
-        "7z" => load_7z_preview(path),
+        "7z" | "tar" | "tgz" | "tbz" | "tbz2" | "txz" | "gz" | "bz2" | "xz" | "rar" | "iso" | "cab" => {
+            load_archive_preview(path, false)
+        }
         "ttf" | "otf" | "ttc" | "otc" => load_font_preview(path),
         "svg" => load_svg_preview(path, false),
         "svgz" => load_svg_preview(path, true),
@@ -362,11 +561,9 @@ fn decode_text_bytes(bytes: &[u8]) -> String {
 }
 
 fn load_text_preview(path: &Path) -> PreviewPayload {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
-            let slice = &bytes[..bytes.len().min(MAX_TEXT_PREVIEW_BYTES)];
-            let mut text = decode_text_bytes(slice);
+    match read_text_prefix(path) {
+        Ok((bytes, truncated)) => {
+            let mut text = decode_text_bytes(&bytes);
             if truncated {
                 text.push_str("\n\n… (preview truncated - file is larger than 512 KB)");
             }
@@ -377,11 +574,9 @@ fn load_text_preview(path: &Path) -> PreviewPayload {
 }
 
 fn load_markdown_preview(path: &Path) -> PreviewPayload {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
-            let slice = &bytes[..bytes.len().min(MAX_TEXT_PREVIEW_BYTES)];
-            let mut text = decode_text_bytes(slice);
+    match read_text_prefix(path) {
+        Ok((bytes, truncated)) => {
+            let mut text = decode_text_bytes(&bytes);
             if truncated {
                 text.push_str("\n\n… (preview truncated - file is larger than 512 KB)");
             }
@@ -625,11 +820,20 @@ fn load_pdf_preview(path: &Path) -> PreviewPayload {
 }
 
 fn load_pdf_text_preview(path: &Path) -> PreviewPayload {
+    // `pdf_extract` has no size limits of its own and decompresses every
+    // stream in the file, so very large PDFs are skipped rather than risking
+    // running out of memory just because the file was selected.
+    const MAX_PDF_TEXT_PREVIEW_FILE_BYTES: u64 = 50 * 1024 * 1024;
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > MAX_PDF_TEXT_PREVIEW_FILE_BYTES) {
+        return PreviewPayload::Unsupported(
+            "This PDF is too large to extract a text preview from.\nDouble-click to open it in its default program.".to_string(),
+        );
+    }
     match pdf_extract::extract_text(path) {
         Ok(text) if !text.trim().is_empty() => {
             let mut text = text;
             if text.len() > MAX_TEXT_PREVIEW_BYTES {
-                text.truncate(MAX_TEXT_PREVIEW_BYTES);
+                truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
                 text.push_str("\n\n… (preview truncated)");
             }
             PreviewPayload::Text(text)
@@ -790,15 +994,15 @@ fn load_docx_text_preview(path: &Path) -> PreviewPayload {
         Err(err) => return PreviewPayload::Error(format!("Couldn't read .docx: {err}")),
     };
 
-    let mut xml = String::new();
-    match archive.by_name("word/document.xml") {
-        Ok(mut entry) => {
-            if let Err(err) = entry.read_to_string(&mut xml) {
+    let xml = match archive.by_name("word/document.xml") {
+        Ok(entry) => match read_capped(entry, MAX_DECOMPRESSED_PREVIEW_BYTES) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(err) => {
                 return PreviewPayload::Error(format!("Couldn't read document content: {err}"));
             }
-        }
+        },
         Err(err) => return PreviewPayload::Error(format!("Couldn't find document content: {err}")),
-    }
+    };
 
     let mut text = extract_docx_text(&xml);
     if text.trim().is_empty() {
@@ -807,7 +1011,7 @@ fn load_docx_text_preview(path: &Path) -> PreviewPayload {
         );
     }
     if text.len() > MAX_TEXT_PREVIEW_BYTES {
-        text.truncate(MAX_TEXT_PREVIEW_BYTES);
+        truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
         text.push_str("\n\n… (preview truncated)");
     }
     PreviewPayload::Text(text)
@@ -880,7 +1084,7 @@ fn load_epub_preview(path: &Path) -> PreviewPayload {
         );
     }
     if text.len() > MAX_TEXT_PREVIEW_BYTES {
-        text.truncate(MAX_TEXT_PREVIEW_BYTES);
+        truncate_at_char_boundary(&mut text, MAX_TEXT_PREVIEW_BYTES);
         text.push_str("\n\n… (preview truncated)");
     }
     PreviewPayload::Text(text)
@@ -890,12 +1094,9 @@ fn read_zip_entry_to_string(
     archive: &mut zip::ZipArchive<std::fs::File>,
     name: &str,
 ) -> Result<String, String> {
-    let mut entry = archive.by_name(name).map_err(|err| err.to_string())?;
-    let mut s = String::new();
-    entry
-        .read_to_string(&mut s)
-        .map_err(|err| err.to_string())?;
-    Ok(s)
+    let entry = archive.by_name(name).map_err(|err| err.to_string())?;
+    let bytes = read_capped(entry, MAX_DECOMPRESSED_PREVIEW_BYTES)?;
+    String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
 /// Pulls the OPF manifest's path out of an EPUB's `META-INF/container.xml`,
@@ -1045,111 +1246,93 @@ fn extract_xhtml_text(xhtml: &str) -> String {
     out
 }
 
-fn load_archive_preview(path: &Path) -> PreviewPayload {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't open file: {err}")),
-    };
-
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't read archive: {err}")),
-    };
-
-    let mut sort_keys: Vec<(String, ArchiveEntry)> = Vec::with_capacity(archive.len());
-    for i in 0..archive.len() {
-        let Ok(entry) = archive.by_index(i) else {
-            continue;
-        };
-        let raw_name = entry.name().replace('\\', "/");
-        let trimmed = raw_name.trim_end_matches('/');
-        if trimmed.is_empty() {
-            continue;
+/// Lists an archive for the preview pane: zip (and zip-based `.jar`,
+/// `.apk`, ...), 7z, tar (plain or gz/bz2/xz), single gz/bz2/xz files, and,
+/// when 7-Zip is installed, RAR, ISO, and CAB. Archives that can be browsed
+/// share the listing cache with browsing, so opening one after previewing
+/// it doesn't read it again.
+fn load_archive_preview(path: &Path, zip_based: bool) -> PreviewPayload {
+    use crate::core::extract::{ArchiveKind, list_as};
+    let listed = if zip_based {
+        list_as(path, ArchiveKind::Zip, "").map(std::sync::Arc::new)
+    } else if crate::core::archive_view::is_browsable_archive(path) {
+        crate::core::archive_view::listing(path)
+    } else {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        match ArchiveKind::of(name) {
+            Some((ArchiveKind::External, _)) if crate::core::extract::seven_zip_exe().is_none() => {
+                return PreviewPayload::Unsupported(
+                    "Install 7-Zip to see what's inside this archive.\nDouble-click to open it in its default program.".to_string(),
+                );
+            }
+            Some((kind, stem)) => list_as(path, kind, stem).map(std::sync::Arc::new),
+            None => Err("not a known archive type".to_string()),
         }
-        let is_dir = entry.is_dir() || raw_name.ends_with('/');
-        let depth = trimmed.matches('/').count();
-        let display_name = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
-
-        sort_keys.push((
-            trimmed.to_string(),
-            ArchiveEntry {
-                name: display_name,
-                is_dir,
-                size: entry.size(),
-                depth,
-            },
-        ));
+    };
+    match listed {
+        Ok(items) if items.is_empty() => PreviewPayload::Unsupported("This archive appears to be empty.".to_string()),
+        Ok(items) => {
+            let (entries, truncated) = archive_tree(&items);
+            PreviewPayload::Archive { entries: std::sync::Arc::new(entries), truncated }
+        }
+        Err(err) => PreviewPayload::Error(format!("Couldn't read archive: {err}")),
     }
-
-    if sort_keys.is_empty() {
-        return PreviewPayload::Unsupported("This archive appears to be empty.".to_string());
-    }
-
-    sort_keys.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let truncated = sort_keys.len() > MAX_ARCHIVE_ENTRIES;
-    let entries = sort_keys
-        .into_iter()
-        .take(MAX_ARCHIVE_ENTRIES)
-        .map(|(_, entry)| entry)
-        .collect();
-
-    PreviewPayload::Archive { entries, truncated }
 }
 
-/// Same idea as `load_archive_preview`, but for `.7z` - a completely
-/// different container format from zip, so it needs its own crate
-/// (`sevenz-rust2`, a maintained fork of the unmaintained `sevenz-rust`; RAR
-/// support was deliberately skipped instead, since the only practical crate
-/// for it wraps the non-free-licensed official UnRAR library). Only listing
-/// is needed here (no extraction), and `sevenz_rust2::Archive::open` already
-/// hands back every entry's name/size/directory-ness directly - no need to
-/// open a reader or decompress anything just to show the file tree. Builds
-/// the exact same `ArchiveEntry` shape `load_archive_preview` does, so the
-/// existing indented-by-depth rendering in `itemviewer_preview.rs` needs no
-/// changes at all for this new format.
-fn load_7z_preview(path: &Path) -> PreviewPayload {
-    let archive = match sevenz_rust2::Archive::open(path) {
-        Ok(a) => a,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't read .7z archive: {err}")),
-    };
-
-    let mut sort_keys: Vec<(String, ArchiveEntry)> = Vec::with_capacity(archive.files.len());
-    for entry in &archive.files {
-        let raw_name = entry.name.replace('\\', "/");
-        let trimmed = raw_name.trim_end_matches('/');
-        if trimmed.is_empty() {
-            continue;
+/// Orders an archive listing as an expanded tree like VS Code's explorer:
+/// each folder followed by its contents, folders before files, names in
+/// natural order. `items` must hold every parent folder (as
+/// `extract::list` returns them).
+fn archive_tree(items: &[crate::core::extract::ArchiveItem]) -> (Vec<ArchiveEntry>, bool) {
+    use crate::core::material_icons::{for_file, for_folder};
+    use std::collections::HashMap;
+    let mut children: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        let parent = item.path.rsplit_once('/').map_or("", |(parent, _)| parent);
+        children.entry(parent).or_default().push(i);
+    }
+    let name_of = |i: usize| items[i].path.rsplit('/').next().unwrap_or(&items[i].path);
+    let sort_keys: Vec<String> = (0..items.len()).map(|i| name_of(i).to_lowercase()).collect();
+    for list in children.values_mut() {
+        list.sort_by(|&a, &b| items[b].is_dir.cmp(&items[a].is_dir).then_with(|| sort_keys[a].cmp(&sort_keys[b])));
+    }
+    let mut entries: Vec<ArchiveEntry> = Vec::with_capacity(items.len().min(MAX_ARCHIVE_ENTRIES));
+    let mut truncated = false;
+    // (item, depth, index of its entry once pushed) - depth-first.
+    let mut stack: Vec<(usize, usize)> = children.get("").map_or(Vec::new(), |top| top.iter().rev().map(|&i| (i, 0)).collect());
+    let mut open_folders: Vec<usize> = Vec::new();
+    while let Some((i, depth)) = stack.pop() {
+        if entries.len() >= MAX_ARCHIVE_ENTRIES {
+            truncated = true;
+            break;
         }
-        let is_dir = entry.is_directory || raw_name.ends_with('/');
-        let depth = trimmed.matches('/').count();
-        let display_name = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
-
-        sort_keys.push((
-            trimmed.to_string(),
-            ArchiveEntry {
-                name: display_name,
-                is_dir,
-                size: entry.size,
-                depth,
-            },
-        ));
+        // Folders deeper than this one are finished: record their size.
+        while open_folders.last().is_some_and(|&f| entries[f].depth >= depth) {
+            let f = open_folders.pop().unwrap_or_default();
+            entries[f].descendants = (entries.len() - f - 1) as u32;
+        }
+        let item = &items[i];
+        let name = name_of(i).to_string();
+        let (icon, icon_open) = if item.is_dir {
+            (for_folder(&name, false), for_folder(&name, true))
+        } else {
+            let icon = for_file(&name);
+            (icon, icon)
+        };
+        if item.is_dir {
+            open_folders.push(entries.len());
+            if let Some(kids) = children.get(item.path.as_str()) {
+                stack.extend(kids.iter().rev().map(|&k| (k, depth + 1)));
+            }
+        }
+        entries.push(ArchiveEntry { name, is_dir: item.is_dir, size: item.size, depth, descendants: 0, icon, icon_open });
     }
-
-    if sort_keys.is_empty() {
-        return PreviewPayload::Unsupported("This archive appears to be empty.".to_string());
+    for f in open_folders {
+        entries[f].descendants = (entries.len() - f - 1) as u32;
     }
-
-    sort_keys.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let truncated = sort_keys.len() > MAX_ARCHIVE_ENTRIES;
-    let entries = sort_keys
-        .into_iter()
-        .take(MAX_ARCHIVE_ENTRIES)
-        .map(|(_, entry)| entry)
-        .collect();
-
-    PreviewPayload::Archive { entries, truncated }
+    // Unpack the icon set here, off the UI thread, the first time.
+    let _ = entries.first().map(|e| e.icon.svg());
+    (entries, truncated)
 }
 
 const SVG_PREVIEW_TARGET_LONG_EDGE: f32 = 1024.0;
@@ -1167,13 +1350,13 @@ fn load_svg_preview(path: &Path, gzip_compressed: bool) -> PreviewPayload {
     };
 
     let data = if gzip_compressed {
-        use std::io::Read;
-        let mut decompressed = Vec::new();
-        if let Err(err) = flate2::read::GzDecoder::new(raw.as_slice()).read_to_end(&mut decompressed)
-        {
-            return PreviewPayload::Error(format!("Couldn't decompress .svgz: {err}"));
+        match read_capped(
+            flate2::read::GzDecoder::new(raw.as_slice()),
+            MAX_DECOMPRESSED_PREVIEW_BYTES,
+        ) {
+            Ok(decompressed) => decompressed,
+            Err(err) => return PreviewPayload::Error(format!("Couldn't decompress .svgz: {err}")),
         }
-        decompressed
     } else {
         raw
     };
@@ -1527,8 +1710,8 @@ mod sevenz_tests {
 
     /// Builds a small real `.7z` archive (one top-level file, one nested
     /// file inside a directory) via `sevenz_rust2`'s own writer, then
-    /// verifies `load_7z_preview` lists it the same way `load_archive_preview`
-    /// already lists a zip: sorted, with depth reflecting nesting.
+    /// verifies the preview lists it as a tree: folders first, with depth
+    /// reflecting nesting, and file type icons.
     #[test]
     fn lists_entries_from_a_real_7z_archive() {
         let dir = std::env::temp_dir().join(format!(
@@ -1561,17 +1744,159 @@ mod sevenz_tests {
             writer.finish().unwrap();
         }
 
-        let payload = load_7z_preview(&archive_path);
+        let payload = load_archive_preview(&archive_path, false);
         let _ = std::fs::remove_dir_all(&dir);
 
         let PreviewPayload::Archive { entries, truncated } = payload else {
             panic!("expected an Archive payload");
         };
         assert!(!truncated);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].name, "root.txt");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].name, "nested.txt");
-        assert_eq!(entries[1].depth, 1);
+        let names: Vec<(&str, usize)> = entries.iter().map(|e| (e.name.as_str(), e.depth)).collect();
+        assert_eq!(names, [("subdir", 0), ("nested.txt", 1), ("root.txt", 0)]);
+        assert_eq!(entries[0].descendants, 1);
+        assert_eq!(entries[1].icon.name(), "document");
+    }
+
+    #[test]
+    fn archive_tree_puts_folders_first_and_counts_contents() {
+        use crate::core::extract::ArchiveItem;
+        let item = |path: &str, is_dir: bool| ArchiveItem { path: path.to_string(), is_dir, size: 1, modified: None };
+        // As `extract::list` returns it: sorted by path, parents included.
+        let items = [
+            item("README.md", false),
+            item("src", true),
+            item("src-old.rs", false),
+            item("src/lib.rs", false),
+            item("src/utils", true),
+            item("src/utils/a.rs", false),
+            item("Zeta", true),
+        ];
+        let (entries, truncated) = archive_tree(&items);
+        assert!(!truncated);
+        let names: Vec<(&str, usize, u32)> = entries.iter().map(|e| (e.name.as_str(), e.depth, e.descendants)).collect();
+        assert_eq!(
+            names,
+            [
+                ("src", 0, 3),
+                ("utils", 1, 1),
+                ("a.rs", 2, 0),
+                ("lib.rs", 1, 0),
+                ("Zeta", 0, 0),
+                ("README.md", 0, 0),
+                ("src-old.rs", 0, 0),
+            ]
+        );
+        assert_eq!(entries[0].icon.name(), "folder-src");
+        assert_eq!(entries[0].icon_open.name(), "folder-src-open");
+        assert_eq!(entries[2].icon.name(), "rust");
+        assert_eq!(entries[5].icon.name(), "readme");
+    }
+}
+
+#[cfg(test)]
+mod safety_limit_tests {
+    use super::*;
+
+    #[test]
+    fn truncating_never_splits_a_multi_byte_character() {
+        // "日" is 3 bytes in UTF-8; cutting at 4 would land inside the second one.
+        let mut text = "日本語".to_string();
+        truncate_at_char_boundary(&mut text, 4);
+        assert_eq!(text, "日");
+        let mut short = "abc".to_string();
+        truncate_at_char_boundary(&mut short, 10);
+        assert_eq!(short, "abc");
+    }
+
+    #[test]
+    fn read_capped_rejects_data_past_the_limit() {
+        assert_eq!(read_capped(&b"hello"[..], 5).unwrap(), b"hello");
+        assert!(read_capped(&b"hello!"[..], 5).is_err());
+    }
+
+    #[test]
+    fn a_gzip_bomb_is_refused_instead_of_fully_inflated() {
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        encoder.write_all(&vec![0u8; 4 * 1024 * 1024]).unwrap();
+        let compressed = encoder.finish().unwrap();
+        assert!(compressed.len() < 64 * 1024);
+        let result = read_capped(flate2::read::GzDecoder::new(compressed.as_slice()), 1024 * 1024);
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod animation_control_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn service_with_animation(path: &Path, delays_ms: &[u64]) -> PreviewService {
+        let mut service = PreviewService::default();
+        let frames = delays_ms
+            .iter()
+            .map(|&ms| AnimatedFrame {
+                rgba: vec![0; 4],
+                delay: Duration::from_millis(ms),
+            })
+            .collect();
+        service.cache.put(
+            path.to_path_buf(),
+            PreviewPayload::Animated { size: [1, 1], frames },
+        );
+        service
+    }
+
+    #[test]
+    fn info_reports_position_and_duration() {
+        let path = Path::new(r"C:\a.gif");
+        let mut service = service_with_animation(path, &[100, 200, 300]);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_count, 3);
+        assert_eq!(info.frame_index, 0);
+        assert_eq!(info.duration, Duration::from_millis(600));
+        assert!(!info.paused);
+
+        service.seek_animation(path, 2);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 2);
+        assert_eq!(info.position, Duration::from_millis(300));
+        assert!(!info.paused, "seeking keeps playing");
+    }
+
+    #[test]
+    fn pause_stop_and_step() {
+        let path = Path::new(r"C:\b.gif");
+        let mut service = service_with_animation(path, &[100, 100, 100, 100]);
+
+        service.toggle_animation_paused(path);
+        assert!(service.animation_info(path).unwrap().paused);
+        service.toggle_animation_paused(path);
+        assert!(!service.animation_info(path).unwrap().paused);
+
+        service.step_animation(path, false);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 3, "stepping back from the first frame wraps");
+        assert!(info.paused, "stepping pauses");
+        service.step_animation(path, true);
+        assert_eq!(service.animation_info(path).unwrap().frame_index, 0);
+
+        service.seek_animation(path, 99);
+        assert_eq!(service.animation_info(path).unwrap().frame_index, 3, "seek is clamped");
+
+        service.stop_animation(path);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 0);
+        assert!(info.paused);
+    }
+
+    #[test]
+    fn controls_ignore_non_animations() {
+        let path = Path::new(r"C:\c.png");
+        let mut service = PreviewService::default();
+        service.toggle_animation_paused(path);
+        service.stop_animation(path);
+        assert!(service.animation_info(path).is_none());
     }
 }

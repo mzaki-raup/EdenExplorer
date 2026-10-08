@@ -22,6 +22,7 @@ use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
+use crate::gui::windows::containers::notifications::HistoryAction;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, FilterState, GalleryThumbnailSize, ItemViewerColumnFitRequest,
     ItemViewerColumnState, ItemViewerDisplayMode, ItemViewerFolderSizeState,
@@ -66,29 +67,6 @@ pub(crate) fn default_column_state(settings: &AppSettings) -> ItemViewerColumnSt
     )
 }
 
-pub(crate) fn default_directory_settings_snapshot(directory: PathBuf) -> DirectorySettingsSnapshot {
-    let default_settings = AppSettings::default();
-
-    DirectorySettingsSnapshot {
-        directory,
-        item_viewer_file_column_order: default_settings.item_viewer_file_column_order,
-        item_viewer_drive_column_order: default_settings.item_viewer_drive_column_order,
-        recycle_bin_column_order: default_settings.recycle_bin_column_order,
-        item_viewer_file_column_sizes: default_settings.item_viewer_file_column_sizes,
-        item_viewer_drive_column_sizes: default_settings.item_viewer_drive_column_sizes,
-        recycle_bin_column_sizes: default_settings.recycle_bin_column_sizes,
-        filter_query: String::new(),
-        display_mode: ItemViewerDisplayMode::Details,
-        gallery_thumbnail_size: GalleryThumbnailSize::Medium,
-        sort_column: SortColumn::Name,
-        sort_ascending: true,
-        sort_keys: vec![SortKey {
-            column: SortColumn::Name,
-            ascending: true,
-        }],
-    }
-}
-
 pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectorySettingsSnapshot {
     DirectorySettingsSnapshot {
         directory: view.nav.current.clone(),
@@ -98,7 +76,12 @@ pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectoryS
         item_viewer_file_column_sizes: view.column_state.file_column_sizes.clone(),
         item_viewer_drive_column_sizes: view.column_state.drive_column_sizes.clone(),
         recycle_bin_column_sizes: view.column_state.recycle_bin_column_sizes.clone(),
-        filter_query: view.item_viewer_filter_state.query.clone(),
+        // Only plain filters are remembered: the regex and "hide matches"
+        // options aren't saved, and without them the text means something else.
+        filter_query: {
+            let filter = &view.item_viewer_filter_state;
+            if filter.regex || filter.invert { String::new() } else { filter.query.clone() }
+        },
         display_mode: view.display_mode,
         gallery_thumbnail_size: view.gallery_state.thumbnail_size,
         sort_column: view.sort_column,
@@ -145,10 +128,7 @@ pub(crate) fn apply_directory_settings_to_view(
             ItemViewerDisplayMode::Columns | ItemViewerDisplayMode::ColumnPreview
         );
 
-    let snapshot = settings
-        .directory_settings
-        .iter()
-        .find(|entry| entry.directory == view.nav.current);
+    let snapshot = settings.folder_view(&view.nav.current);
 
     if let Some(snapshot) = snapshot {
         view.column_state = ItemViewerColumnState::from_orders(
@@ -196,35 +176,165 @@ pub(crate) fn apply_directory_settings_to_view(
     }
 }
 
-pub(crate) fn persist_directory_settings_snapshot(
-    entries: &mut Vec<DirectorySettingsSnapshot>,
-    snapshot: DirectorySettingsSnapshot,
-) -> bool {
-    let default_snapshot = default_directory_settings_snapshot(snapshot.directory.clone());
+/// Open Select by Pattern dialog (see `MainWindow::draw_select_by_pattern_modal`).
+pub(crate) struct SelectByPatternState {
+    pub side: SplitSide,
+    pub pattern: String,
+    pub include_folders: bool,
+    pub focus_requested: bool,
+    /// Indices (into the view's `files`) of the items the pattern matches,
+    /// and what they were computed for: (pattern, include folders, number
+    /// of files, number of visible items). Matching a big folder every
+    /// frame would make typing in the dialog lag.
+    pub matches: Vec<usize>,
+    pub matches_for: Option<(String, bool, usize, usize)>,
+}
 
-    if snapshot == default_snapshot {
-        if let Some(pos) = entries
-            .iter()
-            .position(|entry| entry.directory == snapshot.directory)
-        {
-            entries.remove(pos);
-            return true;
-        }
+#[derive(Clone, Copy)]
+enum SelectByPatternMode {
+    Replace,
+    Add,
+    Remove,
+}
+
+/// Most folders whose view is remembered; the least recently changed are
+/// forgotten first.
+const MAX_REMEMBERED_FOLDER_VIEWS: usize = 5000;
+
+/// Whether two folder paths are the same folder: Windows paths are
+/// case-insensitive and may or may not end in a separator.
+pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
+    // Runs against every remembered folder each time a folder is opened,
+    // so avoid allocating for the usual all-ASCII paths.
+    let a = a.to_string_lossy();
+    let b = b.to_string_lossy();
+    let a = a.trim_end_matches(['\\', '/']);
+    let b = b.trim_end_matches(['\\', '/']);
+    if a.eq_ignore_ascii_case(b) {
+        return true;
+    }
+    if a.is_ascii() && b.is_ascii() {
         return false;
     }
+    a.to_lowercase() == b.to_lowercase()
+}
 
-    if let Some(pos) = entries
-        .iter()
-        .position(|entry| entry.directory == snapshot.directory)
-    {
-        if entries[pos] == snapshot {
+impl AppSettings {
+    /// The view a folder gets when nothing is remembered for it - the
+    /// user's own defaults (Settings), not the app's built-in ones.
+    pub(crate) fn default_folder_view(&self, directory: PathBuf) -> DirectorySettingsSnapshot {
+        let columns = default_column_state(self);
+        DirectorySettingsSnapshot {
+            directory,
+            item_viewer_file_column_order: columns.file_column_order,
+            item_viewer_drive_column_order: columns.drive_column_order,
+            recycle_bin_column_order: columns.recycle_bin_column_order,
+            item_viewer_file_column_sizes: columns.file_column_sizes,
+            item_viewer_drive_column_sizes: columns.drive_column_sizes,
+            recycle_bin_column_sizes: columns.recycle_bin_column_sizes,
+            filter_query: String::new(),
+            display_mode: self.default_display_mode,
+            gallery_thumbnail_size: GalleryThumbnailSize::Medium,
+            sort_column: self.sort_column,
+            sort_ascending: self.sort_ascending,
+            sort_keys: vec![SortKey {
+                column: self.sort_column,
+                ascending: self.sort_ascending,
+            }],
+        }
+    }
+
+    /// The remembered view for `directory`, if per-folder views are on and
+    /// one was saved.
+    pub(crate) fn folder_view(&self, directory: &Path) -> Option<&DirectorySettingsSnapshot> {
+        if !self.ui_prefs.remember_folder_views {
+            return None;
+        }
+        self.directory_settings
+            .iter()
+            .find(|entry| same_folder(&entry.directory, directory))
+    }
+
+    /// Remembers `snapshot` as its folder's view. A view identical to the
+    /// defaults isn't stored (and forgets any earlier one), so the folder
+    /// follows future changes to the defaults. Returns whether anything
+    /// changed.
+    pub(crate) fn remember_folder_view(&mut self, snapshot: DirectorySettingsSnapshot) -> bool {
+        let changed = self.remember_folder_view_inner(snapshot);
+        if changed {
+            self.folder_views_revision = self.folder_views_revision.wrapping_add(1);
+        }
+        changed
+    }
+
+    fn remember_folder_view_inner(&mut self, snapshot: DirectorySettingsSnapshot) -> bool {
+        if !self.ui_prefs.remember_folder_views {
             return false;
         }
-        entries[pos] = snapshot;
-        true
-    } else {
-        entries.push(snapshot);
-        true
+        let position = self
+            .directory_settings
+            .iter()
+            .position(|entry| same_folder(&entry.directory, &snapshot.directory));
+
+        if snapshot == self.default_folder_view(snapshot.directory.clone()) {
+            return match position {
+                Some(pos) => {
+                    self.directory_settings.remove(pos);
+                    true
+                }
+                None => false,
+            };
+        }
+
+        match position {
+            Some(pos) if self.directory_settings[pos] == snapshot => false,
+            Some(pos) => {
+                // Most recently changed last, so the cap below drops the
+                // folders that haven't been touched for longest.
+                self.directory_settings.remove(pos);
+                self.directory_settings.push(snapshot);
+                true
+            }
+            None => {
+                self.directory_settings.push(snapshot);
+                if self.directory_settings.len() > MAX_REMEMBERED_FOLDER_VIEWS {
+                    let excess = self.directory_settings.len() - MAX_REMEMBERED_FOLDER_VIEWS;
+                    self.directory_settings.drain(..excess);
+                }
+                true
+            }
+        }
+    }
+
+    /// Forgets `directory`'s remembered view.
+    pub(crate) fn forget_folder_view(&mut self, directory: &Path) -> bool {
+        let before = self.directory_settings.len();
+        self.directory_settings
+            .retain(|entry| !same_folder(&entry.directory, directory));
+        let changed = before != self.directory_settings.len();
+        if changed {
+            self.folder_views_revision = self.folder_views_revision.wrapping_add(1);
+        }
+        changed
+    }
+
+    /// Makes `snapshot`'s view (display mode, sort, columns) the default for
+    /// every folder that has no view of its own.
+    pub(crate) fn use_folder_view_as_default(&mut self, snapshot: &DirectorySettingsSnapshot) {
+        self.default_display_mode = snapshot.display_mode;
+        let primary = snapshot.sort_keys.first().copied().unwrap_or(SortKey {
+            column: snapshot.sort_column,
+            ascending: snapshot.sort_ascending,
+        });
+        self.sort_column = primary.column;
+        self.sort_ascending = primary.ascending;
+        self.item_viewer_file_column_order = snapshot.item_viewer_file_column_order.clone();
+        self.item_viewer_file_column_sizes = snapshot.item_viewer_file_column_sizes.clone();
+        self.item_viewer_drive_column_order = snapshot.item_viewer_drive_column_order.clone();
+        self.item_viewer_drive_column_sizes = snapshot.item_viewer_drive_column_sizes.clone();
+        self.recycle_bin_column_order = snapshot.recycle_bin_column_order.clone();
+        self.recycle_bin_column_sizes = snapshot.recycle_bin_column_sizes.clone();
+        self.forget_folder_view(&snapshot.directory);
     }
 }
 
@@ -382,6 +492,30 @@ pub enum PasteConflictAction {
     Replace,
     Skip,
     Rename,
+    /// Replace only the existing items older than the one being pasted;
+    /// skip the rest.
+    ReplaceIfNewer,
+    /// Replace only the existing items smaller than the one being pasted;
+    /// skip the rest.
+    ReplaceIfLarger,
+}
+
+/// Whether `source` should replace `existing` under a conditional rule
+/// (Replace If Newer / If Larger); always true for plain Replace.
+fn replace_qualifies(action: PasteConflictAction, source: &Path, existing: &Path) -> bool {
+    let size = |p: &Path| {
+        if p.is_dir() {
+            crate::core::fs::calculate_folder_size_fast(p.to_path_buf())
+        } else {
+            std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
+        }
+    };
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match action {
+        PasteConflictAction::ReplaceIfNewer => modified(source) > modified(existing),
+        PasteConflictAction::ReplaceIfLarger => size(source) > size(existing),
+        _ => true,
+    }
 }
 
 /// A paste `paste_clipboard_native` held back because one or more source
@@ -480,11 +614,15 @@ fn delete_paths_native_standalone(
         let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
         // Recycle-bin view needs permanent delete; normal view keeps undo.
+        // The app shows its own confirmation before getting here (see
+        // `draw_delete_confirm`), so the shell must never ask again - and
+        // its recycle prompt is off by default on Windows anyway, which is
+        // why deletes used to happen with no prompt at all.
         let flags = match (allow_undo, silent) {
             (true, true) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
-            (true, false) => FOF_ALLOWUNDO | FOF_WANTNUKEWARNING,
+            (true, false) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION,
             (false, true) => FOF_NOCONFIRMATION | FOF_SILENT,
-            (false, false) => FOF_WANTNUKEWARNING,
+            (false, false) => FOF_NOCONFIRMATION,
         };
         file_op.SetOperationFlags(flags)?;
 
@@ -498,9 +636,42 @@ fn delete_paths_native_standalone(
         }
 
         file_op.PerformOperations()?;
+
+        // Declining the "are you sure?" confirmation doesn't always come back
+        // as an error - the operation can "succeed" with everything aborted.
+        // Report it the same way as an explicit cancel so callers can tell
+        // it apart from a real failure.
+        if file_op.GetAnyOperationsAborted()?.as_bool() {
+            return Err(user_cancelled_error());
+        }
     }
 
     Ok(())
+}
+
+/// Whether two paths name the same item on Windows, where file names are
+/// case-insensitive (`C:\a.txt` and `C:\A.TXT` are one file).
+fn same_path(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+}
+
+/// `HRESULT_FROM_WIN32(ERROR_CANCELLED)` - the error a shell file operation
+/// returns when the user cancels it.
+const HRESULT_ERROR_CANCELLED: i32 = 0x8007_04C7_u32 as i32;
+/// `COPYENGINE_E_USER_CANCELLED` - the copy engine's own "user cancelled".
+const HRESULT_COPYENGINE_USER_CANCELLED: i32 = 0x8027_0000_u32 as i32;
+
+fn user_cancelled_error() -> windows::core::Error {
+    windows::core::Error::from(windows::core::HRESULT(HRESULT_ERROR_CANCELLED))
+}
+
+/// Whether a shell file operation error means the user cancelled it (e.g.
+/// answered No to the delete confirmation), as opposed to a real failure.
+fn is_user_cancelled(error: &windows::core::Error) -> bool {
+    matches!(
+        error.code().0,
+        HRESULT_ERROR_CANCELLED | HRESULT_COPYENGINE_USER_CANCELLED
+    )
 }
 
 /// Free-function core of `MainWindow::find_recycled_pidl` - pulled out for
@@ -882,15 +1053,54 @@ impl MainWindow {
         sort_files_by_keys(&mut self.active_tab_mut().view_mut(side).files, &sort_keys);
 
         let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
-        let _ = persist_directory_settings_snapshot(
-            &mut self.settings_window.current_settings.directory_settings,
-            snapshot,
-        );
+        let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
 
         self.save_app_settings_to_disk();
     }
 
-    fn save_app_settings_to_disk(&self) {
+    /// Saves settings a couple of seconds after a folder's remembered view
+    /// last changed (view mode, sort, column widths ...), so those changes
+    /// survive even if the app doesn't exit cleanly. Call once per frame.
+    pub(crate) fn save_folder_views_if_due(&mut self, ctx: &egui::Context) {
+        const DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+        let revision = self.settings_window.current_settings.folder_views_revision;
+        if revision == self.saved_folder_views_revision {
+            self.folder_views_changed_at = None;
+            return;
+        }
+        let changed_at = *self
+            .folder_views_changed_at
+            .get_or_insert_with(std::time::Instant::now);
+        if changed_at.elapsed() >= DELAY {
+            self.save_app_settings_to_disk();
+            self.saved_folder_views_revision = revision;
+            self.folder_views_changed_at = None;
+        } else {
+            ctx.request_repaint_after(DELAY);
+        }
+    }
+
+    /// Re-applies each open view's folder view settings (e.g. after
+    /// remembered views were cleared) and reloads the visible ones.
+    fn reload_all_views(&mut self) {
+        let settings = self.settings_window.current_settings.clone();
+        for tab in &mut self.tabs {
+            apply_directory_settings_to_view(
+                &mut tab.primary_view,
+                &settings,
+                DisplayModeFallback::Default,
+            );
+            if let Some(split) = tab.split_view.as_mut() {
+                apply_directory_settings_to_view(split, &settings, DisplayModeFallback::Default);
+            }
+        }
+        self.load_view(SplitSide::Primary);
+        if self.active_tab().split_view.is_some() {
+            self.load_view(SplitSide::Secondary);
+        }
+    }
+
+    pub(crate) fn save_app_settings_to_disk(&self) {
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -972,6 +1182,13 @@ impl MainWindow {
         crate::core::indexer::save_tag_icon_style(
             self.settings_window.current_settings.tag_icon_style,
         );
+        crate::core::indexer::save_sidebar_visibility(
+            &self.settings_window.current_settings.sidebar_visibility,
+        );
+        crate::core::perf::save_performance_panel_visible(
+            self.settings_window.current_settings.show_performance_panel,
+        );
+        crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
         crate::core::context_menu_order::save_context_menu_order(
             &self.settings_window.current_settings.context_menu_order,
         );
@@ -1027,16 +1244,45 @@ impl MainWindow {
             view.size_rx = None;
             view.pending_size_queue.clear();
             view.pending_size_set.clear();
+            view.load_started_at = None;
+            view.size_scan_started_at = None;
+            view.size_scan_folders = 0;
             view.is_loading = false;
             view.network_share_error = Arc::new(Mutex::new(None));
+            view.scan_token = Arc::new(());
             view.explorer_state.selected_paths.clear();
             view.explorer_state.selection_anchor = None;
             view.explorer_state.selection_focus = None;
+            // Don't keep previewing a file from the folder just left.
+            if view
+                .preview_selection
+                .as_ref()
+                .is_some_and(|p| p.parent() != Some(current_path.as_path()))
+            {
+                view.preview_selection = None;
+            }
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
+            // Flat view belongs to the folder it was turned on in.
+            if view.flat.as_ref().is_some_and(|f| f != &current_path) {
+                view.flat = None;
+            }
+            view.flat_truncated = Default::default();
+            view.git_repo = None;
+            view.git = None;
+            view.remote_error = Default::default();
         }
-        self.folder_sizes.clear();
+        // Folder sizes are shared by both panes of a split: keep the other
+        // pane's (its folder isn't being reloaded), drop everything else.
+        let other_side = match side {
+            SplitSide::Primary => SplitSide::Secondary,
+            SplitSide::Secondary => SplitSide::Primary,
+        };
+        let other_dir = (self.active_tab().split_view.is_some())
+            .then(|| self.active_tab().view(other_side).nav.current.clone());
+        self.folder_sizes
+            .retain(|path, _| other_dir.as_deref().is_some_and(|dir| path.parent() == Some(dir)));
         self.file_size_text_cache.clear();
         self.folder_size_text_cache.clear();
         self.drive_size_text_cache.clear();
@@ -1093,10 +1339,12 @@ impl MainWindow {
                     self.settings_window.current_settings.custom_date_format.clone(),
                 );
             } else {
+                let still_wanted = Arc::downgrade(&self.active_tab_mut().view_mut(side).scan_token);
                 crate::core::fs::search_builtin_async(
                     query,
                     scope_folder,
                     tx,
+                    still_wanted,
                     self.settings_window.current_settings.date_style,
                     self.settings_window.current_settings.time_format_24h,
                     self.settings_window.current_settings.custom_date_format.clone(),
@@ -1105,6 +1353,46 @@ impl MainWindow {
             let view = self.active_tab_mut().view_mut(side);
             view.rx = Some(rx);
             view.is_loading = true;
+            return;
+        }
+
+        // A remote location's folder (SFTP, FTP, WebDAV, S3), listed by its
+        // connection's worker.
+        if crate::core::remote::is_remote(&current_path) {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            let dates = (settings.date_style, settings.time_format_24h, settings.custom_date_format.clone());
+            let ctx = self.egui_ctx.clone();
+            let error = Arc::clone(&self.active_tab().view(side).remote_error);
+            crate::core::remote::list_async(&current_path, tx, error, dates, move || {
+                if let Some(ctx) = &ctx {
+                    ctx.request_repaint();
+                }
+            });
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
+            return;
+        }
+
+        // A folder inside an archive (see `core::archive_view`): listed from
+        // the archive, read once and kept.
+        if crate::core::archive_view::split(&current_path).is_some() {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            crate::core::archive_view::list_folder_async(
+                current_path,
+                tx,
+                Arc::new(Mutex::new(None)),
+                settings.date_style,
+                settings.time_format_24h,
+                settings.custom_date_format.clone(),
+            );
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
             return;
         }
 
@@ -1153,6 +1441,39 @@ impl MainWindow {
             self.persist_recent_locations();
         }
 
+        // Git: which repository this folder is in, and its status.
+        let git_repo = if self.settings_window.current_settings.ui_prefs.git_status {
+            crate::core::git::find_workdir(&current_path)
+        } else {
+            None
+        };
+        if let Some(workdir) = &git_repo {
+            self.request_git_status(workdir);
+        }
+        self.tabs[self.active_tab].view_mut(side).git_repo = git_repo;
+        self.scan_portable_tags(&current_path);
+
+        // Flat view: every file in all subfolders, walked in the background.
+        if self.active_tab().view(side).is_flat() {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            let view = self.tabs[self.active_tab].view_mut(side);
+            crate::core::fs::flat_scan_async(
+                current_path,
+                tx,
+                Arc::downgrade(&view.scan_token),
+                settings.show_hidden_files_folders,
+                Arc::clone(&view.flat_truncated),
+                settings.date_style,
+                settings.time_format_24h,
+                settings.custom_date_format.clone(),
+            );
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
+            return;
+        }
+
         // Async directory listing
         let (tx, rx) = unbounded();
         let network_share_error = Arc::new(Mutex::new(None));
@@ -1172,6 +1493,7 @@ impl MainWindow {
         let view = self.active_tab_mut().view_mut(side);
         view.rx = Some(rx);
         view.is_loading = true;
+        view.load_started_at = Some(std::time::Instant::now());
         view.network_share_error = network_share_error;
 
         // Setup folder size calculation channels only if folder scanning is enabled
@@ -1330,6 +1652,11 @@ impl MainWindow {
     }
 
     pub fn create_new_folder(&mut self) {
+        // On a server: created there (then renamed in place, as here).
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            self.handle_remote_action(ItemViewerAction::CreateFolder);
+            return;
+        }
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
             || self.current_nav().is_tag_view()
@@ -1376,6 +1703,63 @@ impl MainWindow {
                 validation_error_show: true, // Show error immediately
             });
         }
+    }
+
+    /// New File > template: creates the file, reloads, selects it, and
+    /// starts renaming it (same as the plain New File).
+    pub fn create_file_from_template(&mut self, template: &crate::core::templates::Template) {
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            return;
+        }
+        if self.current_nav().is_root()
+            || self.current_nav().is_recycle_bin()
+            || self.current_nav().is_tag_view()
+        {
+            return;
+        }
+        let dir = self.current_nav().current.clone();
+        match crate::core::templates::create_from_template(&dir, template) {
+            Ok(path) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.load_path();
+                self.rename_state = Some(RenameState {
+                    path: path.clone(),
+                    new_name: name,
+                    should_focus: true,
+                    validation_error_show: false,
+                });
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![path]);
+            }
+            Err(err) => {
+                eprintln!("Couldn't create file from template: {err}");
+                let auto_open = self.settings_window.current_settings.auto_open_notification_panel;
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Copy,
+                    1,
+                    path_display_label(&dir),
+                    crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+                    auto_open,
+                );
+            }
+        }
+    }
+
+    /// Opens the templates folder in a new tab, creating it first.
+    pub fn open_templates_folder(&mut self) {
+        let custom = self.settings_window.current_settings.ui_prefs.templates_folder.clone();
+        let Some(dir) = crate::core::templates::templates_dir(custom.as_deref()) else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        self.open_new_tab(dir);
+        self.load_path();
     }
 
     pub fn create_new_file(&mut self) {
@@ -1435,6 +1819,9 @@ impl MainWindow {
     /// collapses to one step: the native picker's own default name already
     /// seeds a sensible shortcut name via `shortcut_file_name`.
     pub fn create_shortcut_here(&mut self) {
+        if crate::core::remote::is_remote(&self.current_nav().current) {
+            return;
+        }
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
             || self.current_nav().is_tag_view()
@@ -1627,6 +2014,12 @@ impl MainWindow {
                         .insert(notification_id, (rx, dest_zip));
                 }
             }
+            ItemViewerContextAction::Extract(archives, choice) => {
+                self.extract_archives(archives, choice);
+            }
+            ItemViewerContextAction::ExtractEntries(paths, choice) => {
+                self.extract_archive_entries(paths, choice);
+            }
             ItemViewerContextAction::RenameRequest(path, new_name) => {
                 let trimmed = new_name.trim();
 
@@ -1700,6 +2093,9 @@ impl MainWindow {
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
             }
+            // (Not for files on a server.)
+            ItemViewerContextAction::BulkRenameRequest(paths)
+                if paths.iter().any(|p| crate::core::remote::is_remote(p)) => {}
             ItemViewerContextAction::BulkRenameRequest(paths) => {
                 self.pending_bulk_rename =
                     Some(crate::gui::windows::containers::bulk_rename::BulkRenameState::new(paths));
@@ -1776,43 +2172,7 @@ impl MainWindow {
                 self.load_path();
             }
             ItemViewerContextAction::Delete(paths, permanent) => {
-                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
-                let destination_label = if allow_undo {
-                    self.i18n.tr("recycle_bin")
-                } else {
-                    String::new()
-                };
-                let delete_status = if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo, false) {
-                    eprintln!("Native delete failed: {:?}", e);
-
-                    // fallback (rare, but safe)
-                    for path in &paths {
-                        self.delete_path(path);
-                    }
-                    crate::gui::windows::containers::notifications::FileOpStatus::Failed
-                } else {
-                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
-                };
-                self.notifications_state.record_finished(
-                    crate::gui::windows::containers::notifications::FileOpKind::Delete,
-                    paths.len(),
-                    destination_label,
-                    delete_status,
-                    self.settings_window
-                        .current_settings
-                        .auto_open_notification_panel,
-                );
-
-                let mut tags_changed = false;
-                for path in &paths {
-                    tags_changed |= self.tags_state.remove_path_prefix(path);
-                }
-
-                if tags_changed {
-                    self.persist_tags();
-                }
-
-                self.load_path();
+                self.request_delete(paths, permanent, false);
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
@@ -1837,6 +2197,9 @@ impl MainWindow {
                         .pending_selection_paths = Some(created);
                     self.load_path();
                 }
+            }
+            ItemViewerContextAction::AnalyzeDiskUsage(path) => {
+                self.analyze_disk_usage(path);
             }
             ItemViewerContextAction::Checksum(path) => {
                 let file_name = path
@@ -2118,9 +2481,24 @@ impl MainWindow {
                 .auto_open_notification_panel,
         );
 
-        let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
+        match &origin {
+            PasteOrigin::UndoOf(..) => self.notifications_state.mark_history(
+                notification_id,
+                HistoryAction::Undo,
+            ),
+            PasteOrigin::RedoOf(..) => self.notifications_state.mark_history(
+                notification_id,
+                HistoryAction::Redo,
+            ),
+            _ => {}
+        }
+        // Runs now, or waits its turn behind another transfer on the same
+        // disk (Settings > Behavior > Queue Transfers On The Same Disk).
+        let handle = crate::core::robocopy::RobocopyHandle::idle(jobs, total_bytes);
+        let disks = crate::core::robocopy::transfer_disks(&paths, &target_dir);
+        let queue_enabled = self.settings_window.current_settings.ui_prefs.queue_transfers;
         self.notifications_state
-            .attach_robocopy_job(notification_id, handle);
+            .start_transfer(notification_id, handle, disks, queue_enabled);
 
         self.pending_robocopy_pastes.insert(
             notification_id,
@@ -2191,7 +2569,10 @@ impl MainWindow {
             let mut renames = HashMap::new();
             let mut replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
             let paths = match action {
-                PasteConflictAction::Replace => {
+                PasteConflictAction::Replace
+                | PasteConflictAction::ReplaceIfNewer
+                | PasteConflictAction::ReplaceIfLarger => {
+                    let mut kept = Vec::with_capacity(prompt.paths.len());
                     // Make Replace non-destructive: recycle the item that's
                     // about to be overwritten first (instead of letting
                     // robocopy overwrite it directly, which would be
@@ -2205,6 +2586,11 @@ impl MainWindow {
                                 path.file_name().map(|n| n.to_string_lossy().to_string())
                         {
                             let existing_path = prompt.target_dir.join(&name);
+                            // Replace If Newer/Larger: an item that doesn't
+                            // qualify is skipped instead.
+                            if !replace_qualifies(action, path, &existing_path) {
+                                continue;
+                            }
                             if delete_paths_native_standalone(
                                 vec![existing_path.clone()],
                                 true,
@@ -2217,8 +2603,9 @@ impl MainWindow {
                                 replaced.insert(existing_path, pidl);
                             }
                         }
+                        kept.push(path.clone());
                     }
-                    prompt.paths
+                    kept
                 }
                 PasteConflictAction::Skip => prompt
                     .paths
@@ -2499,6 +2886,47 @@ impl MainWindow {
                                 );
                             });
 
+                            // Conditional Replace: only the existing items
+                            // the pasted ones beat are replaced, the rest are
+                            // skipped.
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(self.i18n.tr("paste_conflict_replace_only_if"))
+                                        .size(palette.text_size)
+                                        .color(palette.text_normal.gamma_multiply(0.75)),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        for (key, tip, action) in [
+                                            (
+                                                "paste_conflict_if_larger",
+                                                "tooltip_paste_conflict_if_larger",
+                                                PasteConflictAction::ReplaceIfLarger,
+                                            ),
+                                            (
+                                                "paste_conflict_if_newer",
+                                                "tooltip_paste_conflict_if_newer",
+                                                PasteConflictAction::ReplaceIfNewer,
+                                            ),
+                                        ] {
+                                            if secondary_dialog_button(ui, palette, &self.i18n.tr(key))
+                                                .on_hover_text(
+                                                    egui::RichText::new(self.i18n.tr(tip))
+                                                        .size(palette.tooltip_text_size)
+                                                        .color(palette.tooltip_text_color),
+                                                )
+                                                .clicked()
+                                            {
+                                                resolution = Some(action);
+                                            }
+                                            ui.add_space(6.0);
+                                        }
+                                    },
+                                );
+                            });
+
                             // "Apply to all remaining destinations" row -
                             // only shown mid-Send-To-batch (see
                             // `show_apply_all`'s own doc comment above).
@@ -2599,6 +3027,184 @@ impl MainWindow {
     /// structure exactly (see that function's doc comment for why - not
     /// `egui::Window`, which has a remembered-size bug this app already hit
     /// once).
+    /// The Select by Pattern dialog: wildcard patterns matched against the
+    /// names of the items currently shown in one view.
+    pub fn draw_select_by_pattern_modal(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::core::utils::widgets::{
+            eden_button, modal_frame, modal_icon_header, primary_dialog_button,
+        };
+        use egui_phosphor::regular;
+
+        let Some(mut state) = self.select_by_pattern.take() else {
+            return;
+        };
+
+        // The items the view is showing (filters and hidden-file settings
+        // already applied) that match - recomputed only when the pattern,
+        // the Include Folders option, or the listing changes.
+        {
+            let view = self.active_tab().view(state.side);
+            let visible = &view.item_viewer_filter_state.cached_indices;
+            let key = (
+                state.pattern.clone(),
+                state.include_folders,
+                view.files.len(),
+                visible.len(),
+            );
+            if state.matches_for.as_ref() != Some(&key) {
+                state.matches = visible
+                    .iter()
+                    .copied()
+                    .filter(|&idx| {
+                        let file = &view.files[idx];
+                        (state.include_folders || !file.is_dir)
+                            && crate::core::pattern::matches_any(&state.pattern, &file.name)
+                    })
+                    .collect();
+                state.matches_for = Some(key);
+            }
+        }
+        let match_count = state.matches.len();
+
+        let mut outcome: Option<SelectByPatternMode> = None;
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+        egui::Area::new(egui::Id::new("select_by_pattern_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                if ui
+                    .interact(rect, ui.id().with("click"), egui::Sense::click())
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
+
+        egui::Area::new(egui::Id::new("select_by_pattern_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                modal_frame(&ctx.style_of(ctx.theme()), palette).show(ui, |ui| {
+                    ui.set_width(420.0);
+                    modal_icon_header(
+                        ui,
+                        palette,
+                        regular::ASTERISK,
+                        palette.primary,
+                        &self.i18n.tr("select_by_pattern_title"),
+                        Some(&self.i18n.tr("select_by_pattern_hint")),
+                    );
+                    ui.add_space(14.0);
+
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut state.pattern)
+                            .hint_text("*.jpg; *.png")
+                            .desired_width(f32::INFINITY),
+                    );
+                    if state.focus_requested {
+                        edit.request_focus();
+                        state.focus_requested = false;
+                    }
+                    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        outcome = Some(SelectByPatternMode::Replace);
+                    }
+                    ui.add_space(8.0);
+                    ui.checkbox(
+                        &mut state.include_folders,
+                        self.i18n.tr("select_by_pattern_include_folders"),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} {}",
+                            match_count,
+                            self.i18n.tr("select_by_pattern_matching")
+                        ))
+                        .size(palette.text_size - 1.0)
+                        .color(palette.text_normal.gamma_multiply(0.75)),
+                    );
+                    ui.add_space(14.0);
+
+                    ui.horizontal(|ui| {
+                        let any = match_count > 0;
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                primary_dialog_button(ui, palette, &self.i18n.tr("select_by_pattern_select"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Replace);
+                        }
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                eden_button(ui, palette, &self.i18n.tr("select_by_pattern_add"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Add);
+                        }
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                eden_button(ui, palette, &self.i18n.tr("select_by_pattern_deselect"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Remove);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if eden_button(ui, palette, &self.i18n.tr("close")).clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+                });
+            });
+
+        if let Some(mode) = outcome
+            && !state.matches.is_empty()
+        {
+            let side = state.side;
+            let view = self.active_tab_mut().view_mut(side);
+            let matches: Vec<PathBuf> = state
+                .matches
+                .iter()
+                .filter_map(|&idx| view.files.get(idx).map(|f| f.path.clone()))
+                .collect();
+            let selected = &mut view.explorer_state.selected_paths;
+            match mode {
+                SelectByPatternMode::Replace => {
+                    selected.clear();
+                    selected.extend(matches);
+                }
+                SelectByPatternMode::Add => selected.extend(matches),
+                SelectByPatternMode::Remove => {
+                    for path in &matches {
+                        selected.remove(path);
+                    }
+                }
+            }
+            view.explorer_state.selection_anchor = None;
+            view.explorer_state.selection_focus = None;
+            self.last_select_pattern = state.pattern.clone();
+            close = true;
+        }
+
+        if !close {
+            self.select_by_pattern = Some(state);
+        }
+    }
+
     pub fn draw_checksum_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
         use crate::core::utils::widgets::{ghost_dialog_button, modal_frame, modal_icon_header};
         use egui_phosphor::regular;
@@ -2815,6 +3421,15 @@ impl MainWindow {
                 self.persist_tags();
             }
 
+            // Settings > Behavior > Verify Copies: check the copies against
+            // their sources before calling the copy done.
+            if !pending.is_cut
+                && matches!(pending.origin, PasteOrigin::UserAction)
+                && self.settings_window.current_settings.ui_prefs.verify_copies
+            {
+                self.start_verify(id, &pending.paths, &pending.target_dir, &pending.renames);
+            }
+
             let pasted_paths = Self::selection_paths_after_paste(
                 &pending.target_dir,
                 &pending.before_entries,
@@ -2905,9 +3520,15 @@ impl MainWindow {
         }
 
         for (id, result) in finished {
-            self.pending_compress_jobs.remove(&id);
+            let dest_zip = self.pending_compress_jobs.remove(&id).map(|(_, zip)| zip);
             let status = match result {
-                Ok(()) => crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+                Ok(()) => {
+                    // A zip made from the Disk Usage dashboard shows up there.
+                    if let Some(folder) = dest_zip.as_deref().and_then(Path::parent) {
+                        self.disk_usage_state.folder_changed(folder);
+                    }
+                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                }
                 Err(e) => {
                     eprintln!("Compress failed: {e}");
                     crate::gui::windows::containers::notifications::FileOpStatus::Failed
@@ -2952,14 +3573,14 @@ impl MainWindow {
         pasted_paths
     }
 
-    pub fn delete_path(&self, path: &PathBuf) {
-        if !shell_delete_to_recycle_bin(path) {
-            if path.is_dir() {
-                let _ = std::fs::remove_dir_all(path);
-            } else {
-                let _ = std::fs::remove_file(path);
-            }
-        }
+    /// Fallback delete used only when the native `IFileOperation` delete
+    /// fails outright: moves `path` to the Recycle Bin via `SHFileOperation`
+    /// (which shows its own confirmation). Returns whether it succeeded.
+    /// Deliberately never falls back to `std::fs::remove_*` - that would
+    /// permanently delete files the user may just have declined to delete
+    /// in the confirmation dialog.
+    pub fn delete_path(&self, path: &PathBuf) -> bool {
+        shell_delete_to_recycle_bin(path)
     }
 
     /// `silent` suppresses any native "are you sure?" confirmation and
@@ -2995,6 +3616,110 @@ impl MainWindow {
         self.redo_stack.clear();
     }
 
+    /// Whether undoing `op` would land on a name that something else now
+    /// occupies. A name freed by another item of the same batch (e.g. a
+    /// bulk rename that swapped two names) doesn't count, and neither does a
+    /// case-only rename (Windows names are case-insensitive, so the "old"
+    /// name still resolves to the very same item).
+    fn undo_target_occupied(op: &UndoableOperation) -> bool {
+        match op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                !same_path(old_path, new_path) && old_path.exists()
+            }
+            UndoableOperation::BulkRename { pairs } => pairs.iter().any(|(old, _)| {
+                old.exists() && !pairs.iter().any(|(_, new)| same_path(new, old))
+            }),
+            UndoableOperation::Move { pairs, .. } => pairs
+                .iter()
+                .any(|(orig, cur)| !same_path(orig, cur) && orig.exists()),
+            // Undoing a copy only removes the copies it created.
+            UndoableOperation::Copy { .. } => false,
+        }
+    }
+
+    /// Whether redoing `op` would land on a name that something else now
+    /// occupies. Destinations that were originally a Replace resolution are
+    /// expected to be occupied - redo recycles them again first.
+    fn redo_target_occupied(op: &UndoableOperation) -> bool {
+        match op {
+            UndoableOperation::Rename { old_path, new_path } => {
+                !same_path(old_path, new_path) && new_path.exists()
+            }
+            UndoableOperation::BulkRename { pairs } => pairs.iter().any(|(_, new)| {
+                new.exists() && !pairs.iter().any(|(old, _)| same_path(old, new))
+            }),
+            UndoableOperation::Move { pairs, replaced, .. }
+            | UndoableOperation::Copy { pairs, replaced, .. } => pairs.iter().any(|(src, dest)| {
+                !same_path(src, dest) && dest.exists() && !replaced.contains_key(dest)
+            }),
+        }
+    }
+
+    /// What an undo/redo of `op` does, as a notification kind + item count
+    /// + destination: undoing a copy deletes the copies (to the Recycle
+    /// Bin); everything else repeats or reverses its own kind.
+    fn undo_redo_notification_parts(
+        &self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) -> (crate::gui::windows::containers::notifications::FileOpKind, usize, String) {
+        use crate::gui::windows::containers::notifications::FileOpKind;
+        match op {
+            UndoableOperation::Rename { .. } => (FileOpKind::Rename, 1, String::new()),
+            UndoableOperation::BulkRename { pairs } => {
+                (FileOpKind::Rename, pairs.len(), String::new())
+            }
+            UndoableOperation::Move { pairs, .. } => (FileOpKind::Move, pairs.len(), String::new()),
+            UndoableOperation::Copy { pairs, .. } if action == HistoryAction::Undo => {
+                (FileOpKind::Delete, pairs.len(), self.i18n.tr("recycle_bin"))
+            }
+            UndoableOperation::Copy { pairs, .. } => (FileOpKind::Copy, pairs.len(), String::new()),
+        }
+    }
+
+    /// Adds a finished, Undo/Redo-labelled entry to the notification panel
+    /// (and toast) for an undo/redo that completed synchronously, or that
+    /// couldn't be carried out - so neither happens silently. Move/Copy
+    /// undo/redo that run as robocopy jobs are labelled in
+    /// `start_robocopy_paste` instead.
+    fn report_undo_redo(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+        status: crate::gui::windows::containers::notifications::FileOpStatus,
+    ) {
+        let (kind, count, destination) = self.undo_redo_notification_parts(op, action);
+        let auto_open = self.settings_window.current_settings.auto_open_notification_panel;
+        let id = self
+            .notifications_state
+            .record_finished(kind, count, destination, status, auto_open);
+        self.notifications_state.mark_history(id, action);
+    }
+
+    fn report_undo_redo_failure(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) {
+        self.report_undo_redo(
+            op,
+            action,
+            crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+        );
+    }
+
+    fn report_undo_redo_success(
+        &mut self,
+        op: &UndoableOperation,
+        action: HistoryAction,
+    ) {
+        self.report_undo_redo(
+            op,
+            action,
+            crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+        );
+    }
+
     /// Reverses the most recently completed reversible operation, if any -
     /// wired to Ctrl+Z (see `handle_global_shortcuts`). Pops the entry
     /// immediately (rather than waiting for the reversal itself to finish)
@@ -3005,6 +3730,15 @@ impl MainWindow {
             return;
         };
 
+        // Undo must never overwrite something that now occupies an original
+        // name (robocopy would silently replace it). Leave the entry on the
+        // stack so it can be retried once the user moves that item away.
+        if Self::undo_target_occupied(&op) {
+            self.report_undo_redo_failure(&op, HistoryAction::Undo);
+            self.undo_stack.push_back(op);
+            return;
+        }
+
         match &op {
             UndoableOperation::Rename { old_path, new_path } => {
                 let Some(new_name) = old_path.file_name().map(|n| n.to_string_lossy().to_string())
@@ -3012,10 +3746,12 @@ impl MainWindow {
                     return;
                 };
                 if Self::rename_one_native(new_path, &new_name).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not rename back to original name");
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3027,10 +3763,12 @@ impl MainWindow {
                     })
                     .collect();
                 if self.rename_paths_native(reversed).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not restore original names");
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
             UndoableOperation::Move { pairs, side, .. } => {
@@ -3093,10 +3831,12 @@ impl MainWindow {
                         let pidls: Vec<Vec<u8>> = replaced.values().cloned().collect();
                         let _ = self.restore_paths_native(pidls);
                     }
+                    self.report_undo_redo_success(&op, HistoryAction::Undo);
                     self.redo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Undo failed: could not delete the copied item(s)");
+                    self.report_undo_redo_failure(&op, HistoryAction::Undo);
                 }
             }
         }
@@ -3111,6 +3851,14 @@ impl MainWindow {
             return;
         };
 
+        // Same rule as `undo`: never overwrite something that now occupies
+        // the name the operation is about to recreate.
+        if Self::redo_target_occupied(&op) {
+            self.report_undo_redo_failure(&op, HistoryAction::Redo);
+            self.redo_stack.push_back(op);
+            return;
+        }
+
         match &op {
             UndoableOperation::Rename { old_path, new_path } => {
                 let Some(new_name) = new_path.file_name().map(|n| n.to_string_lossy().to_string())
@@ -3118,10 +3866,12 @@ impl MainWindow {
                     return;
                 };
                 if Self::rename_one_native(old_path, &new_name).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Redo);
                     self.undo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply rename");
+                    self.report_undo_redo_failure(&op, HistoryAction::Redo);
                 }
             }
             UndoableOperation::BulkRename { pairs } => {
@@ -3133,10 +3883,12 @@ impl MainWindow {
                     })
                     .collect();
                 if self.rename_paths_native(forward).is_ok() {
+                    self.report_undo_redo_success(&op, HistoryAction::Redo);
                     self.undo_stack.push_back(op);
                     self.load_path();
                 } else {
                     eprintln!("Redo failed: could not re-apply bulk rename");
+                    self.report_undo_redo_failure(&op, HistoryAction::Redo);
                 }
             }
             UndoableOperation::Move { pairs, side, replaced } => {
@@ -3491,9 +4243,66 @@ impl MainWindow {
                         );
                     }
                 }
-                SettingsAction::ResetFavourites => {
-                    self.sidebar_state.favorites = self.default_favorites();
-                    self.persist_favorites();
+                SettingsAction::OpenTemplatesFolder => self.open_templates_folder(),
+                SettingsAction::ResetData(target) => {
+                    use crate::gui::windows::enums::ResetTarget;
+                    let settings = &mut self.settings_window.current_settings;
+                    match target {
+                        ResetTarget::Favorites => {
+                            self.sidebar_state.favorites = self.default_favorites();
+                            self.persist_favorites();
+                        }
+                        ResetTarget::CustomContextMenu => {
+                            settings.custom_context_menu.clear();
+                            settings.custom_context_menu_enabled = false;
+                            crate::core::context_menu_settings::save_custom_context_menu(
+                                &settings.custom_context_menu,
+                                settings.custom_context_menu_enabled,
+                            );
+                        }
+                        ResetTarget::CustomThemes => {
+                            let customizer = &mut self.theme_customizer;
+                            customizer.custom_themes.clear();
+                            customizer.selected_custom_theme_id = None;
+                            customizer.custom_theme_delete_confirm = None;
+                            customizer.new_custom_theme_name.clear();
+                            crate::core::indexer::save_custom_themes(
+                                &crate::core::indexer::CustomThemesSnapshot {
+                                    next_id: customizer.custom_themes_next_id,
+                                    items: Vec::new(),
+                                },
+                            );
+                            crate::core::indexer::save_selected_custom_theme(
+                                &crate::core::indexer::SelectedCustomThemeSnapshot { id: None },
+                            );
+                        }
+                        ResetTarget::SendTo => {
+                            settings.send_to.clear();
+                            settings.send_to_context_menu_enabled = false;
+                            crate::core::send_to::save_send_to(
+                                &settings.send_to,
+                                settings.send_to_context_menu_enabled,
+                            );
+                        }
+                        ResetTarget::TabGroups => {
+                            settings.tab_groups.clear();
+                            crate::core::tab_groups::save_tab_groups(&settings.tab_groups);
+                        }
+                        ResetTarget::Tags => {
+                            self.tags_state.groups.clear();
+                            self.tags_state.picker = None;
+                            self.tags_state.delete_confirmation = None;
+                            self.persist_tags();
+                        }
+                        ResetTarget::FolderSizeCache => {
+                            self.folder_size_cache.clear();
+                        }
+                        ResetTarget::FolderViews => {
+                            settings.directory_settings.clear();
+                            self.save_app_settings_to_disk();
+                            self.reload_all_views();
+                        }
+                    }
                 }
                 SettingsAction::ExportSettings => {
                     if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
@@ -3737,6 +4546,9 @@ impl MainWindow {
     pub fn handle_draw_about_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
         // TODO: Implement about window
         draw_about_window(&mut self.i18n, ctx, &mut self.about_window, palette);
+        if std::mem::take(&mut self.about_window.check_requested) {
+            self.check_for_updates_now();
+        }
     }
 
     pub fn handle_tabbar_action(
@@ -3744,16 +4556,42 @@ impl MainWindow {
         tabbar_action: Option<ItemViewerNavBarAction>,
         drag_sources: Option<&[PathBuf]>,
     ) {
+        if let Some(command) = tabbar_action.as_ref().and_then(|t| t.toolbar_command) {
+            use crate::core::toolbar::ToolbarItem;
+            let item_action = match command {
+                ToolbarItem::SelectAll => Some(ItemViewerAction::SelectAll),
+                ToolbarItem::InvertSelection => Some(ItemViewerAction::InvertSelection),
+                ToolbarItem::SelectByPattern => Some(ItemViewerAction::SelectByPattern),
+                ToolbarItem::PerformancePanel => {
+                    self.toggle_performance_panel();
+                    None
+                }
+                ToolbarItem::FlatView => {
+                    self.toggle_flat_view();
+                    None
+                }
+                ToolbarItem::TerminalPane => {
+                    self.toggle_terminal();
+                    None
+                }
+                ToolbarItem::Settings => {
+                    self.open_or_focus_settings_tab();
+                    None
+                }
+                _ => None,
+            };
+            if item_action.is_some() {
+                handle_pending_actions(item_action, self);
+            }
+        }
+
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 ItemViewerNavAction::Back => {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     // Store current path in navigation history before going back
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -3770,20 +4608,14 @@ impl MainWindow {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     self.current_nav_mut().go_forward();
                 }
                 ItemViewerNavAction::Up => {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     // Store current path in navigation history before going up
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -3819,10 +4651,7 @@ impl MainWindow {
                 let snapshot = directory_settings_snapshot_for_view(
                     self.active_tab().view(self.focused_split),
                 );
-                let _ = persist_directory_settings_snapshot(
-                    &mut self.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                 // Store current path in navigation history before navigating
                 if let Some(parent) = self.current_nav().get_parent() {
                     let current = self.current_nav().current.clone();
@@ -4117,16 +4946,10 @@ impl MainWindow {
                     if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
                         if let Some(tab) = self.tabs.get(idx) {
                             let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = persist_directory_settings_snapshot(
-                                &mut self.settings_window.current_settings.directory_settings,
-                                snapshot,
-                            );
+                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             if let Some(split) = tab.split_view.as_ref() {
                                 let snapshot = directory_settings_snapshot_for_view(split);
-                                let _ = persist_directory_settings_snapshot(
-                                    &mut self.settings_window.current_settings.directory_settings,
-                                    snapshot,
-                                );
+                                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
                         self.tabs.remove(idx);
@@ -4142,10 +4965,7 @@ impl MainWindow {
                     }
                 } else {
                     let snapshot = directory_settings_snapshot_for_view(&self.tabs[0].primary_view);
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     let (
                         _folder_scanning_enabled,
                         _show_hidden_files_folders,
@@ -4226,16 +5046,10 @@ impl MainWindow {
                         for &idx in &indices_to_close {
                             let tab = &self.tabs[idx];
                             let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = persist_directory_settings_snapshot(
-                                &mut self.settings_window.current_settings.directory_settings,
-                                snapshot,
-                            );
+                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             if let Some(split) = tab.split_view.as_ref() {
                                 let snapshot = directory_settings_snapshot_for_view(split);
-                                let _ = persist_directory_settings_snapshot(
-                                    &mut self.settings_window.current_settings.directory_settings,
-                                    snapshot,
-                                );
+                                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
 
@@ -4407,6 +5221,27 @@ impl MainWindow {
         drag_sources: Option<&[PathBuf]>,
     ) {
         if let Some(action) = sidebar_action {
+            if action.folder_tree_toggled || action.places_toggled {
+                crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
+            }
+            if action.add_network_location {
+                self.open_network_location_dialog(None);
+            }
+            if let Some(id) = action.edit_remote {
+                self.open_network_location_dialog(Some(id));
+            }
+            if let Some(id) = action.disconnect_remote {
+                crate::core::remote::disconnect(id);
+            }
+            if let Some(id) = action.remove_remote {
+                self.remove_remote_connection(id);
+            }
+            if let Some(index) = action.remove_network_place {
+                self.remove_network_place(index);
+            }
+            if let Some(drive) = action.eject_drive {
+                crate::core::places::eject(&drive);
+            }
             if let Some((from, to)) = action.reorder {
                 let len = self.sidebar_state.favorites.len();
 
@@ -4446,6 +5281,9 @@ impl MainWindow {
             if let Some(path) = action.open_new_tab {
                 self.open_new_tab(path);
                 self.load_path();
+            }
+            if let Some(path) = action.analyze_disk_usage {
+                self.analyze_disk_usage(path);
             }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);
@@ -4542,6 +5380,7 @@ impl MainWindow {
 
         let active_tab = self.active_tab();
         self.about_window.open
+            || self.disk_usage_state.is_open()
             || self.tags_state.picker.is_some()
             || self.tags_state.delete_confirmation.is_some()
             || self
@@ -4621,143 +5460,430 @@ impl MainWindow {
         Some(paths)
     }
 
+    /// Shows/hides the Performance panel (Ctrl+K, or its close
+    /// button) and remembers the choice, same as the Settings checkbox.
+    /// Turns the flat view (every file in all subfolders, as one list) on
+    /// or off for the focused pane's folder. Only real folders have one:
+    /// This PC, the Recycle Bin, search and tag views, and archives don't.
+    pub(crate) fn toggle_flat_view(&mut self) {
+        let side = self.focused_split;
+        let view = self.tabs[self.active_tab].view_mut(side);
+        let current = view.nav.current.clone();
+        let real_folder = current.is_absolute()
+            && !view.nav.is_root()
+            && !view.nav.is_recycle_bin()
+            && !view.nav.is_settings()
+            && !view.nav.is_tag_view()
+            && !view.nav.is_search_view()
+            && crate::core::archive_view::split(&current).is_none()
+            && !crate::core::remote::is_remote(&current);
+        if !real_folder && !view.is_flat() {
+            return;
+        }
+        view.flat = if view.is_flat() { None } else { Some(current) };
+        self.load_view(side);
+    }
+
+    /// Starts reading `workdir`'s Git status in the background.
+    fn request_git_status(&mut self, workdir: &std::path::Path) {
+        let ctx = self.egui_ctx.clone();
+        self.git.request(workdir, move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    /// Each frame: picks up finished Git status reads and hands the active
+    /// tab's views their repository's latest status (an `Arc` clone).
+    pub(crate) fn refresh_git_status(&mut self) {
+        for workdir in self.git.poll() {
+            self.request_git_status(&workdir);
+        }
+        let enabled = self.settings_window.current_settings.ui_prefs.git_status;
+        let tab = &mut self.tabs[self.active_tab];
+        let git = &self.git;
+        let set = |view: &mut crate::gui::windows::containers::structs::TabView| {
+            view.git = view.git_repo.as_deref().filter(|_| enabled).and_then(|w| git.status(w));
+        };
+        set(&mut tab.primary_view);
+        if let Some(split) = tab.split_view.as_mut() {
+            set(split);
+        }
+    }
+
+    /// Each frame: follows the Portable Tags setting, and imports tags found
+    /// stored with files in an opened folder.
+    pub(crate) fn sync_portable_tags(&mut self) {
+        let wanted = self.settings_window.current_settings.ui_prefs.portable_tags;
+        if wanted != crate::core::portable_tags::is_enabled() {
+            crate::core::portable_tags::set_enabled(wanted, &self.tags_state.to_snapshot());
+        }
+        let mut changed = false;
+        while let Ok(found) = self.portable_tags_inbox.1.try_recv() {
+            for (path, tags) in found {
+                if !self.tags_state.is_tagged(&path) {
+                    crate::core::portable_tags::mark_synced(&path, &tags);
+                    changed |= self.tags_state.import_portable(&path, &tags);
+                }
+            }
+        }
+        if changed {
+            self.persist_tags();
+        }
+    }
+
+    /// Looks for files in `dir` carrying tags this PC doesn't know yet
+    /// (portable tags), in the background.
+    fn scan_portable_tags(&self, dir: &std::path::Path) {
+        if !crate::core::portable_tags::is_enabled() || crate::core::drives::is_network_path(dir) {
+            return;
+        }
+        let known: std::collections::HashSet<PathBuf> = self
+            .tags_state
+            .groups
+            .iter()
+            .flat_map(|g| g.items.iter())
+            .filter(|p| p.parent() == Some(dir))
+            .cloned()
+            .collect();
+        let (dir, tx, ctx) = (dir.to_path_buf(), self.portable_tags_inbox.0.clone(), self.egui_ctx.clone());
+        std::thread::spawn(move || {
+            let found = crate::core::portable_tags::read_folder(&dir, &known);
+            if !found.is_empty()
+                && tx.send(found).is_ok()
+                && let Some(ctx) = ctx
+            {
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    /// Shows or hides the active tab's terminal pane.
+    pub(crate) fn toggle_terminal(&mut self) {
+        let tab = self.tabs[self.active_tab].id;
+        self.terminal.toggle(tab);
+    }
+
+    pub(crate) fn handle_terminal_action(
+        &mut self,
+        action: crate::gui::windows::terminal_panel::PanelAction,
+        dir: &std::path::Path,
+    ) {
+        let prefs = &mut self.settings_window.current_settings.ui_prefs;
+        if let Some(height) = action.new_height {
+            prefs.terminal.height = height.clamp(120.0, 2000.0);
+        }
+        if let Some(width) = action.new_width {
+            prefs.terminal.side_width = width.clamp(260.0, 3000.0);
+        }
+        if action.toggle_follow {
+            prefs.terminal.wsl_follow = !prefs.terminal.wsl_follow;
+        }
+        if let Some(id) = action.set_default_shell {
+            prefs.terminal.default_shell = Some(id);
+        }
+        if action.persist {
+            crate::core::ui_prefs::save_ui_prefs(prefs);
+        }
+        if action.open_external {
+            crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(dir);
+        }
+    }
+
+    pub(crate) fn toggle_performance_panel(&mut self) {
+        let settings = &mut self.settings_window.current_settings;
+        settings.show_performance_panel = !settings.show_performance_panel;
+        crate::core::perf::save_performance_panel_visible(settings.show_performance_panel);
+    }
+
+    /// Draws the Performance panel when it's switched on.
+    pub(crate) fn draw_performance_panel(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+        cpu_usage: Option<f32>,
+    ) {
+        if !self.settings_window.current_settings.show_performance_panel {
+            return;
+        }
+        self.performance_state.record_frame(cpu_usage);
+
+        let view = self.active_tab().view(self.focused_split);
+        let current = &view.nav.current;
+        let panel = crate::gui::windows::performance_ui::PanelContext {
+            current_folder: (!current.as_os_str().is_empty() && current.is_dir())
+                .then(|| current.clone()),
+            size_scan_in_progress: view
+                .size_scan_started_at
+                .map(|started| (view.size_scan_folders, started.elapsed())),
+            folder_scanning_enabled: self.settings_window.current_settings.folder_scanning_enabled,
+        };
+        if crate::gui::windows::performance_ui::draw_performance_panel(
+            ctx,
+            &self.i18n,
+            palette,
+            &mut self.performance_state,
+            panel,
+        ) {
+            self.toggle_performance_panel();
+        }
+    }
+
+    pub(crate) fn draw_disk_usage_window(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::gui::windows::disk_usage_ui::{DiskUsageAction, draw_disk_usage_window};
+        match draw_disk_usage_window(ctx, &self.i18n, palette, &mut self.disk_usage_state) {
+            Some(DiskUsageAction::OpenInNewTab(path)) => {
+                // Keep the result: "Analyze Disk Usage…" on the same folder
+                // brings it straight back.
+                self.disk_usage_state.hide();
+                self.open_new_tab(path);
+                self.load_path();
+            }
+            Some(DiskUsageAction::Reveal(file)) => {
+                let Some(folder) = file.parent().map(Path::to_path_buf) else {
+                    return;
+                };
+                self.disk_usage_state.hide();
+                self.open_new_tab(folder);
+                // Selected (and scrolled to) once the listing arrives.
+                self.active_tab_mut().primary_view.explorer_state.navigation_selection = Some(file);
+                self.load_path();
+            }
+            Some(DiskUsageAction::Delete { paths, permanent }) => {
+                // The usual delete: confirmation, notification, and Undo.
+                // The results are pruned once the user confirms, not here -
+                // the confirmation makes this asynchronous.
+                self.request_delete(paths, permanent, true);
+            }
+            Some(DiskUsageAction::MoveTo(paths)) => {
+                let picked = crate::gui::windows::windowsoverrides::dialog()
+                    .set_title(self.i18n.tr("disk_usage_move_to"))
+                    .pick_folder();
+                if let Some(destination) = picked {
+                    // A folder can't go inside itself, and moving something
+                    // to where it already is does nothing.
+                    let paths: Vec<PathBuf> = paths
+                        .into_iter()
+                        .filter(|p| !destination.starts_with(p) && p.parent() != Some(destination.as_path()))
+                        .collect();
+                    if paths.is_empty() {
+                        return;
+                    }
+                    // Same transfer as Send To > Move: conflict prompts,
+                    // progress notification, and Undo.
+                    self.send_to_folders(paths.clone(), vec![destination.clone()], true);
+                    self.disk_usage_state.files_moving(&paths, &destination);
+                }
+            }
+            Some(DiskUsageAction::Compress(paths)) => {
+                // The usual Compress: a zip next to the first item, with a
+                // progress notification; the folder it lands in is rescanned
+                // when it's done (see `poll_pending_compress`).
+                self.handle_context_action(ItemViewerContextAction::Compress(paths));
+            }
+            None => {}
+        }
+    }
+
+    /// Opens the Disk Usage dashboard for a folder or drive.
+    pub(crate) fn analyze_disk_usage(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            let ask_admin = self.settings_window.current_settings.ui_prefs.disk_usage_ask_admin;
+            self.disk_usage_state.open_for(path, ask_admin);
+        }
+    }
+
     pub fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+        // Keep the shared keymap in step with the settings (edits in
+        // Settings > Shortcuts, Reset Settings, Import Settings).
+        crate::core::keymap::set_overrides(&self.settings_window.current_settings.ui_prefs.shortcuts);
+        crate::core::keymap::expire_recording(ctx.cumulative_pass_nr());
+
         if self.global_shortcuts_disabled(ctx) {
             return;
         }
 
-        let shortcuts = ctx.input(|input| {
-            let ctrl = input.modifiers.ctrl;
-            let alt = input.modifiers.alt;
-            let shift = input.modifiers.shift;
+        use crate::core::keymap::{ShortcutAction, pressed};
 
-            (
-                ctrl && shift && input.key_pressed(egui::Key::Tab),
-                ctrl && input.key_pressed(egui::Key::Tab),
-                ctrl && input.key_pressed(egui::Key::T),
-                ctrl && input.key_pressed(egui::Key::W),
-                ctrl && shift && input.key_pressed(egui::Key::N),
-                ctrl && input.key_pressed(egui::Key::R),
-                input.key_pressed(egui::Key::F5),
-                input.key_pressed(egui::Key::F1),
-                alt && input.key_pressed(egui::Key::D),
-                input.key_pressed(egui::Key::F2),
-                alt && input.key_pressed(egui::Key::Enter),
-                ctrl && input.key_pressed(egui::Key::F),
-                ctrl && !shift && input.key_pressed(egui::Key::Z),
-                ctrl && input.key_pressed(egui::Key::Y),
-                ctrl && shift && input.key_pressed(egui::Key::Z),
-            )
-        });
-
-        if shortcuts.0 {
-            self.activate_tab_relative(-1);
+        if !ctx.egui_wants_keyboard_input()
+            && ctx.input(|input| pressed(input, ShortcutAction::PerformancePanel))
+        {
+            self.toggle_performance_panel();
             return;
         }
 
-        if shortcuts.1 {
-            self.activate_tab_relative(1);
-            return;
+        // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not fire while any text field has
+        // keyboard focus (address bar, search, filter, Find in Preview,
+        // Settings fields): there they belong to the text box's own undo,
+        // and must not also undo the last file rename/move/copy behind the
+        // user's back. (`run_shortcut` itself also skips them while a
+        // rename is open.)
+        let text_focused = ctx.egui_wants_keyboard_input();
+        for action in [
+            ShortcutAction::PreviousTab,
+            ShortcutAction::NextTab,
+            ShortcutAction::NewTab,
+            ShortcutAction::CloseTab,
+            ShortcutAction::NewFolder,
+            ShortcutAction::Refresh,
+            ShortcutAction::Fullscreen,
+            ShortcutAction::AddressBar,
+            ShortcutAction::Rename,
+            ShortcutAction::Properties,
+            ShortcutAction::Search,
+            ShortcutAction::Undo,
+            ShortcutAction::Redo,
+            ShortcutAction::CommandPalette,
+            ShortcutAction::TerminalPane,
+            ShortcutAction::FilterBar,
+            ShortcutAction::FlatView,
+        ] {
+            if matches!(action, ShortcutAction::Undo | ShortcutAction::Redo) && text_focused {
+                continue;
+            }
+            // While the command palette is open only its own key works.
+            if self.command_palette.is_some() && action != ShortcutAction::CommandPalette {
+                continue;
+            }
+            if ctx.input(|input| pressed(input, action)) {
+                self.run_shortcut(action);
+                // F1 (fullscreen) used to let the others be checked too;
+                // nothing else shares a key with it, so stopping is the same.
+                return;
+            }
         }
+    }
 
-        if shortcuts.2 {
-            let action = TabsAction {
-                open_new: true,
-                ..Default::default()
-            };
-            self.handle_tabs_action(Some(action), None);
-            return;
-        }
-
-        if shortcuts.3 {
-            let action = TabsAction {
-                close: Some(self.active_tab().id),
-                ..Default::default()
-            };
-            self.handle_tabs_action(Some(action), None);
-            return;
-        }
-
-        if shortcuts.4 {
-            self.create_new_folder();
-            return;
-        }
-
-        if shortcuts.5 || shortcuts.6 {
-            self.load_path();
-            return;
-        }
-
-        if shortcuts.7 {
-            self.toggle_fullscreen();
-        }
-
-        if shortcuts.8 {
-            self.enter_address_bar_edit_mode();
-            return;
-        }
-
-        if shortcuts.9 {
-            if self.rename_state.is_none()
-                && !self
-                    .active_tab()
-                    .view(self.focused_split)
-                    .breadcrumb_path_editing
-            {
-                let selected_count = self
-                    .active_tab()
-                    .view(self.focused_split)
-                    .explorer_state
-                    .selected_paths
-                    .len();
-
-                if selected_count > 1 {
-                    let mut paths: Vec<PathBuf> = self
+    /// Does what `action`'s keyboard shortcut does (also used by the
+    /// command palette). Actions the file list handles itself (Back,
+    /// Select All, ...) are forwarded to it.
+    pub(crate) fn run_shortcut(&mut self, action: crate::core::keymap::ShortcutAction) {
+        use crate::core::keymap::ShortcutAction;
+        match action {
+            ShortcutAction::PreviousTab => self.activate_tab_relative(-1),
+            ShortcutAction::NextTab => self.activate_tab_relative(1),
+            ShortcutAction::NewTab => {
+                let action = TabsAction {
+                    open_new: true,
+                    ..Default::default()
+                };
+                self.handle_tabs_action(Some(action), None);
+            }
+            ShortcutAction::CloseTab => {
+                let action = TabsAction {
+                    close: Some(self.active_tab().id),
+                    ..Default::default()
+                };
+                self.handle_tabs_action(Some(action), None);
+            }
+            ShortcutAction::NewFolder => self.create_new_folder(),
+            ShortcutAction::Refresh => self.load_path(),
+            ShortcutAction::Fullscreen => self.toggle_fullscreen(),
+            ShortcutAction::AddressBar => self.enter_address_bar_edit_mode(),
+            ShortcutAction::Rename => {
+                if self.rename_state.is_none()
+                    && !self
+                        .active_tab()
+                        .view(self.focused_split)
+                        .breadcrumb_path_editing
+                {
+                    let selected_count = self
                         .active_tab()
                         .view(self.focused_split)
                         .explorer_state
                         .selected_paths
-                        .iter()
-                        .cloned()
-                        .collect();
-                    paths.sort();
-                    self.handle_context_action(ItemViewerContextAction::BulkRenameRequest(paths));
-                } else if let Some(path) = self.selected_path_for_rename() {
-                    let action = ItemViewerAction::StartEdit(path);
-                    handle_pending_actions(Some(action), self);
+                        .len();
+
+                    if selected_count > 1 {
+                        let mut paths: Vec<PathBuf> = self
+                            .active_tab()
+                            .view(self.focused_split)
+                            .explorer_state
+                            .selected_paths
+                            .iter()
+                            .cloned()
+                            .collect();
+                        paths.sort();
+                        self.handle_context_action(ItemViewerContextAction::BulkRenameRequest(paths));
+                    } else if let Some(path) = self.selected_path_for_rename() {
+                        let action = ItemViewerAction::StartEdit(path);
+                        handle_pending_actions(Some(action), self);
+                    }
                 }
             }
-            return;
-        }
-
-        if shortcuts.10 {
-            if !self
-                .active_tab()
-                .view(self.focused_split)
-                .breadcrumb_path_editing
-                && let Some(paths) = self.selected_paths_for_properties()
-            {
-                self.open_properties_multi(&paths);
+            ShortcutAction::Properties => {
+                if !self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .breadcrumb_path_editing
+                    && let Some(paths) = self.selected_paths_for_properties()
+                {
+                    self.open_properties_multi(&paths);
+                }
             }
-        }
-
-        if shortcuts.11 {
-            self.enter_search_box_edit_mode();
-        }
-
-        // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not also fire while a rename/
-        // bulk-rename dialog is actively open - same guard as F2 above.
-        let rename_ui_open =
-            self.rename_state.is_some() || self.pending_bulk_rename.is_some();
-
-        if shortcuts.12 && !rename_ui_open {
-            self.undo();
-            return;
-        }
-
-        if (shortcuts.13 || shortcuts.14) && !rename_ui_open {
-            self.redo();
-            return;
+            ShortcutAction::Search => self.enter_search_box_edit_mode(),
+            // Not while a rename/bulk-rename dialog is open.
+            ShortcutAction::Undo | ShortcutAction::Redo => {
+                if self.rename_state.is_none() && self.pending_bulk_rename.is_none() {
+                    if action == ShortcutAction::Undo {
+                        self.undo();
+                    } else {
+                        self.redo();
+                    }
+                }
+            }
+            ShortcutAction::PerformancePanel => self.toggle_performance_panel(),
+            ShortcutAction::CommandPalette => self.toggle_command_palette(),
+            ShortcutAction::TerminalPane => self.toggle_terminal(),
+            ShortcutAction::FlatView => self.toggle_flat_view(),
+            // Opens the filter box (empty) so its options can be used
+            // without typing first.
+            ShortcutAction::FilterBar => {
+                let side = self.focused_split;
+                let filter = &mut self.active_tab_mut().view_mut(side).item_viewer_filter_state;
+                filter.active = true;
+                filter.focus_requested = false;
+            }
+            ShortcutAction::Back | ShortcutAction::Forward | ShortcutAction::Up => {
+                let nav = match action {
+                    ShortcutAction::Back => ItemViewerNavAction::Back,
+                    ShortcutAction::Forward => ItemViewerNavAction::Forward,
+                    _ => ItemViewerNavAction::Up,
+                };
+                self.handle_tabbar_action(
+                    Some(ItemViewerNavBarAction {
+                        nav: Some(nav),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            ShortcutAction::SelectAll => handle_pending_actions(Some(ItemViewerAction::SelectAll), self),
+            ShortcutAction::InvertSelection => {
+                handle_pending_actions(Some(ItemViewerAction::InvertSelection), self)
+            }
+            ShortcutAction::SelectByPattern => {
+                handle_pending_actions(Some(ItemViewerAction::SelectByPattern), self)
+            }
+            ShortcutAction::CopyPath => {
+                let mut paths: Vec<PathBuf> = self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .explorer_state
+                    .selected_paths
+                    .iter()
+                    .cloned()
+                    .collect();
+                paths.sort();
+                if !paths.is_empty() {
+                    self.handle_context_action(ItemViewerContextAction::CopyPath(paths));
+                }
+            }
         }
     }
 
@@ -4842,6 +5968,15 @@ impl MainWindow {
                             .pending_size_set
                             .remove(&path);
                     }
+                    if self.settings_window.current_settings.ui_prefs.persist_folder_sizes {
+                        if done {
+                            self.folder_size_cache.insert(&path, size);
+                        } else if self.folder_size_cache.get(&path).is_some() {
+                            // Keep showing the remembered size while the
+                            // re-check runs, rather than counting up from 0.
+                            continue;
+                        }
+                    }
                     self.folder_sizes.insert(
                         path.clone(),
                         ItemViewerFolderSizeState { bytes: size, done },
@@ -4856,10 +5991,14 @@ impl MainWindow {
             }
         }
 
+        // Only a sort by size moves anything.
         if updated {
             let view = self.active_tab_mut().view_mut(side);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            if view.sort_keys.iter().any(|k| k.column == SortColumn::Size) {
+                sort_files_by_keys(&mut view.files, &view.sort_keys);
+            }
         }
+        self.finish_size_scan_metric_if_done(side);
         updated
     }
 
@@ -4883,9 +6022,16 @@ impl MainWindow {
         let mut disconnected = false;
 
         {
+            // Take what has arrived, for up to a few milliseconds a frame:
+            // big folders and the flat view fill in quickly without the
+            // window stuttering.
             let view = self.active_tab().view(side);
             let rx = view.rx.as_ref().unwrap();
-            for _ in 0..128 {
+            let started = std::time::Instant::now();
+            loop {
+                if batch.len() % 256 == 255 && started.elapsed() >= std::time::Duration::from_millis(8) {
+                    break;
+                }
                 match rx.try_recv() {
                     Ok(item) => batch.push(item),
                     Err(crossbeam_channel::TryRecvError::Empty) => break,
@@ -4902,25 +6048,46 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .folder_scanning_enabled;
-            for item in batch.iter() {
-                if item.is_dir && folder_scanning_enabled {
+            let use_size_cache = self.settings_window.current_settings.ui_prefs.persist_folder_sizes;
+            // Inside an archive the listing already has each folder's total.
+            let in_archive = crate::core::archive_view::split(&self.active_tab().view(side).nav.current).is_some();
+            // Folder sizes on a server would mean listing every subfolder.
+            let in_remote = crate::core::remote::is_remote(&self.active_tab().view(side).nav.current);
+            for item in batch.iter_mut() {
+                if item.is_dir && in_remote {
+                } else if item.is_dir && in_archive {
+                    if let Some(bytes) = item.file_size {
+                        self.folder_sizes
+                            .insert(item.path.clone(), ItemViewerFolderSizeState { bytes, done: true });
+                    }
+                } else if item.is_dir && folder_scanning_enabled {
+                    // Show a size remembered from an earlier visit straight
+                    // away (still marked in-progress until re-checked).
+                    let cached = use_size_cache
+                        .then(|| self.folder_size_cache.get(&item.path))
+                        .flatten();
+                    if cached.is_some() {
+                        item.file_size = cached;
+                    }
                     // Only set up folder size tracking if scanning is enabled
                     self.folder_sizes.entry(item.path.clone()).or_insert(
                         ItemViewerFolderSizeState {
-                            bytes: 0,
+                            bytes: cached.unwrap_or(0),
                             done: false,
                         },
                     );
                     let view = self.active_tab_mut().view_mut(side);
                     if view.pending_size_set.insert(item.path.clone()) {
                         view.pending_size_queue.push_back(item.path.clone());
+                        view.size_scan_started_at.get_or_insert_with(std::time::Instant::now);
+                        view.size_scan_folders += 1;
                     }
                 }
             }
 
             let view = self.active_tab_mut().view_mut(side);
-            view.files.extend(batch);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            let keys = view.sort_keys.clone();
+            crate::core::utils::sorting::merge_sorted(&mut view.files, batch, &keys);
             any_change = true;
         }
 
@@ -4929,9 +6096,50 @@ impl MainWindow {
             view.rx = None;
             view.is_loading = false;
             any_change = true;
+            if let Some(started) = view.load_started_at.take() {
+                let sample = crate::gui::windows::performance_ui::TimedSample {
+                    path: view.nav.current.clone(),
+                    count: view.files.len(),
+                    elapsed: started.elapsed(),
+                };
+                // A folder with no subfolders has nothing to size; record
+                // that instead of leaving the previous folder's scan showing.
+                let no_subfolders = view.size_rx.is_some() && view.size_scan_folders == 0;
+                if no_subfolders {
+                    self.performance_state.last_size_scan = Some(
+                        crate::gui::windows::performance_ui::TimedSample {
+                            count: 0,
+                            elapsed: std::time::Duration::ZERO,
+                            ..sample.clone()
+                        },
+                    );
+                }
+                self.performance_state.last_listing = Some(sample);
+            }
+            self.finish_size_scan_metric_if_done(side);
         }
 
         any_change
+    }
+
+    /// Records the Performance panel's "Folder Size Scan" metric once every
+    /// folder in the current listing has reported its final size.
+    fn finish_size_scan_metric_if_done(&mut self, side: SplitSide) {
+        let view = self.active_tab_mut().view_mut(side);
+        if view.rx.is_some()
+            || !view.pending_size_set.is_empty()
+            || !view.pending_size_queue.is_empty()
+        {
+            return;
+        }
+        if let Some(started) = view.size_scan_started_at.take() {
+            let sample = crate::gui::windows::performance_ui::TimedSample {
+                path: view.nav.current.clone(),
+                count: view.size_scan_folders,
+                elapsed: started.elapsed(),
+            };
+            self.performance_state.last_size_scan = Some(sample);
+        }
     }
 }
 
@@ -5048,6 +6256,8 @@ pub fn calculate_folder_sizes_parallel(
 }
 
 pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
+    // Remote locations (SFTP, FTP, WebDAV, S3) handle their own.
+    let pending_action = pending_action.and_then(|action| explorer.handle_remote_action(action));
     if let Some(action) = pending_action {
         let side = explorer.focused_split;
         let is_drive_view = explorer.current_nav().is_root();
@@ -5056,7 +6266,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         if is_recycle_bin_view {
             match &action {
                 ItemViewerAction::CreateFolder
-                | ItemViewerAction::CreateFile
+                | ItemViewerAction::CreateFileFromTemplate(_)
                 | ItemViewerAction::CreateShortcutHere
                 | ItemViewerAction::Context(ItemViewerContextAction::CreateShortcut(_))
                 | ItemViewerAction::OpenTerminal
@@ -5082,7 +6292,53 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
         }
 
+        // Browsing inside an archive is read-only: nothing is created,
+        // renamed, deleted, moved or pasted there (extract first).
+        if crate::core::archive_view::split(&explorer.current_nav().current).is_some()
+            && matches!(
+                &action,
+                ItemViewerAction::CreateFolder
+                    | ItemViewerAction::CreateFileFromTemplate(_)
+                    | ItemViewerAction::CreateShortcutHere
+                    | ItemViewerAction::FilesDropped(_)
+                    | ItemViewerAction::StartEdit(_)
+                    | ItemViewerAction::Context(
+                        ItemViewerContextAction::Delete(..)
+                            | ItemViewerContextAction::Cut(_)
+                            | ItemViewerContextAction::Copy(_)
+                            | ItemViewerContextAction::Paste
+                            | ItemViewerContextAction::RenameRequest(..)
+                            | ItemViewerContextAction::BulkRenameRequest(_)
+                            | ItemViewerContextAction::BulkRenameCommit(_)
+                            | ItemViewerContextAction::Compress(_)
+                            | ItemViewerContextAction::CreateShortcut(_)
+                            | ItemViewerContextAction::SendTo(..)
+                    )
+            )
+        {
+            return;
+        }
+
         match action {
+            // Handled by `handle_remote_action` (only offered for remote items).
+            ItemViewerAction::RemoteDownloadTo(_) => {}
+            ItemViewerAction::OpenWithDefault(paths)
+                if !paths.is_empty() && paths.iter().all(|p| crate::core::archive_view::is_inside_archive(p)) =>
+            {
+                for path in paths {
+                    explorer.open_from_archive(path);
+                }
+            }
+            // Double-clicking a zip/7z/tar opens it like a folder
+            // (Settings > Behavior > Open Archives Like Folders).
+            ItemViewerAction::OpenWithDefault(paths)
+                if paths.len() == 1
+                    && explorer.settings_window.current_settings.ui_prefs.browse_archives
+                    && crate::core::archive_view::is_browsable_archive(&paths[0]) =>
+            {
+                let path = paths.into_iter().next().unwrap_or_default();
+                handle_pending_actions(Some(ItemViewerAction::Open(path)), explorer);
+            }
             ItemViewerAction::Sort {
                 column,
                 additive,
@@ -5117,10 +6373,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::FitColumn(column) => {
@@ -5142,7 +6395,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.column_state.layout_generation.wrapping_add(1);
             }
             ItemViewerAction::CreateFolder => explorer.create_new_folder(),
-            ItemViewerAction::CreateFile => explorer.create_new_file(),
+            ItemViewerAction::CreateFileFromTemplate(template) => {
+                explorer.create_file_from_template(&template)
+            }
+            ItemViewerAction::OpenTemplatesFolder => explorer.open_templates_folder(),
             ItemViewerAction::CreateShortcutHere => explorer.create_shortcut_here(),
             ItemViewerAction::RefreshCurrentDirectory => {
                 clear_clipboard_files();
@@ -5173,10 +6429,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnRight(column) => {
@@ -5200,10 +6453,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnToStart(column) => {
@@ -5231,10 +6481,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnToEnd(column) => {
@@ -5262,10 +6509,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::Select(path) => {
@@ -5309,6 +6553,32 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 view.explorer_state.selected_paths.clear();
                 view.explorer_state.selected_paths.extend(selected);
             }
+            ItemViewerAction::InvertSelection => {
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                let visible: Vec<PathBuf> = view
+                    .item_viewer_filter_state
+                    .cached_indices
+                    .iter()
+                    .map(|&idx| view.files[idx].path.clone())
+                    .collect();
+                let selected = &mut view.explorer_state.selected_paths;
+                let inverted: HashSet<PathBuf> =
+                    visible.into_iter().filter(|path| !selected.contains(path)).collect();
+                *selected = inverted;
+                view.explorer_state.selection_anchor = None;
+                view.explorer_state.selection_focus = None;
+            }
+            ItemViewerAction::SelectByPattern => {
+                explorer.select_by_pattern = Some(SelectByPatternState {
+                    side: explorer.focused_split,
+                    pattern: explorer.last_select_pattern.clone(),
+                    include_folders: false,
+                    focus_requested: true,
+                    matches: Vec::new(),
+                    matches_for: None,
+                });
+            }
             ItemViewerAction::DeselectAll => {
                 let side = explorer.focused_split;
                 explorer
@@ -5325,8 +6595,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     if let Some(anchor_idx) = view.explorer_state.selection_anchor {
                         if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
                             // Check if we're in a filtered view
-                            let is_filtered = (view.item_viewer_filter_state.active
-                                && !view.item_viewer_filter_state.query.is_empty())
+                            let is_filtered = view.item_viewer_filter_state.narrows()
                                 || view.item_viewer_filter_state.cached_indices.len()
                                     != view.files.len();
 
@@ -5395,10 +6664,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let snapshot = directory_settings_snapshot_for_view(
                     explorer.active_tab().view(explorer.focused_split),
                 );
-                let _ = persist_directory_settings_snapshot(
-                    &mut explorer.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
 
                 // Store current path in navigation history before navigating
                 if let Some(parent) = explorer.current_nav().get_parent() {
@@ -5462,12 +6728,14 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     validation_error_show: false,
                 });
             }
+            ItemViewerAction::ToggleQuickLook => {
+                explorer.toggle_quick_look();
+            }
             ItemViewerAction::ReplaceSelection(path) => {
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);
                     // Check if we're in a filtered view
-                    let is_filtered = view.item_viewer_filter_state.active
-                        && !view.item_viewer_filter_state.query.is_empty();
+                    let is_filtered = view.item_viewer_filter_state.narrows();
 
                     if is_filtered {
                         // Use filtered indices
@@ -5580,13 +6848,31 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.explorer_state.selection_focus = None;
                 }
             }
+            ItemViewerAction::ResetFolderView => {
+                let directory = explorer.active_tab().view(side).nav.current.clone();
+                if explorer
+                    .settings_window
+                    .current_settings
+                    .forget_folder_view(&directory)
+                {
+                    explorer.save_app_settings_to_disk();
+                }
+                // Reloading re-applies the (now default) view.
+                explorer.load_view(side);
+            }
+            ItemViewerAction::UseFolderViewAsDefault => {
+                let snapshot =
+                    directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                explorer
+                    .settings_window
+                    .current_settings
+                    .use_folder_view_as_default(&snapshot);
+                explorer.save_app_settings_to_disk();
+            }
             ItemViewerAction::ColumnSizesChanged => {
                 let snapshot =
                     directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                let _ = persist_directory_settings_snapshot(
-                    &mut explorer.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
 
                 explorer.save_app_settings_to_disk();
             }
@@ -5804,6 +7090,10 @@ impl MainWindow {
                     },
                 );
             }
+            ThemeCustomizerAction::PreviewFrameChanged(frame) => {
+                self.settings_window.current_settings.ui_prefs.preview_frame = frame;
+                crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
+            }
             ThemeCustomizerAction::MinTabWidthChanged(width) => {
                 self.min_tab_width = width;
                 crate::core::indexer::save_tab_layout(
@@ -5815,4 +7105,399 @@ impl MainWindow {
             }
         }
     }
+
+    /// Records a delete the user asked for so `draw_delete_confirm` can ask
+    /// before anything is removed.
+    pub(crate) fn request_delete(
+        &mut self,
+        paths: Vec<PathBuf>,
+        permanent: bool,
+        from_disk_usage: bool,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+        self.pending_local_delete =
+            Some(crate::gui::windows::structs::PendingLocalDelete { paths, permanent, from_disk_usage });
+    }
+
+    /// Actually deletes, once the user has confirmed.
+    pub(crate) fn perform_delete(&mut self, paths: Vec<PathBuf>, permanent: bool) {
+                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
+                let destination_label = if allow_undo {
+                    self.i18n.tr("recycle_bin")
+                } else {
+                    String::new()
+                };
+                use crate::gui::windows::containers::notifications::FileOpStatus;
+                // Whatever the shell API reports, the result on disk is what
+                // counts: answering No to the confirmation doesn't reliably
+                // come back as an error or an "aborted" flag, so a delete that
+                // left every item in place is reported as Cancelled rather
+                // than Completed, and one that removed only some as Failed.
+                let status_on_disk = |paths: &[PathBuf]| {
+                    let remaining = paths.iter().filter(|path| path.exists()).count();
+                    if remaining == 0 {
+                        FileOpStatus::Completed
+                    } else if remaining == paths.len() {
+                        FileOpStatus::Cancelled
+                    } else {
+                        FileOpStatus::Failed
+                    }
+                };
+                let delete_status = match self.delete_paths_native(paths.clone(), allow_undo, false) {
+                    Ok(()) => status_on_disk(&paths),
+                    // The user answered No to the confirmation: nothing was
+                    // deleted, and nothing else may be attempted.
+                    Err(e) if is_user_cancelled(&e) => FileOpStatus::Cancelled,
+                    Err(e) => {
+                        eprintln!("Native delete failed: {:?}", e);
+                        // Fallback for a genuinely broken native operation:
+                        // only ever the Recycle Bin (which asks for its own
+                        // confirmation), never a silent permanent delete.
+                        for path in &paths {
+                            self.delete_path(path);
+                        }
+                        status_on_disk(&paths)
+                    }
+                };
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Delete,
+                    paths.len(),
+                    destination_label,
+                    delete_status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
+                );
+
+                // Only untag items that are actually gone - a cancelled or
+                // partly failed delete must not strip tags from files that
+                // are still there.
+                let mut tags_changed = false;
+                for path in paths.iter().filter(|path| !path.exists()) {
+                    tags_changed |= self.tags_state.remove_path_prefix(path);
+                }
+
+                if tags_changed {
+                    self.persist_tags();
+                }
+
+                self.load_path();
+    }
+
+    /// "Delete these items?" - the app's own confirmation.
+    ///
+    /// Windows only shows one for a recycle if the Recycle Bin's
+    /// confirmation is switched on, and that is off by default, so deletes
+    /// used to happen with no prompt at all.
+    pub(crate) fn draw_delete_confirm(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::core::utils::widgets::{
+            eden_button, modal_frame, modal_icon_header, primary_dialog_button,
+        };
+        use egui_phosphor::regular;
+        let Some(pending) = self.pending_local_delete.take() else {
+            return;
+        };
+        let mut confirmed = false;
+        let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Area::new(egui::Id::new("local_delete_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                ui.interact(rect, ui.id().with("block"), egui::Sense::click());
+            });
+        egui::Area::new(egui::Id::new("local_delete_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                modal_frame(&ctx.style_of(ctx.theme()), palette).show(ui, |ui| {
+                    ui.set_width(420.0);
+                    let detail = if pending.paths.len() == 1 {
+                        pending.paths[0]
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    } else {
+                        format!("{} {}", pending.paths.len(), self.i18n.tr("items_capital"))
+                    };
+                    let hint = if pending.permanent {
+                        self.i18n.tr("delete_confirm_hint_permanent")
+                    } else {
+                        self.i18n.tr("delete_confirm_hint_recycle")
+                    };
+                    let title = if pending.permanent {
+                        self.i18n.tr("delete_confirm_title_permanent")
+                    } else {
+                        self.i18n.tr("delete_confirm_title")
+                    };
+                    modal_icon_header(
+                        ui,
+                        palette,
+                        regular::TRASH,
+                        ui.visuals().warn_fg_color,
+                        &title,
+                        Some(&format!("{detail}
+
+{hint}")),
+                    );
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        if primary_dialog_button(ui, palette, &self.i18n.tr("delete")).clicked() {
+                            confirmed = true;
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if eden_button(ui, palette, &self.i18n.tr("cancel")).clicked() {
+                                cancelled = true;
+                            }
+                        });
+                    });
+                });
+            });
+
+        if confirmed {
+            let paths = pending.paths.clone();
+            self.perform_delete(pending.paths, pending.permanent);
+            if pending.from_disk_usage {
+                self.disk_usage_state.files_removed(&paths);
+            }
+        } else if cancelled {
+            // Saying no is an outcome worth reporting, same as the shell's
+            // own prompt used to.
+            self.notifications_state.record_finished(
+                crate::gui::windows::containers::notifications::FileOpKind::Delete,
+                pending.paths.len(),
+                String::new(),
+                crate::gui::windows::containers::notifications::FileOpStatus::Cancelled,
+                self.settings_window
+                    .current_settings
+                    .auto_open_notification_panel,
+            );
+        } else {
+            // Still waiting for an answer.
+            self.pending_local_delete = Some(pending);
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod conflict_rule_tests {
+    use super::*;
+
+    #[test]
+    fn replace_if_newer_or_larger_compares_the_right_way() {
+        let dir = std::env::temp_dir().join(format!("eden-conflict-rules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let small_old = dir.join("small_old.txt");
+        let big_new = dir.join("big_new.txt");
+        std::fs::write(&small_old, b"a").unwrap();
+        std::fs::write(&big_new, b"abcdef").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&small_old).unwrap().set_modified(old).unwrap();
+
+        use PasteConflictAction::*;
+        assert!(replace_qualifies(ReplaceIfNewer, &big_new, &small_old));
+        assert!(!replace_qualifies(ReplaceIfNewer, &small_old, &big_new));
+        assert!(replace_qualifies(ReplaceIfLarger, &big_new, &small_old));
+        assert!(!replace_qualifies(ReplaceIfLarger, &small_old, &big_new));
+        assert!(!replace_qualifies(ReplaceIfLarger, &big_new, &big_new), "same size isn't larger");
+        assert!(replace_qualifies(Replace, &small_old, &big_new));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod undo_redo_safety_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("eden_undo_test_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn undo_rename_is_blocked_when_a_new_item_took_the_old_name() {
+        let dir = scratch("rename");
+        let (old, new) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&new, "renamed").unwrap();
+        let op = UndoableOperation::Rename { old_path: old.clone(), new_path: new };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        std::fs::write(&old, "someone else's new file").unwrap();
+        assert!(MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn case_only_rename_can_still_be_undone() {
+        let dir = scratch("case");
+        let new = dir.join("Report.txt");
+        std::fs::write(&new, "x").unwrap();
+        let op = UndoableOperation::Rename { old_path: dir.join("report.txt"), new_path: new };
+        assert!(!MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn bulk_rename_that_swapped_names_is_not_blocked() {
+        let dir = scratch("swap");
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "was b").unwrap();
+        std::fs::write(&b, "was a").unwrap();
+        let op = UndoableOperation::BulkRename { pairs: vec![(a.clone(), b.clone()), (b, a)] };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        assert!(!MainWindow::redo_target_occupied(&op));
+    }
+
+    #[test]
+    fn undo_move_is_blocked_when_the_original_location_is_occupied() {
+        let dir = scratch("move");
+        let (orig, cur) = (dir.join("src").join("f.txt"), dir.join("dst").join("f.txt"));
+        std::fs::create_dir_all(orig.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(cur.parent().unwrap()).unwrap();
+        std::fs::write(&cur, "moved").unwrap();
+        let op = UndoableOperation::Move {
+            pairs: vec![(orig.clone(), cur)],
+            side: SplitSide::Primary,
+            replaced: HashMap::new(),
+        };
+        assert!(!MainWindow::undo_target_occupied(&op));
+        std::fs::write(&orig, "new file at the old spot").unwrap();
+        assert!(MainWindow::undo_target_occupied(&op));
+    }
+
+    #[test]
+    fn redo_copy_is_blocked_unless_the_destination_was_a_replace() {
+        let dir = scratch("copy");
+        let (src, dest) = (dir.join("src.txt"), dir.join("dest.txt"));
+        std::fs::write(&src, "source").unwrap();
+        std::fs::write(&dest, "something new").unwrap();
+        let mut op = UndoableOperation::Copy {
+            pairs: vec![(src, dest.clone())],
+            side: SplitSide::Primary,
+            replaced: HashMap::new(),
+        };
+        assert!(MainWindow::redo_target_occupied(&op));
+        if let UndoableOperation::Copy { replaced, .. } = &mut op {
+            replaced.insert(dest, Vec::new());
+        }
+        assert!(!MainWindow::redo_target_occupied(&op));
+    }
+}
+
+#[cfg(test)]
+mod folder_view_memory_tests {
+    use super::*;
+
+    fn snapshot_with_mode(
+        settings: &AppSettings,
+        dir: &str,
+        mode: ItemViewerDisplayMode,
+    ) -> DirectorySettingsSnapshot {
+        let mut snapshot = settings.default_folder_view(PathBuf::from(dir));
+        snapshot.display_mode = mode;
+        snapshot
+    }
+
+    #[test]
+    fn a_view_matching_the_built_in_default_is_kept_when_the_user_default_differs() {
+        let mut settings = AppSettings::default();
+        settings.default_display_mode = ItemViewerDisplayMode::Gallery;
+        let details = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Details);
+        assert!(settings.remember_folder_view(details));
+        assert_eq!(
+            settings.folder_view(Path::new(r"C:\Photos")).map(|s| s.display_mode),
+            Some(ItemViewerDisplayMode::Details)
+        );
+    }
+
+    #[test]
+    fn a_view_matching_the_user_default_is_forgotten() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Gallery);
+        assert!(settings.remember_folder_view(gallery));
+        let default = settings.default_folder_view(PathBuf::from(r"C:\Photos"));
+        assert!(settings.remember_folder_view(default));
+        assert!(settings.folder_view(Path::new(r"C:\Photos")).is_none());
+    }
+
+    #[test]
+    fn lookup_ignores_case_and_trailing_separator() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Gallery);
+        settings.remember_folder_view(gallery.clone());
+        assert!(settings.folder_view(Path::new(r"c:\photos\")).is_some());
+
+        // Updating through a differently-cased path replaces, not duplicates.
+        let mut columns = gallery;
+        columns.directory = PathBuf::from(r"c:\PHOTOS");
+        columns.display_mode = ItemViewerDisplayMode::Columns;
+        settings.remember_folder_view(columns);
+        assert_eq!(settings.directory_settings.len(), 1);
+    }
+
+    #[test]
+    fn turning_it_off_ignores_saved_views_without_deleting_them() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\A", ItemViewerDisplayMode::Gallery);
+        settings.remember_folder_view(gallery);
+        settings.ui_prefs.remember_folder_views = false;
+        assert!(settings.folder_view(Path::new(r"C:\A")).is_none());
+        let columns = snapshot_with_mode(&settings, r"C:\B", ItemViewerDisplayMode::Columns);
+        assert!(!settings.remember_folder_view(columns));
+        settings.ui_prefs.remember_folder_views = true;
+        assert!(settings.folder_view(Path::new(r"C:\A")).is_some());
+        assert!(settings.folder_view(Path::new(r"C:\B")).is_none());
+    }
+
+    #[test]
+    fn oldest_views_are_dropped_past_the_cap() {
+        let mut settings = AppSettings::default();
+        for i in 0..MAX_REMEMBERED_FOLDER_VIEWS + 3 {
+            let snapshot = snapshot_with_mode(
+                &settings,
+                &format!(r"C:\F{i}"),
+                ItemViewerDisplayMode::Gallery,
+            );
+            settings.remember_folder_view(snapshot);
+        }
+        assert_eq!(settings.directory_settings.len(), MAX_REMEMBERED_FOLDER_VIEWS);
+        assert!(settings.folder_view(Path::new(r"C:\F0")).is_none());
+        assert!(settings.folder_view(Path::new(r"C:\F3")).is_some());
+    }
+
+    #[test]
+    fn use_as_default_updates_defaults_and_forgets_the_folder() {
+        let mut settings = AppSettings::default();
+        let mut snapshot = snapshot_with_mode(&settings, r"C:\A", ItemViewerDisplayMode::Columns);
+        snapshot.sort_keys = vec![SortKey { column: SortColumn::Size, ascending: false }];
+        settings.remember_folder_view(snapshot.clone());
+        settings.use_folder_view_as_default(&snapshot);
+        assert_eq!(settings.default_display_mode, ItemViewerDisplayMode::Columns);
+        assert_eq!(settings.sort_column, SortColumn::Size);
+        assert!(!settings.sort_ascending);
+        assert!(settings.directory_settings.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod same_folder_tests {
+    use super::same_folder;
+    use std::path::Path;
+
+    #[test]
+    fn compares_case_insensitively_including_non_ascii() {
+        assert!(same_folder(Path::new(r"C:\Photos\"), Path::new(r"c:\photos")));
+        assert!(same_folder(Path::new(r"C:\Éclair"), Path::new(r"c:\éclair")));
+        assert!(!same_folder(Path::new(r"C:\Photos"), Path::new(r"C:\Photos2")));
+    }
+
 }

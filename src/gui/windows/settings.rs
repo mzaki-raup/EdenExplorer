@@ -11,7 +11,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::containers::structs::ItemViewerDisplayMode;
-use crate::gui::windows::enums::SettingsAction;
+use crate::gui::windows::enums::{ResetTarget, SettingsAction};
 use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
 use egui::RichText;
@@ -40,11 +40,13 @@ pub enum SettingsCategory {
     SendTo,
     TabGroups,
     Tags,
+    Toolbar,
+    Shortcuts,
     Advanced,
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 11] = [
+    pub const ALL: [SettingsCategory; 13] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
@@ -55,10 +57,12 @@ impl SettingsCategory {
         SettingsCategory::SendTo,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
+        SettingsCategory::Toolbar,
+        SettingsCategory::Shortcuts,
         SettingsCategory::Advanced,
     ];
 
-    fn icon(self) -> &'static str {
+    pub(crate) fn icon(self) -> &'static str {
         match self {
             SettingsCategory::General => regular::GEAR,
             SettingsCategory::Behavior => regular::SLIDERS,
@@ -70,11 +74,13 @@ impl SettingsCategory {
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
+            SettingsCategory::Toolbar => regular::TOOLBOX,
+            SettingsCategory::Shortcuts => regular::KEYBOARD,
             SettingsCategory::Advanced => regular::WRENCH,
         }
     }
 
-    fn label(self, i18n: &I18n) -> String {
+    pub(crate) fn label(self, i18n: &I18n) -> String {
         match self {
             SettingsCategory::General => i18n.tr("settings_category_general"),
             SettingsCategory::Behavior => i18n.tr("settings_category_behavior"),
@@ -86,6 +92,8 @@ impl SettingsCategory {
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
+            SettingsCategory::Toolbar => i18n.tr("settings_category_toolbar"),
+            SettingsCategory::Shortcuts => i18n.tr("settings_category_shortcuts"),
             SettingsCategory::Advanced => i18n.tr("settings_category_advanced"),
         }
     }
@@ -159,6 +167,10 @@ impl Default for AppSettings {
             send_to_context_menu_enabled: false,
             tag_icon_style: crate::core::indexer::TagIconStyle::default(),
             context_menu_order: crate::core::context_menu_order::default_order(),
+            sidebar_visibility: crate::core::indexer::SidebarSectionVisibility::default(),
+            show_performance_panel: false,
+            ui_prefs: crate::core::ui_prefs::UiPrefs::default(),
+            folder_views_revision: 0,
         }
     }
 }
@@ -705,6 +717,20 @@ pub fn draw_settings_page(
                             SettingsCategory::Startup => {
                                 draw_startup_section(ui, i18n, settings, palette, &mut action);
                             }
+                            SettingsCategory::Toolbar => {
+                                if let Some(a) = crate::gui::windows::toolbar_ui::draw_toolbar_settings(
+                                    ui, i18n, settings, palette,
+                                ) {
+                                    action = Some(a);
+                                }
+                            }
+                            SettingsCategory::Shortcuts => {
+                                if let Some(a) = crate::gui::windows::shortcuts_ui::draw_shortcuts_settings(
+                                    ui, i18n, settings, palette,
+                                ) {
+                                    action = Some(a);
+                                }
+                            }
                             SettingsCategory::Advanced => {
                                 draw_advanced_section(ui, i18n, settings, palette, &mut action);
                             }
@@ -730,13 +756,13 @@ pub fn draw_settings_page(
             ctx, i18n, palette, tags_state,
         );
 
-        // Reset Favorites Confirmation Dialog
-        if settings.show_reset_favorites_confirmation {
+        // Reset Data confirmation dialog (Settings > Advanced > Reset Data)
+        if let Some(target) = settings.pending_reset_confirmation {
             let mut should_close = false;
-            egui::Window::new(i18n.tr("settings_favorites_reset_confirm"))
+            egui::Window::new(i18n.tr("reset_data_confirm_title"))
                 .collapsible(false)
                 .resizable(false)
-                .fixed_size([400.0, 150.0])
+                .fixed_size([420.0, 150.0])
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .frame(
                     egui::Frame::popup(&ctx.style_of(ctx.theme()))
@@ -744,16 +770,17 @@ pub fn draw_settings_page(
                 )
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        eden_text_label(ui, palette, &i18n.tr("settings_favorites_reset_confirm"));
-                        eden_text_label(
-                            ui,
-                            palette,
-                            &i18n.tr("settings_favorite_reset_confirm_label1"),
+                        ui.label(
+                            RichText::new(i18n.tr(target.i18n_key()))
+                                .strong()
+                                .size(palette.text_size)
+                                .color(palette.text_normal),
                         );
-                        eden_text_label(
-                            ui,
-                            palette,
-                            &i18n.tr("settings_favorite_reset_confirm_label2"),
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(i18n.tr(&format!("{}_confirm", target.i18n_key())))
+                                .size(palette.text_size)
+                                .color(palette.text_normal),
                         );
                         ui.add_space(20.0);
                         ui.horizontal(|ui| {
@@ -764,7 +791,7 @@ pub fn draw_settings_page(
                                         should_close = true;
                                     }
                                     if eden_button(ui, palette, &i18n.tr("reset")).clicked() {
-                                        action = Some(SettingsAction::ResetFavourites);
+                                        action = Some(SettingsAction::ResetData(target));
                                         should_close = true;
                                     }
                                 },
@@ -773,7 +800,7 @@ pub fn draw_settings_page(
                     });
                 });
             if should_close {
-                settings.show_reset_favorites_confirmation = false;
+                settings.pending_reset_confirmation = None;
             }
         }
     }
@@ -1003,6 +1030,89 @@ fn draw_general_section(
             info_icon(ui, &i18n.tr("tooltip_settings_contextmenu"), palette);
         });
     });
+
+    settings_section(ui, palette, |ui| {
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.address_bar_own_row,
+            "settings_address_bar_own_row",
+            "tooltip_settings_address_bar_own_row",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.breadcrumb_dropdowns,
+            "settings_breadcrumb_dropdowns",
+            "tooltip_settings_breadcrumb_dropdowns",
+            action,
+        );
+    });
+
+    settings_section(ui, palette, |ui| {
+        setting_label(
+            ui,
+            &i18n.tr("settings_sidebar_sections"),
+            Some((&i18n.tr("tooltip_settings_sidebar_sections"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        let visibility = &mut settings.current_settings.sidebar_visibility;
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let toggles: [(&mut bool, &str); 8] = [
+            (&mut prefs.folder_tree, "folder_tree_section"),
+            (&mut prefs.sidebar_cloud, "places_cloud"),
+            (&mut prefs.sidebar_linux, "places_linux"),
+            (&mut visibility.favorites, "favorites"),
+            (&mut visibility.tags, "tags"),
+            (&mut visibility.saved_searches, "saved_searches"),
+            (&mut visibility.recent_locations, "recent_locations"),
+            (&mut visibility.shared_network, "shared_network"),
+        ];
+        for (index, (shown, label_key)) in toggles.into_iter().enumerate() {
+            if index > 0 {
+                ui.add_space(SETTINGS_FIELD_GAP);
+            }
+            if setting_checkbox(
+                ui,
+                palette,
+                shown,
+                RichText::new(i18n.tr(label_key)).color(palette.text_normal),
+                format!("settings_sidebar_section_{label_key}"),
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+        }
+    });
+}
+
+/// A checkbox row with an info tooltip that applies (and saves) the
+/// settings as soon as it's toggled.
+fn applying_checkbox(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    value: &mut bool,
+    label_key: &str,
+    tooltip_key: &str,
+    action: &mut Option<SettingsAction>,
+) {
+    ui.horizontal(|ui| {
+        if setting_checkbox(
+            ui,
+            palette,
+            value,
+            RichText::new(i18n.tr(label_key)).color(palette.text_normal),
+            label_key,
+        ) {
+            *action = Some(SettingsAction::ApplySettings);
+        }
+        info_icon(ui, &i18n.tr(tooltip_key), palette);
+    });
 }
 
 fn draw_behavior_section(
@@ -1012,6 +1122,243 @@ fn draw_behavior_section(
     palette: &ThemePalette,
     action: &mut Option<SettingsAction>,
 ) {
+    settings_section(ui, palette, |ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.remember_folder_views,
+            "settings_remember_folder_views",
+            "tooltip_settings_remember_folder_views",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.persist_folder_sizes,
+            "settings_persist_folder_sizes",
+            "tooltip_settings_persist_folder_sizes",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.hover_previews,
+            "settings_hover_previews",
+            "tooltip_settings_hover_previews",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.quick_look,
+            "settings_quick_look",
+            "tooltip_settings_quick_look",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.browse_archives,
+            "settings_browse_archives",
+            "tooltip_settings_browse_archives",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.queue_transfers,
+            "settings_queue_transfers",
+            "tooltip_settings_queue_transfers",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.verify_copies,
+            "settings_verify_copies",
+            "tooltip_settings_verify_copies",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.git_status,
+            "settings_git_status",
+            "tooltip_settings_git_status",
+            action,
+        );
+    });
+
+    settings_section(ui, palette, |ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let mut enabled = prefs.spring_load_ms > 0;
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut enabled,
+            "settings_spring_load",
+            "tooltip_settings_spring_load",
+            action,
+        );
+        if enabled != (prefs.spring_load_ms > 0) {
+            prefs.spring_load_ms = if enabled { 800 } else { 0 };
+        }
+        if enabled {
+            ui.add_space(SETTINGS_FIELD_GAP);
+            setting_row(
+                ui,
+                |ui| {
+                    setting_label(ui, &i18n.tr("settings_spring_load_delay"), None, palette);
+                },
+                |ui| {
+                    apply_eden_visual_overrides(ui, palette);
+                    let changed = ui
+                        .add_sized(
+                            [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                            egui::DragValue::new(&mut prefs.spring_load_ms)
+                                .range(300..=3000)
+                                .speed(10.0)
+                                .suffix(" ms"),
+                        )
+                        .changed();
+                    if changed {
+                        *action = Some(SettingsAction::ApplySettings);
+                    }
+                },
+            );
+        }
+    });
+
+    settings_section(ui, palette, |ui| {
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(
+                    ui,
+                    &i18n.tr("settings_terminal_font_size"),
+                    Some((&i18n.tr("tooltip_settings_terminal_font_size"), palette)),
+                    palette,
+                );
+            },
+            |ui| {
+                apply_eden_visual_overrides(ui, palette);
+                let changed = ui
+                    .add_sized(
+                        [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                        egui::DragValue::new(&mut settings.current_settings.ui_prefs.terminal.font_size).range(8.0..=32.0).speed(0.2).max_decimals(0),
+                    )
+                    .changed();
+                if changed {
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(
+                    ui,
+                    &i18n.tr("settings_terminal_font"),
+                    Some((&i18n.tr("tooltip_settings_terminal_font"), palette)),
+                    palette,
+                );
+            },
+            |ui| {
+                let terminal = &mut settings.current_settings.ui_prefs.terminal;
+                let automatic = match crate::core::utils::fonts::pick_terminal_font_public() {
+                    Some(name) => format!("{} ({name})", i18n.tr("settings_terminal_font_auto")),
+                    None => i18n.tr("settings_terminal_font_auto"),
+                };
+                let selected = terminal.font_name.clone().unwrap_or_else(|| automatic.clone());
+                let mut picked: Option<Option<String>> = None;
+                draw_dropdown(ui, palette, "terminal_font_selector", SETTINGS_COMBO_WIDTH + 40.0, selected, |ui| {
+                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        if ui.selectable_label(terminal.font_name.is_none(), automatic.as_str()).clicked() {
+                            picked = Some(None);
+                            ui.close();
+                        }
+                        for font in crate::core::utils::fonts::get_font_list() {
+                            let chosen = terminal.font_name.as_deref() == Some(font.as_str());
+                            if ui.selectable_label(chosen, font.as_str()).clicked() {
+                                picked = Some(Some(font.clone()));
+                                ui.close();
+                            }
+                        }
+                    });
+                });
+                if let Some(font) = picked {
+                    terminal.font_name = font;
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.terminal.wsl_layout,
+            "settings_terminal_wsl_layout",
+            "tooltip_settings_terminal_wsl_layout",
+            action,
+        );
+    });
+
+    settings_section(ui, palette, |ui| {
+        setting_label(
+            ui,
+            &i18n.tr("settings_templates_folder"),
+            Some((&i18n.tr("tooltip_settings_templates_folder"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let dir = crate::core::templates::templates_dir(prefs.templates_folder.as_deref());
+        if let Some(dir) = &dir {
+            ui.label(
+                RichText::new(dir.display().to_string())
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        }
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if eden_button(ui, palette, &i18n.tr("settings_templates_browse")).clicked()
+                && let Some(folder) = crate::gui::windows::windowsoverrides::dialog().pick_folder()
+            {
+                prefs.templates_folder = Some(folder);
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            if eden_button(ui, palette, &i18n.tr("settings_templates_open")).clicked() {
+                *action = Some(SettingsAction::OpenTemplatesFolder);
+            }
+            if prefs.templates_folder.is_some()
+                && eden_button(ui, palette, &i18n.tr("settings_templates_reset")).clicked()
+            {
+                prefs.templates_folder = None;
+                *action = Some(SettingsAction::ApplySettings);
+            }
+        });
+    });
+
     settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if setting_checkbox(
@@ -1487,21 +1834,100 @@ fn draw_advanced_section(
     });
 
     settings_section(ui, palette, |ui| {
+        setting_label(
+            ui,
+            &i18n.tr("reset_data_title"),
+            Some((&i18n.tr("tooltip_reset_data"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        for target in ResetTarget::ALL {
+            setting_row(
+                ui,
+                |ui| {
+                    eden_text_label(ui, palette, &i18n.tr(target.i18n_key()));
+                },
+                |ui| {
+                    if eden_button(ui, palette, &format!("{} {}", regular::TRASH, i18n.tr("reset")))
+                        .clicked()
+                    {
+                        settings.pending_reset_confirmation = Some(target);
+                    }
+                },
+            );
+        }
+    });
+
+    settings_section(ui, palette, |ui| {
+        let mut portable = crate::core::app_data::is_portable();
         ui.horizontal(|ui| {
-            if eden_button(
+            if setting_checkbox(
                 ui,
                 palette,
-                &format!("{} {}", regular::TRASH, i18n.tr("settings_favorites_reset")),
-            )
-            .on_hover_text(
-                egui::RichText::new(&i18n.tr("tooltip_settings_favorites_reset"))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .clicked()
-            {
-                settings.show_reset_favorites_confirmation = true;
+                &mut portable,
+                RichText::new(i18n.tr("settings_portable_mode")).color(palette.text_normal),
+                "settings_portable_mode",
+            ) {
+                let result = if portable {
+                    crate::core::app_data::enable_portable_mode()
+                } else {
+                    crate::core::app_data::disable_portable_mode()
+                };
+                settings.portable_mode_status = Some(match result {
+                    Ok(_) => (true, i18n.tr(if portable {
+                        "settings_portable_mode_enabled"
+                    } else {
+                        "settings_portable_mode_disabled"
+                    })),
+                    Err(err) => (false, format!("{} {err}", i18n.tr("settings_portable_mode_failed"))),
+                });
             }
+            info_icon(ui, &i18n.tr("tooltip_settings_portable_mode"), palette);
         });
+        ui.add_space(SETTINGS_FIELD_GAP);
+        if let Some(dir) = crate::core::app_data::data_dir() {
+            ui.label(
+                RichText::new(format!("{} {}", i18n.tr("settings_data_folder"), dir.display()))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        }
+        if let Some((ok, message)) = &settings.portable_mode_status {
+            ui.add_space(4.0);
+            let color = if *ok {
+                palette.notification_status_success
+            } else {
+                palette.notification_status_error
+            };
+            ui.label(RichText::new(message).size(palette.text_size - 1.0).color(color));
+        }
+    });
+
+    settings_section(ui, palette, |ui| {
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.show_performance_panel,
+                RichText::new(i18n.tr("settings_show_performance_panel"))
+                    .color(palette.text_normal),
+                "settings_show_performance_panel",
+            ) {
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(ui, &i18n.tr("tooltip_settings_show_performance_panel"), palette);
+        });
+    });
+
+    settings_section(ui, palette, |ui| {
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.disk_usage_ask_admin,
+            "settings_disk_usage_ask_admin",
+            "tooltip_settings_disk_usage_ask_admin",
+            action,
+        );
     });
 }

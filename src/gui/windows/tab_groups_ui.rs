@@ -296,7 +296,7 @@ pub fn draw_tab_groups_settings(
                                         "Icon/Image",
                                         &["ico", "png", "jpg", "jpeg", "bmp", "gif"],
                                     )
-                                    .add_filter("All files", &["*"])
+                                    .add_filter("All Files", &["*"])
                                     .pick_file()
                                 {
                                     let stored_path =

@@ -15,6 +15,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 fn main() -> eframe::Result<()> {
+    // The elevated fast-scan helper (see `core::mft_helper`) is this same
+    // exe started with a special argument; it never opens a window.
+    if let Some(code) = crate::core::mft_helper::run_helper_from_args() {
+        std::process::exit(code);
+    }
+    // Files opened from inside archives last session (in the background:
+    // there may be many).
+    std::thread::spawn(crate::core::archive_view::clean_temp);
+    // Remote files downloaded to open or preview last session.
+    std::thread::spawn(crate::core::remote::clean_temp);
+
     let launch_options = match parse_args(std::env::args()) {
         Ok(options) => options,
         Err(error) => {

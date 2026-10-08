@@ -499,42 +499,41 @@ fn default_next_tag_group_id() -> u64 {
 }
 
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
+    let base = crate::core::app_data::data_dir()?;
     Some(
-        base.join("ExplorerEden")
-            .join("favorites")
+        base.join("favorites")
             .join(format!("drive_{}.bin", drive)),
     )
 }
 
 fn settings_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("settings.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("settings.bin"))
 }
 
 fn theme_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("theme.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("theme.bin"))
 }
 
 fn tags_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tags.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tags.bin"))
 }
 
 fn saved_searches_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("saved_searches.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("saved_searches.bin"))
 }
 
 fn recent_locations_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("recent_locations.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("recent_locations.bin"))
 }
 
 fn custom_themes_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("custom_themes.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("custom_themes.bin"))
 }
 
 /// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
@@ -585,8 +584,8 @@ impl Default for SidebarSectionsSnapshot {
 }
 
 fn sidebar_sections_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("sidebar_sections.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("sidebar_sections.bin"))
 }
 
 pub fn load_sidebar_sections() -> SidebarSectionsSnapshot {
@@ -661,8 +660,8 @@ impl Default for TabLayoutSnapshot {
 }
 
 fn tab_layout_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tab_layout.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tab_layout.bin"))
 }
 
 pub fn load_tab_layout() -> TabLayoutSnapshot {
@@ -681,6 +680,64 @@ pub fn load_tab_layout() -> TabLayoutSnapshot {
 
 pub fn save_tab_layout(snapshot: &TabLayoutSnapshot) {
     let Some(path) = tab_layout_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+/// Update-check bookkeeping (see `core::update`) - a brand-new, dedicated file
+/// for the same reason `TabLayoutSnapshot` above is, and emphatically not a
+/// field on `AppSettingsSnapshot`, whose whole-buffer decode would reset every
+/// other setting the user has (see `CLAUDE.md`).
+#[derive(Serialize, Deserialize)]
+pub struct UpdateStateSnapshot {
+    /// Unix seconds of the last automatic check, so it runs at most daily even
+    /// across restarts. Also written when a check fails, so an unreachable
+    /// forge is not retried on every launch.
+    pub last_check: u64,
+    /// A release the user chose to skip, as a bare version ("1.2.0"). Anything
+    /// newer than this is still offered. Empty means nothing is skipped.
+    pub skipped: String,
+    /// Whether to look for a newer release by itself. A check only ever reads
+    /// the public releases API of the forge this app is published from.
+    pub auto_check: bool,
+}
+
+impl Default for UpdateStateSnapshot {
+    fn default() -> Self {
+        Self {
+            last_check: 0,
+            skipped: String::new(),
+            auto_check: true,
+        }
+    }
+}
+
+fn update_state_cache_path() -> Option<PathBuf> {
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("update_state.bin"))
+}
+
+pub fn load_update_state() -> UpdateStateSnapshot {
+    let Some(path) = update_state_cache_path() else {
+        return UpdateStateSnapshot::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return UpdateStateSnapshot::default();
+    };
+    postcard::take_from_bytes::<UpdateStateSnapshot>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_update_state(snapshot: &UpdateStateSnapshot) {
+    let Some(path) = update_state_cache_path() else {
         return;
     };
     let Some(parent) = path.parent() else { return };
@@ -719,8 +776,8 @@ pub struct TagIconStyleSnapshot {
 }
 
 fn tag_icon_style_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tag_icon_style.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tag_icon_style.bin"))
 }
 
 pub fn load_tag_icon_style() -> TagIconStyle {
@@ -748,6 +805,62 @@ pub fn save_tag_icon_style(style: TagIconStyle) {
     }
 }
 
+/// Which optional sidebar sections are shown (Settings > General > Sidebar
+/// Sections). Places and Storage are always shown. A brand-new, dedicated
+/// file for the same reason `TabLayoutSnapshot` above is (and separate from
+/// `SidebarSectionsSnapshot`, which only remembers expanded/collapsed), so it can never
+/// break decoding of `ThemePalette`/`AppSettingsSnapshot`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarSectionVisibility {
+    pub favorites: bool,
+    pub tags: bool,
+    pub saved_searches: bool,
+    pub recent_locations: bool,
+    pub shared_network: bool,
+}
+
+impl Default for SidebarSectionVisibility {
+    fn default() -> Self {
+        Self {
+            favorites: true,
+            tags: true,
+            saved_searches: true,
+            recent_locations: true,
+            shared_network: true,
+        }
+    }
+}
+
+fn sidebar_visibility_cache_path() -> Option<PathBuf> {
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("sidebar_visibility.bin"))
+}
+
+pub fn load_sidebar_visibility() -> SidebarSectionVisibility {
+    let Some(path) = sidebar_visibility_cache_path() else {
+        return SidebarSectionVisibility::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SidebarSectionVisibility::default();
+    };
+    postcard::take_from_bytes::<SidebarSectionVisibility>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_sidebar_visibility(sections: &SidebarSectionVisibility) {
+    let Some(path) = sidebar_visibility_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(sections) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 /// Which `CustomThemeEntry` (by id, not name - a name can be edited later)
 /// the user most recently selected in Settings > Appearance > Custom
 /// Themes, so `ThemeCustomizer::new_custom_theme_name` can be pre-filled
@@ -763,8 +876,8 @@ pub struct SelectedCustomThemeSnapshot {
 }
 
 fn selected_custom_theme_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("selected_custom_theme.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("selected_custom_theme.bin"))
 }
 
 pub fn load_selected_custom_theme() -> SelectedCustomThemeSnapshot {
@@ -793,8 +906,8 @@ pub fn save_selected_custom_theme(snapshot: &SelectedCustomThemeSnapshot) {
 }
 
 fn window_position_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("window_position.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("window_position.bin"))
 }
 
 /// Last on-screen top-left corner of the app window, in physical pixels.
@@ -819,8 +932,8 @@ pub fn save_window_position(x: f32, y: f32) {
 /// Where user-browsed custom icons (for a custom context menu command, a
 /// favorite, ...) get copied to.
 pub fn custom_icons_dir() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("custom_icons"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("custom_icons"))
 }
 
 /// Copies a user-browsed icon/image file into the app's own data folder, so
@@ -935,6 +1048,8 @@ pub fn load_tags() -> Option<TagsSnapshot> {
 }
 
 pub fn save_tags(snapshot: &TagsSnapshot) {
+    // Also stores the changed tags with the files, when turned on.
+    crate::core::portable_tags::on_tags_saved(snapshot);
     let path = match tags_cache_path() {
         Some(path) => path,
         None => return,
@@ -1088,8 +1203,8 @@ pub struct SessionTabsSnapshot {
 }
 
 fn session_tabs_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("session_tabs.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("session_tabs.bin"))
 }
 
 pub fn load_session_tabs() -> Option<SessionTabsSnapshot> {

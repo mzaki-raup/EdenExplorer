@@ -63,7 +63,12 @@ impl Navigation {
             return None;
         }
 
-        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() || self.is_search_view() {
+        if self.is_recycle_bin()
+            || self.is_settings()
+            || self.is_tag_view()
+            || self.is_search_view()
+            || self.is_remote_root()
+        {
             return None;
         }
 
@@ -100,7 +105,12 @@ impl Navigation {
             return;
         }
 
-        if self.is_recycle_bin() || self.is_settings() || self.is_tag_view() || self.is_search_view() {
+        if self.is_recycle_bin()
+            || self.is_settings()
+            || self.is_tag_view()
+            || self.is_search_view()
+            || self.is_remote_root()
+        {
             return;
         }
 
@@ -123,6 +133,11 @@ impl Navigation {
     }
 
     /// Helper: are we at virtual root?
+    /// The top folder of a remote location (nothing above it to go up to).
+    pub fn is_remote_root(&self) -> bool {
+        crate::core::remote::split(&self.current).is_some_and(|(_, segments)| segments.is_empty())
+    }
+
     pub fn is_root(&self) -> bool {
         self.current.to_string_lossy() == MY_PC_PATH
     }

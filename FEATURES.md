@@ -1,254 +1,171 @@
-# Recent Features & Fixes
+<h2 align="center">✨ Features</h2>
 
-A day-by-day log of what's been added or fixed recently. For the full
-feature list, see [README.md](README.md#-features); for phase-by-phase
-delivery tracking, see [CHECKLIST.md](CHECKLIST.md).
+<table align="center" style="border: none; border-collapse: collapse;">
+<tr>
+<td width="50%" valign="top" style="border: none; padding: 12px;">
 
-## 2026-09-25
+<h3>Core Functionality</h3>
+<ul>
+  <li><b>Lightning-fast GUI</b> that starts at the <b>root of your computer</b>, displaying all drives with comprehensive storage information</li>
+  <li><b>Asynchronous directory scanning</b> for ultra-fast file listing without blocking the UI</li>
+  <li><b>Streaming directory enumeration</b> for responsive browsing of large directories</li>
+  <li><b>Intuitive navigation</b> with <b>Back / Forward / Up</b> controls and persistent navigation history</li>
+  <li><b>Tabbed navigation</b> with independent loading states, tab pinning, and automatic tab restoration</li>
+  <li><b>Split-pane Explorer view</b> for browsing multiple locations side-by-side</li>
+  <li><b>Collapsible sidebar</b> with quick access to common folders and customizable favorites</li>
+  <li><b>Native Recycle Bin support</b> with dedicated Explorer integration</li>  
+  <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
+</ul>
 
-- **Fixed: the real context menu showed a separator after Compress (Zip)
-  that the new Context Menu Order settings page's own list didn't account
-  for.** Custom Context Menu's entries were drawing their own separator
-  regardless of what the user configured - now the per-item menu relies
-  entirely on the user's own configured separators, matching the settings
-  page exactly.
+<h3>Search, Filtering & Sorting</h3>
+<ul>
+  <li><b>Real-time file and directory filtering</b> as you type</li>
+  <li><b>Real-time file indexing</b> for fast search and filtering</li>
+  <li><b>Predictable substring matching</b> when typing to filter a folder</li>
+  <li><b>Global search</b> with a built-in engine or voidtools Everything, <code>ext:</code>/<code>size:</code>/<code>modified:</code>/<code>content:</code> filters, and Saved Searches</li>
+  <li><b>Lexicographic multi-column sorting</b> with Shift+Click to add sort columns and Ctrl+Click to remove them</li>
+  <li><b>Persistent column sorting</b> across sessions</li>
+  <li><b>Persistent column sizing and view settings</b> across sessions</li>
+  <li><b>Performance-optimized filtering</b> with cached indices</li>
+</ul>
 
-## 2026-09-24
+<h3>Theme & Customization</h3>
+<ul>
+  <li><b>Dark/Light mode switching</b> with instant toggle</li>
+  <li><b>Advanced theme customization</b> with full color palette editing</li>
+  <li><b>Customizable startup directory</b></li>
+  <li><b>System font selection</b> using installed Windows fonts</li>
+  <li><b>Persistent application settings</b> across restarts</li>
+  <li><b>Custom folder colors</b> for visual organization</li>
+  <li><b>Prebuilt and custom themes</b> with a live preview of every themeable surface</li>
+  <li><b>Show or hide sidebar sections</b> (Favorites, Tags, Saved Searches, Recent, Shared Network)</li>
+  <li><b>Shortcuts page</b> listing every keyboard and mouse shortcut</li>
+</ul>
 
-- **New "Context Menu Order" settings page** (between Appearance and
-  Favorites) - drag the right-click menu's own sections (Send To, Custom
-  Context Menu, Copy/Cut/Paste, Rename, Delete, Compress, Create Shortcut,
-  Checksums, Properties, Windows Menu Item, and more) into whatever order
-  you like, and add or remove separator lines between them, with a
-  one-click "Reset to Default Order."
+<h3>Tags & Organization</h3>
+<ul>
+  <li><b>Tag management system</b> for organizing files and folders</li>
+  <li><b>Folder tagging system</b> for organizing files and directories</li>
+  <li><b>Custom tag colors</b> with Explorer visualization</li>
+  <li><b>Tag-aware Explorer views</b> that visually identify tagged objects</li>
+  <li><b>Favorites management</b> with drag-and-drop reorganization</li>
+  <li><b>Multi-tagging</b> - an item can belong to several tag groups at once</li>
+  <li><b>Reset Data</b> - clear Favorites, Custom Context Menu, Custom Themes, Send To, Tab Groups, or Tags individually</li>
+</ul>
 
-- **Tab Groups and Send To can now be exported/imported individually**, like
-  Custom Context Menu already could - new "Export"/"Import" buttons on both
-  settings pages, for sharing/backing up just those lists without a full
-  settings export. (Both were already included in a full Export/Import
-  Settings, via `AppSettings` - that part didn't need fixing.)
-- **A Tab Group's own icon can now be customized** - Settings → Tab Groups →
-  pick a glyph from the searchable icon picker, or browse for an image file
-  - shown everywhere the group itself is listed (the "+" button's group
-    menu, the settings page's own list). Left alone, it keeps following the
-  group's first folder's real icon, exactly as before.
-- **New Settings → Tags toggle: Filled or Outline tag icons**, applied
-  everywhere a tag's colored glyph shows up (the sidebar, a tag-view tab's
-  icon, the breadcrumb bar, the Tags settings list) - previously always
-  Filled with no way to change it.
+</td>
 
-- **Context menu tweak**: Compress (Zip) now sits above Send To (was the
-  other way around), and Cut now sits between Copy Path and Paste
-  (was above Copy).
 
-- **Reordered the file/folder context menu**: Send To now sits right below
-  "Open In Default Program", and Compress (Zip) now sits directly above
-  the Custom Context Menu section - both were previously much further
-  down the menu.
 
-- **Title-cased a batch of context-menu and tab-menu labels** that were
-  showing up in sentence case or with lowercase shortcut hints - "Pin tab"
-  → "Pin Tab", "Add to Favorites" → "Add To Favorites", "Open in split
-  view" → "Open In Split View", "Compress (zip)" → "Compress (Zip)",
-  "Cut/Copy/Paste (ctrl+x/ctrl+c/ctrl+v)" → "(Ctrl+X)/(Ctrl+C)/(Ctrl+V)",
-  and several more of the same shape.
+<td width="50%" valign="top" style="border: none; padding: 12px;">
 
-- **Fixed: a network PC whose shares couldn't be listed (a permissions
-  problem on that server - Guest/anonymous access disabled, or requiring
-  credentials this PC doesn't have) showed the exact same "This folder is
-  empty" text as a server that genuinely has zero shares**, making a real
-  access problem look like nothing was ever shared. Opening `\\server` now
-  shows "Access denied - this PC doesn't have permission to list this
-  server's shares" (or a generic failure message) instead, whenever share
-  enumeration actually fails.
+<h3>User Interface & Navigation</h3>
+<ul>
+  <li><b>Interactive breadcrumb navigation</b> with inline path editing</li>
+  <li><b>Windows PATH expansion</b> when entering paths through the breadcrumb</li>
+  <li><b>Modern toolbar</b> with file and folder actions</li>
+  <li><b>Responsive window layout</b> with fullscreen, half-screen, and custom sizing modes</li>
+  <li><b>Improved window management</b> with proper maximization bounds and minimum size constraints</li>
+  <li><b>Hidden object visibility toggle</b> for showing or hiding hidden files and directories</li>
+  <li><b>Dedicated special-folder icons</b> for Desktop, Downloads, Home, Music, Videos, and Documents</li>
+  <li><b>Media Gallery views</b> with small, medium, large, and extra-large thumbnail layouts</li>
+  <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
+  <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
+  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video</li>
+  <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>
+  <li><b>New File templates</b> - Text, Markdown, Word, and Excel documents, plus your own templates folder</li>
+  <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
+  <li><b>Hover previews</b> for images and videos in Details view</li>
+  <li><b>Breadcrumb folder menus</b> - the <code>&gt;</code> arrows in the address bar list the folders inside each part, like Explorer (can be turned off in Settings &gt; General)</li>
+  <li><b>Terminal pane</b> (<code>Ctrl+`</code>) - Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, and WSL (Ubuntu, ...) in session tabs docked under the file view, with colors, scrollback, selection, and Go To Current Folder; loads your PowerShell profile (Oh My Posh), Clink in Command Prompt, and a Nerd Font automatically for prompt icons</li>
+  <li><b>Folders tree in the sidebar</b> - every drive's folders as an expandable tree, like Explorer's navigation pane: it opens down to the folder you're viewing and highlights it, reads subfolders in the background, and accepts dropped files</li>
+  <li><b>Filter bar options</b> (<code>Ctrl+Shift+F</code>) - plain text, wildcards (<code>*.jpg; *.png</code>), or a regular expression, Hide Matches, and kind chips (Folders, Images, Documents, Video, Audio, Archives, Code)</li>
+  <li><b>Spring-loaded folders</b> - while dragging files, rest on a folder (file list, address bar, or Folders tree) and it opens, so you can drop deeper without letting go</li>
+  <li><b>Flat view</b> (<code>Ctrl+Shift+L</code>) - every file in all subfolders as one list, with a Folder column</li>
+  <li><b>Git status</b> - the branch in the status bar and M/A/U/D/R/C letters on changed files (ignored files dimmed), read-only and without needing Git installed</li>
+  <li><b>Portable tags</b> - tags stored with the files themselves (an NTFS stream, or a hidden file on other drives), so they travel to other folders, drives, and PCs</li>
+  <li><b>Remote locations</b> - SFTP, FTP, FTPS, WebDAV, and S3 in the sidebar, browsed like folders: preview, open, upload, download, rename, delete, and new folders, with passwords in Windows Credential Manager</li>
+  <li><b>More sidebar places</b> - Cloud (OneDrive, Dropbox, Google Drive, iCloud Drive, Box), Linux (WSL distributions), pinned network folders, and Eject for mounted ISOs</li>
+  <li><b>WSL layout</b> - inside a WSL distribution, the files on the left and that distribution's shell on the right, which can follow the folder you open</li>
+  <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
+  <li><b>Preview frame</b> - previews sit in a rounded, bordered frame; thickness, color, and corner radius are set in Settings &gt; Appearance, with the padding and inner corners worked out automatically</li>
+  <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>
+  <li><b>Customizable toolbar</b> - reorder, add, and remove buttons and separators</li>
+  <li><b>Editable keyboard shortcuts</b> in Settings > Shortcuts</li>
+  <li><b>Per-folder view memory</b> with Reset Folder View and Use As Default View</li>
+  <li><b>Status bar</b> with selection size, drive free space, and the active filter</li>
+</ul>
 
-## 2026-09-23
+<h3>File Operations</h3>
+<ul>
+  <li><b>Context menu operations</b> including cut, copy, paste, rename, and delete</li>
+  <li><b>Copy Path</b> command with <b>Ctrl+Shift+C</b> keyboard shortcut</li>
+  <li><b>Drag and drop files and folders</b> within the Explorer</li>
+  <li><b>Drag and drop into breadcrumb folders</b> and directory tabs</li>
+  <li><b>Drag and drop to native Windows applications</b>, Desktop, File Explorer, and other OS objects</li>
+  <li><b>Windows Shell integration</b> with optional native Windows registry context menu commands</li>
+  <li><b>Custom Context Menu</b> commands and <b>Send To</b> destinations, with a reorderable right-click menu</li>
+  <li><b>Extract archives</b> - zip, 7z, tar, tar.gz, tar.bz2, tar.xz, gz, bz2, xz (rar and more via 7-Zip): Extract Here, Extract To "name\", Extract Each To Its Own Folder, Extract To…, with progress and Cancel</li>
+  <li><b>Browse archives like folders</b> - double-click a zip, 7z, or tar to look inside (read-only), with thumbnails, previews, Quick Look, and extracting single items</li>
+  <li><b>Archive previews with VS Code file icons</b> - the preview pane shows an archive's contents as a collapsible tree with Material Icon Theme icons and colors for every file type and named folder</li>
+  <li><b>Queued transfers</b> - copies on the same disk run one at a time, with reorder, Cancel, and Pause All / Resume All</li>
+  <li><b>Verify after copy</b> - optional SHA-256 comparison of every copied file with its source</li>
+  <li><b>Paste conflict rules</b> - Replace, Skip, Keep Both, Apply To All, and Replace Only If Newer / Larger</li>
+  <li><b>Bulk Rename</b>, <b>Checksums</b>, <b>Compress (Zip)</b>, and Undo/Redo for rename, move, and copy (every undo/redo is reported in the notification panel and toast)</li>
+</ul>
 
-- **Fixed: the shared glyph icon picker (used by both Send To and Custom
-  Context Menu) showed a visibly different list height depending on which
-  page opened it**, even though both call the exact same function. The
-  icon grid's `ScrollArea` capped its height at 280px but never guaranteed
-  it - if the popup happened to open with less room below it, it silently
-  shrank instead. Reserved the height explicitly beforehand so the grid
-  now renders at a consistent height everywhere it's opened from.
+<h3>Devices & Filesystems</h3>
+<ul>
+  <li><b>Portable device support</b> for iPhone, Android, and other connected devices</li>
+  <li><b>Raw and unmounted drive detection</b> for ISO media, Linux partitions, and other unsupported Windows filesystems</li>
+  <li><b>Comprehensive drive information</b> with efficient cached storage queries</li>
+  <li><b>CLI path support</b> for special Windows locations including <code>::MY_PC::</code>, <code>::RECYCLE_BIN::</code>, <code>shell:MyComputerFolder</code>, and <code>shell:RecycleBinFolder</code></li>
+</ul>
 
-## 2026-09-22
+<h3>Performance & System Integration</h3>
+<ul>
+  <li><b>NT-level filesystem access</b> via direct Windows API calls</li>
+  <li><b>Background folder size calculation</b> with progress tracking and optional performance control</li>
+  <li><b>Optimized drive caching</b> with configurable cache duration</li>
+  <li><b>Optimized icon caching</b> using metadata-based cache keys and background loading</li>
+  <li><b>Efficient metadata caching</b> to minimize repeated filesystem operations</li>
+  <li><b>Low memory footprint</b> designed for responsive long-running use</li>
+  <li><b>Performance panel</b> (Settings &gt; Advanced or <code>Ctrl+K</code>) with live folder load time and items/sec, folder size scan time, frame time/FPS, and memory use</li>
+  <li><b>Benchmark This Folder</b> - times the app's <code>NtQueryDirectoryFile</code> listing against Rust's <code>read_dir</code> and <code>read_dir</code> + per-file metadata over 3/5/10 runs, with min/avg/max, items/sec, and Copy Results</li>
+  <li><b>Benchmark This Drive</b> - sequential and random 4K read/write speed and IOPS of the current folder's drive, uncached, like CrystalDiskMark</li>
+  <li><b>Windows API integration</b> for native operating system functionality</li>
+  <li><b>Custom executable icon and file association</b></li>
+  <li><b>Persistent settings</b> using efficient binary cache, with an optional <b>portable mode</b> that keeps them next to the exe</li>
+  <li><b>Remembered folder sizes</b> between sessions, shown instantly on the next visit</li>
+  <li><b>Analyze Disk Usage…</b> for any folder or drive (right-click menu, This PC, sidebar): an expandable size tree with a share-of-parent bar, size on disk, and file/folder counts, scanned in the background with progress, Cancel, Rescan, and <b>Rescan This Branch</b></li>
+  <li><b>Largest Files</b> tab in Disk Usage: the 100 biggest files anywhere in the analyzed folder or drive, with Show In Folder, Move To…, Delete, and Copy Path for one or several at once</li>
+  <li><b>Largest Folders</b> tab in Disk Usage: the 100 folders with the most data in their own files, with Open In New Tab, Show In Folder, Rescan This Branch, Move To…, Delete, and Copy Path</li>
+  <li><b>Disk Usage Overview</b>: drive summary (used/free, file system, cluster size, slack space), space by category, and space by age</li>
+  <li><b>File Types</b> tab: size, share, count, and largest file per extension, grouped into categories and colored like the charts</li>
+  <li><b>Treemap</b> (cushion-shaded, WinDirStat-style) and <b>Sunburst</b> ring chart with zoom, breadcrumbs, and file type highlighting</li>
+  <li><b>Filters</b> for the Disk Usage lists: minimum size, one category or extension, and skipped folders</li>
+  <li><b>Cleanup actions</b> in every Disk Usage view: Move To, Compress To ZIP, Delete, and Delete Permanently, with Undo</li>
+  <li><b>Export</b> Disk Usage results as CSV, an HTML report, or JSON, or <b>Copy Summary</b></li>
+  <li><b>Snapshots</b>: save a scan and compare later to see what's new, removed, grew, or shrank</li>
+  <li><b>Duplicate finder</b>: size, then partial hash, then full SHA-256, with Keep Newest / Keep Oldest</li>
+  <li><b>Clean Up</b>: Storage Sense-style shortcuts for temp files, the Windows Update cache, browser caches, the Recycle Bin, and old Downloads</li>
+  <li><b>Fast MFT scan</b> of whole NTFS drives, reading the Master File Table directly like WizTree; when the app isn't elevated it asks Windows once and runs only the MFT read in a small elevated helper (optional, Settings &gt; Advanced), with automatic fallback to a parallel folder-by-folder scan</li>
+</ul>
 
-- **Send To: "Replace All"/"Skip All"/"Rename All", and per-group Copy or
-  Move.** When a Send To batch (copying/moving into several folders at
-  once) collides with an existing name in more than one destination, the
-  conflict dialog now offers "Replace All"/"Skip All"/"Rename All" - pick
-  one once and it applies automatically to every remaining destination in
-  that batch, instead of clicking Replace/Skip/Rename separately for each
-  one. Separately, each Send To group can now be set to Copy or Move in
-  Settings (right below its icon), and the right-click menu now reflects
-  it: "Send To" opens into "Copy" and "Move" branches, each listing only
-  the groups configured for that operation.
-- **Send To moved to between Delete Permanently and Create Shortcut** (was
-  between Compress and Cut), and the "Windows menu items" entry at the
-  bottom of the right-click menu now reads a plain, static "Windows Menu
-  Item" instead of switching between "Show"/"Hide Windows menu items" text.
-  It was already hidden whenever "Enable Windows context menu items" is
-  turned off in Settings - that part needed no change.
-- **New "Send To" feature.** A new Settings page (between Custom Context
-  Menu and Tab Groups) for creating named groups of destination folders,
-  each with its own icon (a Phosphor glyph or a browsed image file) and an
-  ordered, reorderable list of folders. A master toggle - only usable once
-  at least one group exists - enables a single "Send To" entry in the
-  file/folder right-click context menu, positioned between Compress (zip)
-  and Cut with its own separators: it opens into each of your groups (shown
-  with its own icon), and clicking a group copies the current selection
-  into *every* folder in it at once - right-click → Send To → My
-  Destinations copies straight to all of My Destinations' folders in one
-  action, no per-folder picking required. Always a copy, never a move - the
-  originals stay put no matter which group is picked. A name collision at
-  any one destination gets the same Replace/Skip/Rename/Cancel prompt as a
-  regular paste (queued one destination at a time if more than one
-  collides), and each destination gets its own entry in the notification
-  panel and its own completion toast, exactly like any other copy
-  operation. Two bugs found and fixed via direct follow-up feedback while
-  building this: the context-menu-enable checkbox initially rendered as a
-  nearly-invisible dot far from its label and couldn't be clicked (fixed by
-  routing it through the same bounded-checkbox helper every other Settings
-  checkbox uses), and the menu itself first shipped as groups appearing
-  directly as top-level entries with each one opening into a per-folder
-  picker - corrected to the single-click, copy-to-every-folder shape
-  described above, with each group's own icon now shown in the menu too.
-- **Custom Context Menu also gets an enable/hide toggle**, matching Send
-  To's: usable only once at least one custom command or submenu exists, and
-  automatically hidden from the right-click menu whenever the list is
-  empty - previously, any saved command always showed up in the menu with
-  no way to temporarily turn the whole feature off without deleting
-  everything.
-- **"Create Shortcut" context menu entries, like Windows.** Right-click a
-  file or folder for a new "Create Shortcut" entry - grouped with Checksums
-  and Properties as its own section, separated from Delete by a divider -
-  that creates a real `.lnk` next to it (`"<name> - Shortcut.lnk"`,
-  auto-numbered on a collision, same as Explorer). Right-click empty
-  background space in a folder for the same entry alongside New Folder/New
-  File; it prompts for a target file via a native picker, then creates the
-  shortcut in the current folder. Both paths select the new shortcut
-  afterward.
-- **New "Administrative Tools" sidebar link** (Places section). Points at
-  the real folder Windows keeps every admin snap-in shortcut in
-  (`%ProgramData%\Microsoft\Windows\Start Menu\Programs\Administrative
-  Tools` - the one that actually holds the shortcuts, since the per-user
-  equivalent location is typically empty), so Computer Management, Event
-  Viewer, Services, Task Scheduler, Registry Editor, and the rest are one
-  click away and open exactly like any other file. Only shown if that
-  folder actually exists on the machine.
-- **Tab Groups now support dual-pane entries.** A saved group entry can pair
-  two folders - opening it restores a dual-pane tab with both folders side
-  by side, not just one. Build a dual-pane entry automatically by
-  right-clicking a tab that already has a split view open and choosing "Add
-  to New/Existing Group," or add one by hand from the Tab Groups settings
-  page (each folder row gets its own "Add Split Pane" button).
-- **Fixed: opening a dual-pane group entry showed "this folder is empty" in
-  the second pane**, even though the real folder had files - the split
-  pane's file list was never actually loaded, only its path was set. Fixed
-  so both panes load correctly the moment the group opens.
-- **Fixed: copying, moving, or resolving a paste conflict (Replace/Skip/
-  Rename) into the other pane in dual-pane view snapped focus back to the
-  first pane.** Two separate causes, both fixed: the app was restoring
-  whichever pane was focused *before* the action instead of keeping focus
-  on the pane you just interacted with, and the paste-conflict dialog's own
-  buttons (centered on the whole window, not either pane) could
-  accidentally re-trigger the app's raw click-position pane-focus
-  detection.
-- **Fixed: exporting/importing settings (and every other file/folder
-  picker) could briefly show glitched window chrome** - a bare system
-  Close button and a stray "?" icon in place of the app's own themed title
-  bar - while the dialog was open. Every native dialog in the app is now
-  properly parented to the main window.
-- **Notification settings reworked into two independent toggles**
-  (Settings → Behavior): whether starting an operation automatically opens
-  the notification bell's panel, and whether toast popups show at all. The
-  bell icon itself is always visible now - an earlier version of this
-  setting that hid it entirely was rolled back based on feedback.
+<h3>Security</h3>
+<ul>
+  <li><b>Safe command substitution</b> - file names can't inject arguments into Custom Context Menu commands</li>
+  <li><b>System tools launched by full path</b>, so a look-alike <code>.exe</code> next to the portable app is never run</li>
+  <li><b>Size-capped previews</b> that refuse decompression bombs instead of running out of memory</li>
+</ul>
 
-## 2026-09-21
+<h3>Localization</h3>
+<ul>
+  <li><b>Multi-language support</b> using i18n</li>
+  <li>English, Indonesian, Japanese, and Simplified/Traditional Chinese language support</li>
+</ul>
 
-- **Fixed per-file icons for `.exe`/`.dll`/`.ico`/`.lnk`/`.scr`/`.cpl`
-  files.** These extensions carry a unique icon baked into each individual
-  file, but the icon cache was keying and looking them up by extension
-  alone (the same fast path used for `.txt`/`.pdf`/etc., which do share one
-  icon) - so every file of one of these types could end up showing the same
-  wrong or missing icon. Each file now resolves and caches its own real
-  icon.
-- **The "+" (add-tab) button now defaults to "This PC."** A plain click
-  used to duplicate whatever tab was currently open; it now opens "This PC"
-  directly. Right-clicking it shows a menu with an explicit "Open New Tab
-  (This PC)" entry plus every saved Tab Group, for opening or replacing
-  your current tabs with one in a single click.
-
-## 2026-09-20
-
-- **Export Theme now bundles your Custom Themes list**, not just the
-  active palette; importing merges custom themes by name (overwriting an
-  existing same-named theme in place) instead of creating duplicates.
-- **Fixed the type-to-filter box matching letters out of order.** Typing
-  "te" used to match names like "Make The Doc" or "Fast Meet" that don't
-  actually contain "te" as a substring - it was a fuzzy-finder-style
-  subsequence match, better suited to a command palette than a plain
-  filename filter. It's now a predictable, plain substring match.
-- **Custom Themes editor layout finalized**: Primary and Secondary color
-  pickers plus the Swap Colors button laid out as a compact 2-column grid
-  that hugs its own content, with a clear name field that resets when you
-  pick a prebuilt theme instead.
-
-## 2026-09-19
-
-- **Custom theme creation live-edits your Primary/Secondary colors** as you
-  pick them, instead of only taking effect once saved.
-- **Precise Primary/Secondary-driven theming**, following an explicit
-  derivation spec: badges, checkbox hover/active, the search box's active
-  icon background, Settings navigation text/icon, pinned tabs, and
-  notification/toast borders now genuinely derive from your accent and
-  secondary colors (some previously didn't derive from either, or derived
-  incorrectly).
-- **Swap Colors button** added to the Custom Themes editor's Primary/
-  Secondary row, after several rounds of exact layout feedback; the Custom
-  Themes list itself is now left-aligned with full (untruncated) names and
-  wider gaps between entries.
-- **Your last-selected custom theme is now remembered across restarts.**
-- **19 Color Scheme swatches** to start a theme from (8 more added).
-- **Notification and toast borders are more visible** (raised alpha),
-  retroactively applied to already-saved custom themes via an automatic
-  one-time migration, not just newly-created ones.
-- **You can now add an item that already has a tag to a second tag group**
-  - this was previously blocked once an item had one tag.
-- **Paste-conflict dialog no longer freezes** when clicking Replace or
-  Rename - the slow work (Recycle Bin enumeration, folder-size
-  calculation) now runs on a background thread instead of blocking the
-  frame the dialog needed to disappear on. A toast now also appears the
-  moment a copy/move/delete/rename *starts*, not only when it finishes, and
-  the notification panel auto-opens when an operation begins.
-
-## 2026-09-18
-
-- **Empty-folder right-click context menu.** Right-clicking empty space in
-  an *empty* folder now shows New Folder/New File/Paste, the same as
-  right-clicking empty space in a populated one. A newly created item is
-  automatically scrolled to and selected - fixed to work correctly even in
-  a folder with thousands of files still being scanned.
-- **User-configurable minimum tab width** (Settings → Appearance → Layout),
-  with an instant reflection in the Live Preview panel.
-- **Fixed Phosphor icons rendering as wrong (CJK) characters** on systems
-  where the default system font had been replaced by a large merged font
-  build that happened to redefine the same private-use Unicode codepoints
-  Phosphor's icon glyphs live at.
-- **Circular count badges** added across the Custom Context Menu, Tab
-  Groups, and Tags settings pages, plus a new themeable **Badge Color**
-  used by the notification bell's own count badge.
-- Assorted layout polish: fixed inconsistent gaps between master-detail
-  settings list rows, fixed row icons/labels swallowing clicks meant for
-  the row itself, gave the Live Preview panel's Notifications & Status its
-  own row, and cleaned up several Gallery-view toolbar/divider spacing and
-  alignment issues (including a stray line trailing the Tags column in the
-  Details table).
-
----
-
-*For the complete, always-current feature list, see the "✅ Implemented
-Features" section in [README.md](README.md). This file only tracks recent
-day-to-day additions.*
+</td>
+</tr>
+</table>

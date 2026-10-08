@@ -24,6 +24,16 @@ use std::time::{Duration, Instant};
 /// `if *expanded { ... }`.
 /// Returns `true` if the section was toggled this frame (so callers can
 /// persist the new state).
+/// The Folders tree's settings for this frame (`None` = section hidden).
+pub struct FolderTreeSidebar<'a> {
+    /// Section expanded (saved in `ui_prefs`).
+    pub expanded: &'a mut bool,
+    pub current: &'a std::path::Path,
+    pub show_hidden: bool,
+    pub spring_delay: Option<std::time::Duration>,
+    pub middle_click_new_tab: bool,
+}
+
 fn draw_section_header(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
@@ -55,6 +65,68 @@ fn draw_section_header(
     (toggled, resp)
 }
 
+/// The extra places the sidebar shows: cloud folders and WSL distributions
+/// (their sections' expanded flags, `None` when turned off in Settings),
+/// remote locations and pinned network folders.
+pub struct SidebarPlaces<'a> {
+    pub cloud_expanded: Option<&'a mut bool>,
+    pub linux_expanded: Option<&'a mut bool>,
+    pub connections: &'a [crate::core::remote::RemoteConnection],
+    pub network_places: &'a [crate::core::ui_prefs::NetworkPlace],
+    pub current: &'a std::path::Path,
+}
+
+/// A sidebar row with a glyph icon that opens `path`.
+#[allow(clippy::too_many_arguments)]
+fn place_row(
+    ui: &mut egui::Ui,
+    icon_cache: &IconCache,
+    palette: &ThemePalette,
+    glyph: &str,
+    label: &str,
+    path: &PathBuf,
+    is_current: bool,
+    action: &mut SidebarAction,
+) -> egui::Response {
+    let resp = draw_sidebar_item_with_icon(
+        ui,
+        icon_cache,
+        path,
+        label,
+        true,
+        false,
+        palette,
+        false,
+        None,
+        Some(SidebarIconOverride::Glyph(glyph)),
+    );
+    if is_current {
+        ui.painter().rect_stroke(
+            resp.rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            egui::Stroke::new(1.0, palette.primary.gamma_multiply(0.6)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    if resp.clicked() {
+        action.nav_to = Some(path.clone());
+    }
+    if resp.middle_clicked() {
+        action.open_new_tab = Some(path.clone());
+    }
+    resp
+}
+
+/// The icon for a remote location's kind.
+pub fn remote_glyph(kind: crate::core::remote::RemoteKind) -> &'static str {
+    use crate::core::remote::RemoteKind;
+    match kind {
+        RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => regular::HARD_DRIVES,
+        RemoteKind::WebDav => regular::GLOBE,
+        RemoteKind::S3 => regular::CLOUD,
+    }
+}
+
 /// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
@@ -68,6 +140,9 @@ pub fn draw_sidebar(
     saved_searches_state: &mut SavedSearchesState,
     recent_locations_state: &RecentLocationsState,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
+    folder_tree: Option<FolderTreeSidebar<'_>>,
+    places: SidebarPlaces<'_>,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
@@ -78,6 +153,7 @@ pub fn draw_sidebar(
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let mut tab_drop_target: Option<PathBuf> = None;
+    let mut tree_header_toggled = false;
     let hovered_target_ref = drag_hover_target.as_ref();
 
     const FOOTER_HEIGHT: f32 = 54.0;
@@ -278,6 +354,29 @@ pub fn draw_sidebar(
                                     action.open_new_tab = Some(drive.path.clone());
                                 }
                             }
+                            if !is_raw_physical_drive_path(&drive.path) {
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(drive.path.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("disk_usage_menu")).clicked() {
+                                            action.analyze_disk_usage = Some(drive.path.clone());
+                                            ui.close();
+                                        }
+                                        // A mounted ISO/VHD: unmount it.
+                                        if crate::core::places::is_mounted_image(&drive.path) {
+                                            ui.separator();
+                                            if ui.button(format!("{}  {}", regular::EJECT, i18n.tr("places_eject"))).clicked() {
+                                                action.eject_drive = Some(drive.path.clone());
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                            }
                         }
                     }
 
@@ -302,6 +401,103 @@ pub fn draw_sidebar(
                         }
                     }
 
+                    // --- Cloud (OneDrive, Dropbox, Google Drive, ...) ---
+                    let mut places = places;
+                    if let Some(expanded) = places.cloud_expanded.as_deref_mut() {
+                        let folders = crate::core::places::cloud_folders();
+                        if !folders.is_empty() {
+                            ui.add_space(6.0);
+                            let (changed, _resp) = draw_section_header(ui, palette, &i18n.tr("places_cloud"), expanded);
+                            action.places_toggled |= changed;
+                            if *expanded {
+                                ui.add_space(4.0);
+                                for folder in &folders {
+                                    use crate::core::places::CloudKind;
+                                    let glyph = match folder.kind {
+                                        CloudKind::OneDrive => regular::CLOUD,
+                                        CloudKind::Dropbox => regular::DROPBOX_LOGO,
+                                        CloudKind::GoogleDrive => regular::GOOGLE_DRIVE_LOGO,
+                                        CloudKind::ICloud => regular::APPLE_LOGO,
+                                        CloudKind::Box => regular::PACKAGE,
+                                    };
+                                    let is_current = places.current == folder.path;
+                                    let resp = place_row(ui, icon_cache, palette, glyph, &folder.name, &folder.path, is_current, &mut action);
+                                    resp.on_hover_text(folder.path.display().to_string());
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Linux (WSL distributions) ---
+                    if let Some(expanded) = places.linux_expanded.as_deref_mut() {
+                        let distros = crate::core::places::wsl_distributions();
+                        if !distros.is_empty() {
+                            ui.add_space(6.0);
+                            let (changed, _resp) = draw_section_header(ui, palette, &i18n.tr("places_linux"), expanded);
+                            action.places_toggled |= changed;
+                            if *expanded {
+                                ui.add_space(4.0);
+                                for distro in &distros {
+                                    let path = crate::core::places::wsl_path(distro);
+                                    let is_current = places.current.starts_with(&path);
+                                    let resp = place_row(ui, icon_cache, palette, regular::LINUX_LOGO, distro, &path, is_current, &mut action);
+                                    resp.on_hover_text(path.display().to_string());
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Folders (tree) ---
+                    if let Some(tree) = folder_tree {
+                        ui.add_space(6.0);
+                        let (changed, _resp) = draw_section_header(
+                            ui,
+                            palette,
+                            &i18n.tr("folder_tree_section"),
+                            tree.expanded,
+                        );
+                        tree_header_toggled = changed;
+                        if *tree.expanded {
+                            ui.add_space(4.0);
+                            let roots: Vec<(PathBuf, String)> = sidebar_state
+                                .cached_drives
+                                .iter()
+                                .filter(|d| !is_raw_physical_drive_path(&d.path))
+                                .map(|d| (d.path.clone(), d.display.clone()))
+                                .collect();
+                            let tree_action = crate::gui::windows::containers::folder_tree::draw_folder_tree(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                palette,
+                                &mut sidebar_state.folder_tree,
+                                &roots,
+                                crate::gui::windows::containers::folder_tree::TreeOptions {
+                                    current: tree.current,
+                                    show_hidden: tree.show_hidden,
+                                    drag_active,
+                                    drag_hover_target: hovered_target_ref,
+                                    pointer_released,
+                                    spring_delay: tree.spring_delay,
+                                    middle_click_new_tab: tree.middle_click_new_tab,
+                                },
+                            );
+                            if tree_action.nav_to.is_some() {
+                                action.nav_to = tree_action.nav_to;
+                            }
+                            if tree_action.open_new_tab.is_some() {
+                                action.open_new_tab = tree_action.open_new_tab;
+                            }
+                            if tree_action.analyze_disk_usage.is_some() {
+                                action.analyze_disk_usage = tree_action.analyze_disk_usage;
+                            }
+                            if tree_action.drop_on.is_some() {
+                                tab_drop_target = tree_action.drop_on;
+                            }
+                        }
+                    }
+
+                    if sidebar_visibility.favorites {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -424,6 +620,10 @@ pub fn draw_sidebar(
                                     action.open_new_tab = Some(favorite.path.clone());
                                     ui.close();
                                 }
+                                if ui.button(&i18n.tr("disk_usage_menu")).clicked() {
+                                    action.analyze_disk_usage = Some(favorite.path.clone());
+                                    ui.close();
+                                }
                                 if ui.button(&i18n.tr("remove_favorite")).clicked() {
                                     action.remove_favorite = Some(favorite.path.clone());
                                     ui.close();
@@ -491,7 +691,9 @@ pub fn draw_sidebar(
                         }
                     }
                     } // favorites_expanded
+                    } // sidebar_visibility.favorites
 
+                    if sidebar_visibility.tags {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -528,7 +730,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.tags
 
+                    if sidebar_visibility.saved_searches {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -644,6 +848,7 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.saved_searches
 
                     saved_searches_state.rename_state = saved_search_rename_state;
                     if let Some((id, new_name)) = saved_search_rename_committed {
@@ -659,6 +864,7 @@ pub fn draw_sidebar(
                         );
                     }
 
+                    if sidebar_visibility.recent_locations {
                     ui.add_space(6.0);
                     let (changed, recent_locations_header_resp) = draw_section_header(
                         ui,
@@ -729,7 +935,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.recent_locations
 
+                    if sidebar_visibility.shared_network {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -757,6 +965,89 @@ pub fn draw_sidebar(
                             action.open_network_browser = true;
                         }
 
+                        // Remote locations (SFTP, FTP, WebDAV, S3).
+                        for conn in places.connections {
+                            let root = crate::core::remote::path_for(conn.id, &[]);
+                            let start = crate::core::remote::path_for(conn.id, &conn.start_segments());
+                            let is_current = places.current.starts_with(&root);
+                            let resp = place_row(
+                                ui,
+                                icon_cache,
+                                palette,
+                                remote_glyph(conn.kind),
+                                &conn.display_name(),
+                                &start,
+                                is_current,
+                                &mut action,
+                            );
+                            let resp = resp.on_hover_text(format!("{} - {}", conn.kind.label(), conn.host));
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    apply_eden_text_overrides(ui, palette);
+                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                        action.open_new_tab = Some(start.clone());
+                                        ui.close();
+                                    }
+                                    if ui.button(&i18n.tr("network_location_edit")).clicked() {
+                                        action.edit_remote = Some(conn.id);
+                                        ui.close();
+                                    }
+                                    if ui.button(&i18n.tr("network_location_disconnect")).clicked() {
+                                        action.disconnect_remote = Some(conn.id);
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    if ui.button(&i18n.tr("network_location_remove")).clicked() {
+                                        action.remove_remote = Some(conn.id);
+                                        ui.close();
+                                    }
+                                });
+                        }
+                        // Pinned network folders (\\server\share).
+                        for (index, place) in places.network_places.iter().enumerate() {
+                            let is_current = places.current == place.path;
+                            let resp = place_row(
+                                ui,
+                                icon_cache,
+                                palette,
+                                regular::SHARE_NETWORK,
+                                &place.name,
+                                &place.path,
+                                is_current,
+                                &mut action,
+                            );
+                            let resp = resp.on_hover_text(place.path.display().to_string());
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    apply_eden_text_overrides(ui, palette);
+                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                        action.open_new_tab = Some(place.path.clone());
+                                        ui.close();
+                                    }
+                                    if ui.button(&i18n.tr("network_location_remove")).clicked() {
+                                        action.remove_network_place = Some(index);
+                                        ui.close();
+                                    }
+                                });
+                        }
+                        let add = draw_sidebar_item_with_icon(
+                            ui,
+                            icon_cache,
+                            &PathBuf::from("AddNetworkLocation"),
+                            &i18n.tr("network_location_add"),
+                            true,
+                            false,
+                            palette,
+                            false,
+                            None,
+                            Some(SidebarIconOverride::Glyph(regular::PLUS_CIRCLE)),
+                        );
+                        if add.clicked() {
+                            action.add_network_location = true;
+                        }
+
                         for computer in network::get_network_computers_cached() {
                             let resp = draw_sidebar_item(
                                 ui,
@@ -777,6 +1068,7 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // sidebar_visibility.shared_network
 
                     // Extra bottom padding so last items aren't clipped by scroll boundary.
                     ui.add_space(12.0);
@@ -828,6 +1120,7 @@ pub fn draw_sidebar(
     ui.add_space(14.0);
 
     action.move_files_to_sidebar_dir = tab_drop_target;
+    action.folder_tree_toggled = tree_header_toggled;
     action
 }
 

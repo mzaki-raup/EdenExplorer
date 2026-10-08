@@ -26,7 +26,7 @@ use crate::gui::windows::containers::tags::draw_tag_picker_popup;
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
     DisplayModeFallback, apply_directory_settings_to_view, directory_settings_snapshot_for_view,
-    handle_pending_actions, persist_directory_settings_snapshot,
+    handle_pending_actions, 
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -127,14 +127,62 @@ pub struct MainWindow {
     /// each - polled once per frame by `poll_pending_compress`.
     pub(crate) pending_compress_jobs:
         HashMap<u64, (crossbeam_channel::Receiver<Result<(), String>>, PathBuf)>,
+    /// Running extractions, by notification id (see `archive_ops`).
+    pub(crate) pending_extracts: HashMap<u64, crate::gui::windows::archive_ops::PendingExtract>,
+    /// Files being extracted from inside an archive to be opened.
+    pub(crate) pending_archive_opens: Vec<crate::gui::windows::archive_ops::ArchiveOpen>,
+    /// Copies being checked against their sources (see `core::verify`).
+    pub(crate) pending_verifies: HashMap<u64, crate::gui::windows::transfer_ops::PendingVerify>,
     /// The "Checksums" modal's state while it's open - see
     /// `ChecksumDialogState`'s doc comment in `mainwindow_imp.rs`. Drawn as
     /// a modal from the update loop, alongside `pending_paste_conflict`.
+    /// The Select by Pattern dialog, while open.
+    pub(crate) select_by_pattern: Option<crate::gui::windows::mainwindow_imp::SelectByPatternState>,
+    /// Quick Look (Space), when open.
+    pub(crate) quick_look: Option<crate::gui::windows::quick_look::QuickLookState>,
+    /// The command palette (Ctrl+Shift+P), when open.
+    pub(crate) command_palette: Option<crate::gui::windows::command_palette::CommandPaletteState>,
+    /// The docked terminal pane's shells, per tab.
+    pub(crate) terminal: crate::gui::windows::terminal_panel::TerminalPanels,
+    /// Remote file operations in progress, by notification id.
+    pub(crate) remote_jobs: HashMap<u64, crate::gui::windows::remote_ops::RemoteJob>,
+    /// Ids for jobs without a notification (counting down from the top, so
+    /// they never meet notification ids).
+    pub(crate) next_silent_remote_job: u64,
+    pub(crate) remote_clipboard: Option<crate::gui::windows::remote_ops::RemoteClipboard>,
+    pub(crate) pending_remote_delete: Option<crate::gui::windows::remote_ops::PendingRemoteDelete>,
+    /// A local delete waiting on its "are you sure?" confirmation.
+    pub(crate) pending_local_delete: Option<crate::gui::windows::structs::PendingLocalDelete>,
+    /// The Add/Edit Network Location dialog, when open.
+    pub(crate) network_location_dialog: Option<crate::gui::windows::network_location::NetworkLocationDialog>,
+    /// Git status of the repositories being browsed.
+    pub(crate) git: crate::core::git::GitService,
+    /// For waking the window from background threads.
+    pub(crate) egui_ctx: Option<egui::Context>,
+    /// Portable tags found in an opened folder, waiting to be imported.
+    pub(crate) portable_tags_inbox: (
+        crossbeam_channel::Sender<crate::core::portable_tags::TagChanges>,
+        crossbeam_channel::Receiver<crate::core::portable_tags::TagChanges>,
+    ),
+    /// Commands run from the palette, most recent first (this session).
+    pub(crate) palette_recent: Vec<crate::gui::windows::command_palette::Command>,
+    /// The last pattern used, offered again the next time the dialog opens.
+    pub(crate) last_select_pattern: String,
+    /// `AppSettings::folder_views_revision` as of the last save, and when
+    /// it first differed - see `save_folder_views_if_due`.
+    pub(crate) saved_folder_views_revision: u64,
+    pub(crate) folder_views_changed_at: Option<std::time::Instant>,
     pub(crate) pending_checksum:
         Option<crate::gui::windows::mainwindow_imp::ChecksumDialogState>,
+    /// The "a newer release is available" flow - see `windows::update_ui`.
+    pub(crate) update_state: crate::gui::windows::update_ui::UpdateUiState,
     /// Tracked copy/move/delete operations shown by the top-right
     /// notification bell - see `containers::notifications`.
     pub(crate) notifications_state: NotificationsState,
+    /// Live metrics + folder benchmark for the Performance panel.
+    pub(crate) performance_state: crate::gui::windows::performance_ui::PerformanceState,
+    /// The "Analyze Disk Usage…" dashboard (`disk_usage_ui`).
+    pub(crate) disk_usage_state: crate::gui::windows::disk_usage_ui::DiskUsageState,
     /// Completed, reversible Rename/BulkRename/Move/Copy operations, most
     /// recent last - see `UndoableOperation`'s doc comment in
     /// `mainwindow_imp.rs`. Deliberately in-memory only (never persisted),
@@ -159,6 +207,9 @@ pub struct MainWindow {
     pub(crate) focused_split: SplitSide,
     pub(crate) next_tab_id: u64,
     pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
+    /// Folder sizes remembered from earlier sessions - see
+    /// `core::folder_size_cache`.
+    pub(crate) folder_size_cache: crate::core::folder_size_cache::FolderSizeCache,
     pub(crate) rename_state: Option<RenameState>,
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
@@ -258,7 +309,12 @@ impl Default for MainWindow {
             send_to_context_menu_enabled: loaded_send_to.1,
             tag_icon_style: crate::core::indexer::load_tag_icon_style(),
             context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
+            sidebar_visibility: crate::core::indexer::load_sidebar_visibility(),
+            show_performance_panel: crate::core::perf::load_performance_panel_visible(),
+            ui_prefs: crate::core::ui_prefs::load_ui_prefs(),
+            folder_views_revision: 0,
         };
+        crate::core::keymap::set_overrides(&loaded_settings.ui_prefs.shortcuts);
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
 
@@ -357,6 +413,7 @@ impl Default for MainWindow {
             focused_split: SplitSide::Primary,
             next_tab_id,
             folder_sizes: HashMap::new(),
+            folder_size_cache: crate::core::folder_size_cache::FolderSizeCache::load(),
 
             sidebar_state: {
                 let sections = crate::core::indexer::load_sidebar_sections();
@@ -389,8 +446,31 @@ impl Default for MainWindow {
             pending_send_to: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
+            pending_extracts: HashMap::new(),
+            pending_archive_opens: Vec::new(),
+            pending_verifies: HashMap::new(),
             pending_checksum: None,
+            update_state: Default::default(),
+            select_by_pattern: None,
+            quick_look: None,
+            command_palette: None,
+            terminal: Default::default(),
+            git: Default::default(),
+            network_location_dialog: None,
+            remote_jobs: HashMap::new(),
+            next_silent_remote_job: u64::MAX,
+            remote_clipboard: None,
+            pending_remote_delete: None,
+            pending_local_delete: None,
+            egui_ctx: None,
+            portable_tags_inbox: crossbeam_channel::unbounded(),
+            palette_recent: Vec::new(),
+            last_select_pattern: String::new(),
+            saved_folder_views_revision: 0,
+            folder_views_changed_at: None,
             notifications_state: NotificationsState::default(),
+            performance_state: Default::default(),
+            disk_usage_state: Default::default(),
             undo_stack: std::collections::VecDeque::new(),
             redo_stack: std::collections::VecDeque::new(),
             theme_dirty: true,
@@ -480,6 +560,11 @@ impl Default for MainWindow {
         } else {
             app.sidebar_state.favorites = stored;
         }
+        crate::core::remote::set_connections(&app.settings_window.current_settings.ui_prefs.remote_connections);
+        crate::core::portable_tags::init(
+            &app.tags_state.to_snapshot(),
+            app.settings_window.current_settings.ui_prefs.portable_tags,
+        );
         app.load_path();
         app
     }
@@ -509,6 +594,37 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // While the terminal has focus, its keys are taken before any
+        // shortcut or the file list can react to them.
+        self.terminal.capture_input(ui.ctx());
+        if self.egui_ctx.is_none() {
+            self.egui_ctx = Some(ui.ctx().clone());
+            // First frame: drop the image a previous update replaced (nothing
+            // is running from it by now), then look for a newer release. The
+            // check is rate-limited and opt-out-able inside `core::update`.
+            crate::core::update::clean_leftovers();
+            crate::core::update::check(false);
+        }
+        self.refresh_git_status();
+        self.sync_portable_tags();
+        if std::mem::take(&mut self.terminal.toggle_requested) {
+            self.toggle_terminal();
+        }
+        if self.terminal.has_sessions() {
+            let tab_ids: Vec<u64> = self.tabs.iter().map(|t| t.id).collect();
+            let active = self.tabs[self.active_tab].id;
+            self.terminal.maintain(&tab_ids, active);
+        }
+        if crate::core::utils::fonts::set_terminal_font(
+            self.settings_window.current_settings.ui_prefs.terminal.font_name.as_deref(),
+        ) {
+            self.theme_dirty = true;
+        }
+        // Read by the preview pane and Quick Look this frame.
+        crate::gui::windows::containers::itemviewer_preview::set_preview_frame_style(
+            ui.ctx(),
+            self.settings_window.current_settings.ui_prefs.preview_frame,
+        );
         // Lets the item viewer's own keyboard handling (Ctrl+A, Delete, ...)
         // know a blocking modal is on top of it this frame, so those
         // shortcuts don't fire on the file list underneath a modal that's
@@ -520,7 +636,14 @@ impl eframe::App for MainWindow {
         {
             let blocking_modal_open = self.pending_paste_conflict.is_some()
                 || self.pending_bulk_rename.is_some()
-                || self.pending_checksum.is_some();
+                || self.pending_checksum.is_some()
+                || self.update_state.blocks_input()
+                || self.select_by_pattern.is_some()
+                || self.network_location_dialog.is_some()
+                || self.pending_remote_delete.is_some()
+                || self.pending_local_delete.is_some()
+                || self.command_palette.is_some()
+                || self.disk_usage_state.is_open();
             ui.ctx().memory_mut(|mem| {
                 mem.data.insert_temp(
                     egui::Id::new(
@@ -873,6 +996,33 @@ impl eframe::App for MainWindow {
                                             sidebar_box_size,
                                             egui::Layout::top_down(egui::Align::Min),
                                             |ui| {
+                                                let tree_current = self.tabs[self.active_tab]
+                                                    .view(self.focused_split)
+                                                    .nav
+                                                    .current
+                                                    .clone();
+                                                let current_settings = &mut self.settings_window.current_settings;
+                                                let spring_ms = current_settings.ui_prefs.spring_load_ms;
+                                                let show_hidden = current_settings.show_hidden_files_folders;
+                                                let middle_click_new_tab = current_settings.middle_click_opens_new_tab;
+                                                let prefs = &mut current_settings.ui_prefs;
+                                                let folder_tree = prefs.folder_tree.then(|| {
+                                                    crate::gui::windows::containers::sidebar::FolderTreeSidebar {
+                                                        expanded: &mut prefs.folder_tree_expanded,
+                                                        current: &tree_current,
+                                                        show_hidden,
+                                                        spring_delay: (spring_ms > 0)
+                                                            .then(|| std::time::Duration::from_millis(spring_ms as u64)),
+                                                        middle_click_new_tab,
+                                                    }
+                                                });
+                                                let places = crate::gui::windows::containers::sidebar::SidebarPlaces {
+                                                    cloud_expanded: prefs.sidebar_cloud.then_some(&mut prefs.sidebar_cloud_expanded),
+                                                    linux_expanded: prefs.sidebar_linux.then_some(&mut prefs.sidebar_linux_expanded),
+                                                    connections: &prefs.remote_connections,
+                                                    network_places: &prefs.network_places,
+                                                    current: &tree_current,
+                                                };
                                                 sidebar_action = Some(draw_sidebar(
                                                     ui,
                                                     &self.i18n,
@@ -884,7 +1034,10 @@ impl eframe::App for MainWindow {
                                                     &self.tags_state,
                                                     &mut self.saved_searches_state,
                                                     &self.recent_locations_state,
-                                                    self.settings_window.current_settings.tag_icon_style,
+                                                    current_settings.tag_icon_style,
+                                                    current_settings.sidebar_visibility,
+                                                    folder_tree,
+                                                    places,
                                                 ));
                                             },
                                         );
@@ -1124,6 +1277,53 @@ impl eframe::App for MainWindow {
                                         });
 
                                     container.show(ui, |ui| {
+                                        // The terminal pane, if open, takes the bottom of the
+                                        // file view (under both panes of a split).
+                                        // Inside a WSL distribution it sits beside the files
+                                        // instead, running that distribution's shell.
+                                        let full = ui.available_rect_before_wrap();
+                                        let tab_id = self.tabs[self.active_tab].id;
+                                        let dir = self.active_tab().view(self.focused_split).nav.current.clone();
+                                        let prefs = &self.settings_window.current_settings.ui_prefs.terminal;
+                                        let wsl = prefs
+                                            .wsl_layout
+                                            .then(|| crate::core::places::wsl_location(&dir).map(|(distro, _)| distro))
+                                            .flatten();
+                                        self.terminal.track_wsl(tab_id, wsl.as_deref());
+                                        let layout = crate::gui::windows::terminal_panel::PaneLayout {
+                                            side: wsl.is_some(),
+                                            follow: prefs.wsl_follow,
+                                            wsl,
+                                        };
+                                        let reserved = if layout.side {
+                                            self.terminal.reserved_width(tab_id, prefs.side_width, full.width()).map(|width| {
+                                                let rect = egui::Rect::from_min_max(
+                                                    egui::pos2(full.right() - width, full.top()),
+                                                    full.max,
+                                                );
+                                                (width, rect)
+                                            })
+                                        } else {
+                                            self.terminal.reserved_height(tab_id, prefs.height, full.height()).map(|height| {
+                                                let rect = egui::Rect::from_min_max(
+                                                    egui::pos2(full.left(), full.bottom() - height),
+                                                    full.max,
+                                                );
+                                                (height, rect)
+                                            })
+                                        };
+                                        if let Some((size, rect)) = reserved {
+                                            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                                            let action = self.terminal.draw(
+                                                &mut child, rect, tab_id, &dir, size, &layout, prefs, &palette, &self.i18n,
+                                            );
+                                            self.handle_terminal_action(action, &dir);
+                                            if layout.side {
+                                                ui.set_max_width((full.width() - size - 4.0).max(0.0));
+                                            } else {
+                                                ui.set_max_height((full.height() - size).max(0.0));
+                                            }
+                                        }
                                         if has_split {
                                             let split_rect = ui.available_rect_before_wrap();
                                             let (split_rect, _) = ui.allocate_exact_size(
@@ -1181,7 +1381,10 @@ impl eframe::App for MainWindow {
                                             // the paste itself correctly targeted the second one.
                                             let blocking_modal_open = self.pending_paste_conflict.is_some()
                                                 || self.pending_bulk_rename.is_some()
-                                                || self.pending_checksum.is_some();
+                                                || self.pending_checksum.is_some()
+                || self.select_by_pattern.is_some()
+                || self.command_palette.is_some()
+                || self.disk_usage_state.is_open();
 
                                             if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
@@ -1291,13 +1494,9 @@ impl eframe::App for MainWindow {
                                                                         .primary_view,
                                                                 );
                                                             let _ =
-                                                                persist_directory_settings_snapshot(
-                                                                    &mut self
+                                                                self
                                                                         .settings_window
-                                                                        .current_settings
-                                                                        .directory_settings,
-                                                                    snapshot,
-                                                                );
+                                                                        .current_settings.remember_folder_view(snapshot);
                                                         },
                                                     );
                                                 });
@@ -1398,13 +1597,9 @@ impl eframe::App for MainWindow {
                                                                         .unwrap(),
                                                                 );
                                                             let _ =
-                                                                persist_directory_settings_snapshot(
-                                                                    &mut self
+                                                                self
                                                                         .settings_window
-                                                                        .current_settings
-                                                                        .directory_settings,
-                                                                    snapshot,
-                                                                );
+                                                                        .current_settings.remember_folder_view(snapshot);
                                                         },
                                                     );
                                                 });
@@ -1462,13 +1657,9 @@ impl eframe::App for MainWindow {
                                                 directory_settings_snapshot_for_view(
                                                     &self.tabs[self.active_tab].primary_view,
                                                 );
-                                            let _ = persist_directory_settings_snapshot(
-                                                &mut self
+                                            let _ = self
                                                     .settings_window
-                                                    .current_settings
-                                                    .directory_settings,
-                                                snapshot,
-                                            );
+                                                    .current_settings.remember_folder_view(snapshot);
                                         }
                                     });
                                 },
@@ -1529,7 +1720,15 @@ impl eframe::App for MainWindow {
                 true
             };
 
-            if !pointer_inside {
+            // Files on a server can't be handed to other apps (they'd get
+            // paths that don't exist); drag them to a local folder instead.
+            let has_remote = self.tabs[self.active_tab]
+                .primary_view
+                .drag_state
+                .source_items
+                .iter()
+                .any(|p| crate::core::remote::is_remote(p));
+            if !pointer_inside && !has_remote {
                 if let Some(backend) = self.dragdrop.as_ref() {
                     if backend.begin_file_drag(
                         &self.tabs[self.active_tab]
@@ -1596,8 +1795,11 @@ impl eframe::App for MainWindow {
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
             .is_some();
 
+        self.folder_size_cache.poll_loaded();
         self.handle_directory_batch_recieve(ui.ctx());
         self.handle_directory_size_updates(ui.ctx());
+        self.folder_size_cache.save_if_due();
+        self.save_folder_views_if_due(ui.ctx());
         self.handle_throttle_size_requests(ui.ctx());
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action, sidebar_drag_sources.as_deref());
@@ -1691,15 +1893,33 @@ impl eframe::App for MainWindow {
         self.poll_pending_paste();
         self.poll_pending_conflict_resolution();
         self.poll_pending_compress();
+        self.poll_pending_extracts();
+        self.poll_remote_jobs();
+        self.poll_archive_opens();
+        self.poll_pending_verifies();
         self.poll_pending_checksum();
+        self.poll_update_events();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
+        self.draw_select_by_pattern_modal(ui.ctx(), &palette);
+        self.draw_network_location_dialog(ui.ctx(), &palette);
+        self.draw_remote_delete_confirm(ui.ctx(), &palette);
+        self.draw_delete_confirm(ui.ctx(), &palette);
+        self.draw_quick_look(ui.ctx(), &palette);
+        self.draw_command_palette(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {
             draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         }
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
+        // After the About window, not with the other modals above: the update
+        // modal is usually opened from About's own "Check for Updates" button,
+        // and About draws a full-screen scrim that would otherwise paint
+        // straight over it.
+        self.draw_update_modal(ui.ctx(), &palette);
+        self.draw_performance_panel(ui.ctx(), &palette, frame.info().cpu_usage);
+        self.draw_disk_usage_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());
 
         if tags_changed {
@@ -1725,6 +1945,8 @@ impl eframe::App for MainWindow {
     }
 
     fn on_exit(&mut self) {
+        self.folder_size_cache.save();
+
         if !self
             .settings_window
             .current_settings

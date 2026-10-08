@@ -1521,6 +1521,164 @@ PowerShell process) rather than the app's own code - if you're using the
 - **Every `rfd::FileDialog::new()` call in this app opened its native dialog *ownerless* (no parent HWND), and that's not just a `focus.ps1` inconvenience - it's a real visual bug users can see.** Reported directly with a screenshot: opening Export Settings made the main window's own top-right corner render a bare native Close box and a stray context-help "?" glyph, replacing this app's own themed title bar/controls for as long as the dialog stayed open. Root cause: this app strips `WS_CAPTION` and paints 100% of its own window chrome by hand every frame (see `apply_window_override`) - there's no real native non-client area for Windows to fall back on. A dialog opened via `rfd::FileDialog::new().save_file()`/`.pick_file()`/`.pick_folder()` with no `.set_parent(...)` call blocks the main window's message loop without Windows ever being told "this window is this dialog's owned/disabled parent" - so if the OS needs to redraw the frozen main window for any reason while the dialog is up (focus change, a monitor/DPI event, the classic "unresponsive window" ghosting Windows does for a blocked message queue), it falls back to a minimal *native* frame instead of trusting the app to keep painting its own (which it can't, since it's blocked). Fixed generally across all 13 call sites in the app (Export/Import Settings, several folder pickers, custom icon/command pickers), not just the one reported: added `windowsoverrides::dialog()` as a drop-in replacement for `rfd::FileDialog::new()` that calls `.set_parent(&Win32DialogOwner(hwnd))` - a small wrapper implementing `raw_window_handle`'s `HasWindowHandle`/`HasDisplayHandle` (both are required by `set_parent`'s bound, not just the former) around the app's real HWND - and a `MAIN_HWND` global stash (mirroring the existing `EGUI_CTX`/`set_egui_ctx` pattern in the same file) so the many call sites living in `*_ui.rs` files, which only ever see an `&mut egui::Ui` and never the real HWND, can still reach it without a new parameter threaded through every settings page. **If a future native dialog call is added anywhere in this app, use `windowsoverrides::dialog()` instead of `rfd::FileDialog::new()` directly** - a raw `rfd::FileDialog::new()` call is exactly this same bug waiting to reproduce.
 - **A synthetic cross-pane drag-and-drop (`WM_LBUTTONDOWN` at the source row, several `WM_MOUSEMOVE`s with the button held, `WM_LBUTTONUP` over the destination pane, all via `PostMessage`) could not be made to register as a real drag in this app, across multiple retries with progressively finer-grained movement (5 steps at 40ms up to 25 steps at 30ms with extra settle time before release).** Every attempt just re-selected the source row (visible as a highlighted row after the "drag") with no drop occurring - the destination pane stayed empty and its own focus/content never changed. This is a distinct failure mode from the already-documented "real double-clicks and modifier-held clicks can't be reliably synthesized with `PostMessage`" gotcha (`click.ps1`'s own doc comment) - that one is about click timing, this is about `PostMessage`-injected mouse-move-with-button-held events not being recognized by egui's own drag-threshold/hover-target tracking as a continuous drag session, at least not across the two different item-viewer widgets a cross-pane drop requires crossing. If a future change needs live verification specifically of drag-and-drop *between two panes* (as opposed to reordering within one list, which `drag.ps1` already handles fine for text-selection-style drags), treat that as unverifiable via this skill's current scripts and fall back to careful code-path tracing instead of spending more time on synthetic drag variations - this was tried at reasonable length before giving up.
 
+- **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
+  out most of what a "standard" GitHub Actions pipeline would reach for.** A
+  release pipeline was designed around `semantic-release` + `actions/checkout` +
+  `actions/setup-node` before checking how the sibling project
+  (`D:/WORKSPACES/RUST/flex-taskbar`) actually does it on the same instance -
+  all of which had to be thrown away. The constraints, all of them documented in
+  that project's own workflow comments: (1) **no published actions at all** - the
+  runner fetches them from `code.forgejo.org`, which this instance cannot
+  authenticate against (forgejo#2809), *and* they would need Node on the runner;
+  the checkout is hand-rolled (`git init` + `git fetch` + a
+  `http.extraheader=Authorization: Basic …` credential passed **on the command**,
+  never written into `.git/config`). (2) **one runner, one shared working copy** -
+  every job starts by emptying it, so two workflows on the same commit delete each
+  other's files mid-build; that is why `ci.yml` deliberately excludes `main`, where
+  the release workflow runs. (3) `npm`/npmjs reachability is not a safe assumption
+  if `code.forgejo.org` isn't reachable - anything needing an `npm install` at CI
+  time is a liability, which is why version/notes logic lives in plain PowerShell
+  (`scripts/next-release.ps1`) instead. **Before writing or changing any CI here,
+  read `flex-taskbar`'s `.github/workflows/*.yml` first** - it is the known-good
+  reference for this infrastructure, and re-deriving these constraints costs a
+  whole design pass.
+- **If `semantic-release` is ever reconsidered for this repo, four of its
+  behaviours are counterintuitive enough to have each produced a silently broken
+  pipeline during the attempt above** (all four verified empirically against the
+  real plugin, not guessed): (1) `releaseRules`' `release: false` is **not a
+  veto** - commit-analyzer takes the *highest* release type across **every**
+  matching rule, and rule order is irrelevant, so one catch-all
+  `{"message": "*", "release": "patch"}` silently overrides every exclusion and
+  makes a README typo (and the `chore(release)` commit itself) ship a release.
+  (2) Exclusions therefore have to live *inside* the catch-all's own pattern as a
+  negated extglob (`!(Document*|chore*)`). (3) Patterns are matched with
+  **micromatch**, so `(`/`)` are extglob syntax - `chore(release):*` never matches
+  anything, escaped or not - and `*` refuses to cross `/` while `**` refuses to
+  cross a newline, meaning a subject like `Add Tab Groups/Send To export` matches
+  no rule at all and cuts no release. (4) `parserOpts.headerPattern` **must be a
+  real RegExp object**; a string (the only thing a `.releaserc.json` can hold) is
+  silently ignored and every commit then parses with no `type`. Combined with the
+  angular preset discarding unknown types - which empties the release notes
+  completely for this repo's plain-English subjects - the "working" config needed
+  a `release.config.mjs` with a RegExp, custom `writerOpts.transform`, and a
+  negated-extglob catch-all. The PowerShell implementation that replaced it needs
+  none of that, which is the other reason it won.
+- **The published release assets are a contract with the app's own update check,
+  not a naming convention.** `EdenExplorer.exe` must be published under exactly
+  that name (the updater downloads it in place - a versioned filename breaks it),
+  `SHA256SUMS.txt` must be published beside it in `sha256sum` layout (`<hex><two
+  spaces><name>`) or the updater has nothing to verify against and refuses to
+  install, and the tag must be plain `vMAJOR.MINOR.PATCH` with nothing after the
+  three numbers (no `-rc1`). The version in `Cargo.toml` is bumped **before** the
+  binary is built, and the tag points at that bumped commit, because the updater
+  compares a release's tag against the running copy's own `CARGO_PKG_VERSION` - a
+  tag that disagrees with the `Cargo.toml` it was built from would offer the same
+  update for ever.
+
+- **`ureq`'s TLS defaults to `RootCerts::WebPki` (Mozilla's own bundled roots),
+  and combined with this app's `TlsProvider::NativeTls` that fails every HTTPS
+  request outright** with `native-tls: unable to find any user-specified roots in
+  the final cert chain` - native-tls treats the WebPki bundle as *user-specified*
+  roots rather than falling back to the OS store, so nothing validates. Found
+  live, not by review: the new update check's own "Check for Updates" button
+  reported exactly that string in its modal, against a host (`git.zacx.net`)
+  whose certificate `curl` on the same machine accepts without complaint. The fix
+  is one builder call - `.root_certs(ureq::tls::RootCerts::PlatformVerifier)` -
+  which is what makes native-tls use the roots it loads by default, i.e. the
+  Windows certificate store. **`core::remote::webdav`'s and `core::remote::s3`'s
+  agents build their `TlsConfig` the same way and are missing the same call**, so
+  they are very likely carrying this bug too; only `core::update::agent` has been
+  fixed and verified so far. When adding any new `ureq::Agent` in this codebase,
+  copy `core::update::agent`'s config (which has the call) rather than the two
+  older ones, and if an HTTPS feature ever fails with a cert-chain error against
+  a host that plainly has a valid certificate, check this before suspecting the
+  server.
+- **A modal drawn with `egui::Area` renders in `MainWindow::ui`'s own call order,
+  so a modal opened *from* another modal has to be drawn after it or it is
+  painted over and looks like it never opened.** The update modal was first added
+  alongside the other modals (`draw_paste_conflict_modal`/`draw_bulk_rename_modal`/
+  `draw_checksum_modal`, all around line 1900 of `mainwindow.rs`), but the thing
+  that opens it is About's own "Check for Updates" button - and
+  `handle_draw_about_window` runs *later* in the same function, drawing a
+  full-screen scrim plus its own window straight over the update modal. The
+  symptom was indistinguishable from "the button did nothing": the click was
+  genuinely handled, the background thread genuinely ran. What proved the click
+  had worked was a non-visual side effect - `%LOCALAPPDATA%\ExplorerEden\
+  update_state.bin` had just been rewritten with a fresh `last_check` timestamp -
+  which is worth remembering as a technique in itself: **when a UI action appears
+  to do nothing, look for a side effect it should have left on disk before
+  concluding the input never landed**, since this app's own ui-test tooling has a
+  long documented history of clicks genuinely not registering and the two look
+  identical on screen. Fixed by moving `draw_update_modal` to immediately after
+  `handle_draw_about_window`.
+
+## Build & release workflow
+
+CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
+GitHub - see the recorded finding above for why nothing here may use a published
+action. Workflows live in `.forgejo/workflows/`.
+
+### Workflow
+
+- After a change is tested (local `cargo test` + `cargo clippy --release
+  --all-targets --locked`) **and** the documentation (`README.md`, `CHECKLIST.md`,
+  `SUMMARY.md`, and this file) is updated to match, merge the branch into `main`
+  and push `main`. **The repository owner asked for this to be done every time
+  without asking again.**
+- **Never merge while CI is red.** Push the branch first, let
+  `.forgejo/workflows/ci.yml` run on it, and merge only once it is green.
+- `ci.yml` deliberately does **not** run on `main` - the release workflow runs
+  there, and the instance has a single runner whose working copy every job empties
+  on entry, so two workflows on one commit delete each other's files mid-build.
+  A branch is therefore the only place a change gets checked before it lands.
+
+### Checks
+
+- `cargo test` - the real gate. 300+ tests, all platform-independent logic.
+- `cargo clippy --release --all-targets --locked` - **without** `-D warnings`.
+  This codebase currently carries ~300 clippy warnings; denying them would fail
+  every run. Real compile errors still fail. Don't add `-D warnings` without
+  clearing the backlog first.
+- `cargo fmt --all --check` - **advisory only, and it currently fails.** This
+  codebase has never been rustfmt-formatted, so both workflows report the drift
+  as a warning rather than failing. Running `cargo fmt --all` would touch
+  essentially every file; treat that as its own deliberate one-time change, not
+  something to slip into an unrelated commit.
+- CI runs the same three on the Forgejo Windows runner with the latest stable
+  Rust, which can have newer clippy lints than a local toolchain.
+
+### Releases
+
+- `.forgejo/workflows/release.yml` publishes a release on **every push to
+  `main`** - there is no manual version bump and no tag to push by hand. It works
+  out the version from the commits since the last `v*` tag, re-runs the checks,
+  bumps `Cargo.toml` + `Cargo.lock`, builds, tags the bumped commit, and
+  publishes.
+- **Commit subjects decide the version**, so they matter: `Add ...` (also
+  `Introduce`/`Implement`/`Support`/`Redesign`/`Enable`/`feat:`) is a **minor**
+  bump, `Fix ...` and any other verb a **patch**, a `BREAKING CHANGE:` footer or
+  `feat!:` a **major**, and `Document ...`/`docs:`/`chore:`/`ci:`/`style:`/
+  `test:`/`refactor:`/`Merge ...` cut **no release at all**. A push whose commits
+  are all in that last group publishes nothing and stops, which is what keeps a
+  documentation-only push from shipping an update to everyone. Run
+  `pwsh -File scripts/next-release.ps1` to see what the next release would be
+  without changing anything.
+- **Never hand-edit `version` in `Cargo.toml`.** The workflow owns it
+  (`scripts/update-version.ps1` moves it and `Cargo.lock` together, which
+  `--locked` requires). The tag and the `Cargo.toml` at that tag always agree by
+  construction, because the bump is committed *before* the build and the tag
+  points at that commit - and they have to agree, because the app compares a
+  release's tag against the version it was built with, so a mismatch would offer
+  the same update for ever.
+- **Never publish the program without `SHA256SUMS.txt` beside it** - the app
+  refuses to install a release it cannot check, and only offers its page instead.
+  `scripts/build-and-package.ps1` always writes both, plus a versioned zip.
+- The published asset names are a contract with `core::release`/`core::update`,
+  not a convention: `EdenExplorer.exe` (downloaded in place - a versioned filename
+  would break the updater), `SHA256SUMS.txt`, and
+  `EdenExplorer-<version>-windows-x64.zip`. Tags are plain `vMAJOR.MINOR.PATCH`;
+  anything after the three numbers (`-rc1`) is not a version the updater parses.
+
 ## Operational Instructions
 
 You must strictly adhere to these guidelines during every task execution. Prioritize system safety, meticulous tracking, and verification.

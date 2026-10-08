@@ -65,6 +65,18 @@ pub enum ThumbnailPriority {
     Nearby,
 }
 
+/// Whether hovering `path` should show a thumbnail preview: common image
+/// and video formats.
+pub fn is_image_or_video(path: &Path) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico", "avif", "heic",
+        "heif", "svg", "mp4", "m4v", "mkv", "mov", "avi", "wmv", "webm", "mpg", "mpeg", "3gp",
+    ];
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(ext)))
+}
+
 pub struct ThumbnailService {
     cache: LruCache<ThumbnailCacheKey, ThumbnailEntry>,
     pending: HashSet<ThumbnailCacheKey>,
@@ -118,6 +130,12 @@ impl ThumbnailService {
                 self.failed.insert(result.key);
             }
         }
+    }
+
+    /// Whether `file`'s thumbnail is still being made (as opposed to done,
+    /// failed, or never requested).
+    pub fn is_pending(&self, file: &FileItem) -> bool {
+        self.pending.contains(&ThumbnailCacheKey::from_file(file))
     }
 
     pub fn request(&mut self, file: &FileItem, priority: ThumbnailPriority) {
@@ -190,7 +208,12 @@ impl Drop for ComGuard {
 }
 
 fn run_thumbnail_job(job: ThumbnailJob, tx: Sender<ThumbnailResult>) {
-    let image = extract_thumbnail(&job.path).or_else(|_| decode_image_fallback(&job.path));
+    // A file inside an archive gets its thumbnail from a temporary
+    // extracted copy (see `core::archive_view`).
+    let image = match crate::core::archive_view::readable_path(&job.path) {
+        Ok(path) => extract_thumbnail(&path).or_else(|_| decode_image_fallback(&path)),
+        Err(e) => Err(windows::core::Error::new(windows::core::HRESULT(-1), e)),
+    };
     let _ = tx.send(ThumbnailResult {
         key: job.key,
         image: image.ok(),

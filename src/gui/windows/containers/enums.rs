@@ -31,7 +31,10 @@ pub enum ItemViewerAction {
     FitColumn(ItemViewerHeaderColumn),
     FitAllColumns,
     CreateFolder,
-    CreateFile,
+    /// New File > a template (built-in or from the templates folder).
+    CreateFileFromTemplate(crate::core::templates::Template),
+    /// New File > Open Templates Folder (created if missing).
+    OpenTemplatesFolder,
     /// Background "Create Shortcut" - prompts for a target file, then
     /// creates a `.lnk` pointing to it in the current directory (matches
     /// Windows' own "New > Shortcut" from an empty-space right-click).
@@ -46,20 +49,32 @@ pub enum ItemViewerAction {
     Deselect(PathBuf),
     SelectAll,
     DeselectAll,
+    /// Select every visible item that isn't selected, and deselect the rest.
+    InvertSelection,
+    /// Open the Select by Pattern dialog for this view.
+    SelectByPattern,
     RangeSelect(Vec<PathBuf>),
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
+    /// Download remote items to a folder the user picks.
+    RemoteDownloadTo(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
     OpenInSplitView(PathBuf),
     Context(ItemViewerContextAction),
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
+    /// Space: open (or close) Quick Look on the selection.
+    ToggleQuickLook,
     MoveItems {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,
     },
     ColumnSizesChanged,
+    /// Forget this folder's remembered view so it uses the default again.
+    ResetFolderView,
+    /// Make this folder's view (display mode, sort, columns) the default.
+    UseFolderViewAsDefault,
     /// Run a user-defined custom context menu command (see
     /// `core::context_menu_settings`) against `paths` - the selection it was
     /// invoked on, or empty for the folder-background menu (in which case
@@ -114,4 +129,22 @@ pub enum ItemViewerContextAction {
     /// `SendToMode`) to every folder in one Send To group - the `bool` is
     /// `is_cut` (`true` = move). See `core::send_to`.
     SendTo(Vec<PathBuf>, Vec<PathBuf>, bool),
+    /// Opens the Disk Usage dashboard for a folder or drive.
+    AnalyzeDiskUsage(PathBuf),
+    /// Extract whole archives (see `core::extract`).
+    Extract(Vec<PathBuf>, ExtractChoice),
+    /// Extract items picked while browsing inside an archive (their
+    /// virtual paths, see `core::archive_view`).
+    ExtractEntries(Vec<PathBuf>, ExtractChoice),
+}
+
+/// Where Extract puts the results.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtractChoice {
+    /// Into the archive's own folder.
+    Here,
+    /// Into a new folder named after the archive, next to it.
+    OwnFolder,
+    /// Ask for a folder.
+    Pick,
 }

@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "strictness": "strict",
-    "allow": [
-      "Bash(cd D:\\WORKSPACES\\RUST\\eden-explorer; Get-ChildItem -Recurse -Include \"*.rs\",\"*.toml\",\"*.json\" -Name | Select-String -Pattern \"resiz\" -CaseSensitive:$false 2>$null)",
-      "Bash(cd D:\\WORKSPACES\\RUST\\eden-explorer; cargo check 2>&1 | Select-Object -Last 60)"
-    ]
-  }
-}

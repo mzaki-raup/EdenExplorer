@@ -1,0 +1,74 @@
+name: CI
+
+# Every branch and pull request. Deliberately not `main`: the release workflow
+# runs there, and this instance has a single runner whose working copy every job
+# empties on entry - two workflows on the same commit would delete each other's
+# files mid-build. Everything reaches `main` through a branch this has already
+# checked, and the release workflow re-runs these same checks before it
+# publishes anything, so nothing goes unchecked. Use workflow_dispatch to run
+# this against `main` on demand.
+on:
+  push:
+    branches: ['**', '!main']
+    tags-ignore: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      # No published actions anywhere in this file: the runner fetches those
+      # from code.forgejo.org, which this instance cannot authenticate against
+      # (forgejo#2809), and they would need Node on the runner. Cloning by hand
+      # is a few lines and has neither problem.
+      - name: Check out this commit
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The workspace may still hold the last job's files.
+          Get-ChildItem -Force . | Remove-Item -Recurse -Force
+          git init --quiet --initial-branch=ci .
+          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          # The credential goes on the command, never into .git/config.
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:TOKEN"))
+          $auth = "http.extraheader=Authorization: Basic $basic"
+          git -c $auth fetch --quiet --depth=1 origin ${{ github.sha }}
+          git checkout --quiet --detach FETCH_HEAD
+          git log --oneline -1
+
+      - name: Use the latest stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
+
+      # Advisory, not a gate: this codebase is not rustfmt-formatted, so a hard
+      # --check would fail every run. Reformatting it is a separate, one-time
+      # change; until then this reports the drift without blocking a release.
+      - name: Formatting (advisory)
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::cargo fmt --check reports formatting differences. Run 'cargo fmt --all' to fix."
+          }
+          exit 0
+
+      - name: Tests
+        run: cargo test --locked
+
+      # No `-D warnings`: this codebase currently has ~300 clippy warnings, so
+      # denying them would fail every run. Real compile errors still fail here.
+      - name: Clippy
+        run: cargo clippy --release --all-targets --locked
+
+      - name: Build
+        run: |
+          cargo build --release --locked
+          Get-Item target/release/EdenExplorer.exe | Select-Object FullName, Length, LastWriteTime

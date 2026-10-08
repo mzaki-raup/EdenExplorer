@@ -117,6 +117,33 @@ pub fn draw_about_window(
                     .color(palette.text_normal),
                 );
 
+                // Update controls, right under the version they act on.
+                {
+                    let auto = settings
+                        .auto_check
+                        .get_or_insert_with(|| crate::core::indexer::load_update_state().auto_check);
+                    let mut auto_value = *auto;
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(format!(
+                                "{} {}",
+                                regular::ARROW_CIRCLE_UP,
+                                &i18n.tr("update_check_now")
+                            ))
+                            .clicked()
+                        {
+                            settings.check_requested = true;
+                        }
+                        ui.checkbox(&mut auto_value, &i18n.tr("update_auto_check"));
+                    });
+                    if auto_value != *auto {
+                        *auto = auto_value;
+                        let mut state = crate::core::indexer::load_update_state();
+                        state.auto_check = auto_value;
+                        crate::core::indexer::save_update_state(&state);
+                    }
+                }
+
                 ui.label(
                     egui::RichText::new(format!("{}: MIT", &i18n.tr("about_license")))
                         .font(font_id.clone())

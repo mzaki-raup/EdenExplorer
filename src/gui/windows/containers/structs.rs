@@ -121,6 +121,21 @@ pub struct TabView {
     pub sort_keys: Vec<SortKey>,
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
+    /// Spring-loaded folders: how long a folder has been hovered mid-drag.
+    pub spring: crate::core::spring_load::SpringLoad,
+    /// Flat view: the folder whose files (in all subfolders) are listed as
+    /// one list. Only applies while `nav.current` is this folder.
+    pub flat: Option<PathBuf>,
+    /// Set when the flat view stopped at `FLAT_VIEW_MAX_FILES`.
+    pub flat_truncated: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The Git working tree the current folder is in, if any (found when
+    /// the folder loads).
+    pub git_repo: Option<PathBuf>,
+    /// That repository's latest status, refreshed each frame from the
+    /// shared Git service (an `Arc`, so it's cheap).
+    pub git: Option<std::sync::Arc<crate::core::git::RepoStatus>>,
+    /// Why a remote folder couldn't be listed (shown in the empty view).
+    pub remote_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     pub column_state: ItemViewerColumnState,
     pub display_mode: ItemViewerDisplayMode,
     pub gallery_state: GalleryState,
@@ -141,11 +156,25 @@ pub struct TabView {
     /// location the user has already navigated away from can never write
     /// into what's currently being displayed.
     pub network_share_error: std::sync::Arc<std::sync::Mutex<Option<crate::core::network::ShareEnumError>>>,
+    /// Replaced on every navigation and dropped with the tab. Long-running
+    /// background work for this view (the built-in search's disk walk) holds
+    /// only a `Weak` to it and stops once it's gone - otherwise a search that
+    /// finds few matches kept walking the whole disk after its tab was closed
+    /// or replaced, since it only noticed when sending a match failed.
+    pub scan_token: std::sync::Arc<()>,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
     pub pending_size_set: HashSet<PathBuf>,
     pub size_threads: Vec<std::thread::JoinHandle<()>>,
+    /// When this view's current folder listing started, for the Performance
+    /// panel's "Folder Load" metric; cleared once the listing finishes.
+    pub load_started_at: Option<std::time::Instant>,
+    /// When the first folder-size request of this navigation was queued,
+    /// and how many folders it has queued so far - for the Performance
+    /// panel's "Folder Size Scan" metric.
+    pub size_scan_started_at: Option<std::time::Instant>,
+    pub size_scan_folders: usize,
     /// State for `ItemViewerDisplayMode::Columns` (Finder-style column browser).
     pub columns_view_state: ColumnsViewState,
     /// Background loader/cache for `ItemViewerDisplayMode::Preview`'s preview pane.
@@ -170,6 +199,11 @@ pub struct TabView {
 }
 
 impl TabView {
+    /// Whether the flat view is showing (for the folder being viewed).
+    pub fn is_flat(&self) -> bool {
+        self.flat.as_ref() == Some(&self.nav.current)
+    }
+
     pub fn new(
         nav: Navigation,
         default_sort_column: crate::gui::utils::SortColumn,
@@ -191,6 +225,12 @@ impl TabView {
             }],
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
+            spring: Default::default(),
+            flat: None,
+            flat_truncated: Default::default(),
+            git_repo: None,
+            git: None,
+            remote_error: Default::default(),
             column_state: ItemViewerColumnState::default(),
             display_mode: ItemViewerDisplayMode::Details,
             gallery_state: GalleryState::default(),
@@ -200,11 +240,15 @@ impl TabView {
             is_loading: false,
             rx: None,
             network_share_error: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            scan_token: std::sync::Arc::new(()),
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
             size_threads: Vec::new(),
+            load_started_at: None,
+            size_scan_started_at: None,
+            size_scan_folders: 0,
             columns_view_state: ColumnsViewState::default(),
             preview_service: crate::core::preview::PreviewService::default(),
             preview_selection: None,
@@ -381,7 +425,13 @@ pub struct ItemViewerColumnState {
     /// matter how the view ended up loaded (first tab on startup, switching
     /// to an already-open tab, a new tab, a split pane, etc).
     pub auto_fit_checked: bool,
+    /// Search and flat views size their columns to the contents; the last
+    /// widths worked out, what for, and when.
+    pub search_widths: Option<(SearchWidthsKey, ItemViewerColumnWidths, std::time::Instant)>,
 }
+
+/// What search/flat view column widths depend on (see `search_widths`).
+pub type SearchWidthsKey = (usize, usize, usize, usize, usize, u64, bool, bool, u32, u32);
 
 impl Default for ItemViewerColumnState {
     fn default() -> Self {
@@ -395,6 +445,7 @@ impl Default for ItemViewerColumnState {
             layout_generation: 0,
             pending_fit_request: None,
             auto_fit_checked: false,
+            search_widths: None,
         }
     }
 }
@@ -935,6 +986,8 @@ pub struct ItemViewerNavBarAction {
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
+    /// The breadcrumb under the pointer during a drag (for spring-loading).
+    pub drag_hover: Option<(PathBuf, egui::Rect)>,
     /// Set when the user submits a query from the navbar's inline search
     /// box (Enter key) - opens a new search-results tab for it.
     pub open_search: Option<(String, crate::core::everything::SearchScope)>,
@@ -952,6 +1005,10 @@ pub struct ItemViewerNavBarAction {
     /// folder as a new tab instead of navigating the current one, matching
     /// the same gesture the file list's own folder rows already support.
     pub open_in_new_tab: Option<PathBuf>,
+    /// A toolbar button that isn't navigation/file-creation specific
+    /// (Select All, Invert Selection, Select By Pattern, Performance Panel,
+    /// Settings) - see `core::toolbar::ToolbarItem`.
+    pub toolbar_command: Option<crate::core::toolbar::ToolbarItem>,
 }
 
 #[derive(Clone, Copy)]
@@ -1200,6 +1257,19 @@ pub struct SidebarAction {
     /// "Clear All" was chosen from the Recent Locations section header's
     /// context menu.
     pub clear_recent_locations: bool,
+    /// "Analyze Disk Usage…" was chosen for a drive or favorite.
+    pub analyze_disk_usage: Option<PathBuf>,
+    /// The Folders tree's header was clicked (save the expanded state).
+    pub folder_tree_toggled: bool,
+    /// The Cloud or Linux section was expanded or collapsed.
+    pub places_toggled: bool,
+    pub add_network_location: bool,
+    pub edit_remote: Option<u64>,
+    pub disconnect_remote: Option<u64>,
+    pub remove_remote: Option<u64>,
+    pub remove_network_place: Option<usize>,
+    /// Unmount this mounted image (ISO/VHD).
+    pub eject_drive: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -1239,6 +1309,21 @@ pub struct FilterState {
     pub last_show_hidden_files_folders: bool,
     pub cached_indices: Vec<usize>,
     pub dirty: bool,
+    /// The query is a regular expression.
+    pub regex: bool,
+    /// Hide the matching items instead of showing only them.
+    pub invert: bool,
+    /// Only this kind of item (folders, images, ...).
+    pub kind: Option<crate::core::filter::KindChip>,
+    /// The regex's syntax error, shown on the box.
+    pub error: Option<String>,
+}
+
+impl FilterState {
+    /// The box is open and narrows the list (by text or by kind).
+    pub fn narrows(&self) -> bool {
+        self.active && (!self.query.is_empty() || self.kind.is_some())
+    }
 }
 
 impl Default for FilterState {
@@ -1253,6 +1338,10 @@ impl Default for FilterState {
             last_show_hidden_files_folders: false,
             cached_indices: Vec::new(),
             dirty: true,
+            regex: false,
+            invert: false,
+            kind: None,
+            error: None,
         }
     }
 }
@@ -1703,6 +1792,29 @@ impl TagsState {
         let before = group.items.len();
         group.items.retain(|item| !paths.contains(item));
         group.items.len() != before
+    }
+
+    /// Adds tags found stored with a file (portable tags) to `path`: each
+    /// goes into the tag of the same name (ignoring case), or a new tag with
+    /// the stored color. Returns whether anything changed.
+    pub fn import_portable(&mut self, path: &Path, tags: &[crate::core::portable_tags::PortableTag]) -> bool {
+        let mut changed = false;
+        for tag in tags {
+            if let Some(group) = self.groups.iter_mut().find(|g| g.name.eq_ignore_ascii_case(&tag.name)) {
+                if !group.items.iter().any(|p| p == path) {
+                    group.items.push(path.to_path_buf());
+                    changed = true;
+                }
+            } else {
+                let [r, g, b, a] = tag.color;
+                changed |= self.create_group_and_add(
+                    tag.name.clone(),
+                    egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+                    &[path.to_path_buf()],
+                );
+            }
+        }
+        changed
     }
 
     pub fn create_group_and_add(

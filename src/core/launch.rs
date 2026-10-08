@@ -207,7 +207,8 @@ pub fn existing_directories(options: &LaunchOptions) -> Result<Vec<PathBuf>, Lau
     let mut paths = Vec::with_capacity(options.paths.len());
 
     for path in &options.paths {
-        if !is_virtual_path(path) && !path.is_dir() {
+        // A zip/7z/tar (or a folder inside one) opens like a folder too.
+        if !is_virtual_path(path) && !path.is_dir() && crate::core::archive_view::split(path).is_none() {
             return Err(LaunchError::InvalidDirectory(path.clone()));
         }
 
@@ -447,6 +448,31 @@ pub fn resolve_shell_uri(input: &str) -> Option<ShellUriResolution> {
             }
             Err(_) => Some(ShellUriResolution::Virtual),
         }
+    }
+}
+
+/// Opens an ordinary http(s) URL in whatever the user's default browser is.
+/// Separate from `launch_shell_uri_externally` below despite the identical
+/// `ShellExecuteW` call - that one means "this is a shell namespace location
+/// this app cannot render", which is a different intent from "show the user
+/// this web page" (the release page behind an update offer, say).
+pub fn open_url(url: &str) {
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows::core::HSTRING;
+
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return;
+    }
+    unsafe {
+        ShellExecuteW(
+            None,
+            &HSTRING::from("open"),
+            &HSTRING::from(url),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        );
     }
 }
 
