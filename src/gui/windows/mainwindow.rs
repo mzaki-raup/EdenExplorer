@@ -151,6 +151,8 @@ pub struct MainWindow {
     pub(crate) next_silent_remote_job: u64,
     pub(crate) remote_clipboard: Option<crate::gui::windows::remote_ops::RemoteClipboard>,
     pub(crate) pending_remote_delete: Option<crate::gui::windows::remote_ops::PendingRemoteDelete>,
+    /// A local delete waiting on its "are you sure?" confirmation.
+    pub(crate) pending_local_delete: Option<crate::gui::windows::structs::PendingLocalDelete>,
     /// The Add/Edit Network Location dialog, when open.
     pub(crate) network_location_dialog: Option<crate::gui::windows::network_location::NetworkLocationDialog>,
     /// Git status of the repositories being browsed.
@@ -456,6 +458,7 @@ impl Default for MainWindow {
             next_silent_remote_job: u64::MAX,
             remote_clipboard: None,
             pending_remote_delete: None,
+            pending_local_delete: None,
             egui_ctx: None,
             portable_tags_inbox: crossbeam_channel::unbounded(),
             palette_recent: Vec::new(),
@@ -629,6 +632,7 @@ impl eframe::App for MainWindow {
                 || self.select_by_pattern.is_some()
                 || self.network_location_dialog.is_some()
                 || self.pending_remote_delete.is_some()
+                || self.pending_local_delete.is_some()
                 || self.command_palette.is_some()
                 || self.disk_usage_state.is_open();
             ui.ctx().memory_mut(|mem| {
@@ -1891,6 +1895,7 @@ impl eframe::App for MainWindow {
         self.draw_select_by_pattern_modal(ui.ctx(), &palette);
         self.draw_network_location_dialog(ui.ctx(), &palette);
         self.draw_remote_delete_confirm(ui.ctx(), &palette);
+        self.draw_delete_confirm(ui.ctx(), &palette);
         self.draw_quick_look(ui.ctx(), &palette);
         self.draw_command_palette(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {

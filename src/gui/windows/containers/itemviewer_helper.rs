@@ -2141,7 +2141,11 @@ pub fn handle_global_actions(
                 ));
             }
         }
-        if i.key_pressed(egui::Key::Delete) {
+        // Shift+Delete: egui may deliver it as a Cut (handled above, which
+        // consumes the flag) or swallow it entirely. If the flag is still
+        // set here, no Cut arrived and this is the only chance to act on it.
+        let shift_delete = crate::gui::windows::windowsoverrides::take_shift_delete();
+        if i.key_pressed(egui::Key::Delete) || shift_delete {
             if is_drive_view {
                 return;
             }
@@ -2157,7 +2161,7 @@ pub fn handle_global_actions(
             // matching native Explorer; a plain Delete always goes to the
             // Recycle Bin (deleting while already inside the Recycle Bin is
             // handled separately and is already permanent either way).
-            let permanent = i.modifiers.shift || is_recycle_bin_view;
+            let permanent = i.modifiers.shift || shift_delete || is_recycle_bin_view;
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
                 paths, permanent,
             )));

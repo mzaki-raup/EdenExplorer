@@ -614,11 +614,15 @@ fn delete_paths_native_standalone(
         let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
         // Recycle-bin view needs permanent delete; normal view keeps undo.
+        // The app shows its own confirmation before getting here (see
+        // `draw_delete_confirm`), so the shell must never ask again - and
+        // its recycle prompt is off by default on Windows anyway, which is
+        // why deletes used to happen with no prompt at all.
         let flags = match (allow_undo, silent) {
             (true, true) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT,
-            (true, false) => FOF_ALLOWUNDO | FOF_WANTNUKEWARNING,
+            (true, false) => FOF_ALLOWUNDO | FOF_NOCONFIRMATION,
             (false, true) => FOF_NOCONFIRMATION | FOF_SILENT,
-            (false, false) => FOF_WANTNUKEWARNING,
+            (false, false) => FOF_NOCONFIRMATION,
         };
         file_op.SetOperationFlags(flags)?;
 
@@ -2168,67 +2172,7 @@ impl MainWindow {
                 self.load_path();
             }
             ItemViewerContextAction::Delete(paths, permanent) => {
-                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
-                let destination_label = if allow_undo {
-                    self.i18n.tr("recycle_bin")
-                } else {
-                    String::new()
-                };
-                use crate::gui::windows::containers::notifications::FileOpStatus;
-                // Whatever the shell API reports, the result on disk is what
-                // counts: answering No to the confirmation doesn't reliably
-                // come back as an error or an "aborted" flag, so a delete that
-                // left every item in place is reported as Cancelled rather
-                // than Completed, and one that removed only some as Failed.
-                let status_on_disk = |paths: &[PathBuf]| {
-                    let remaining = paths.iter().filter(|path| path.exists()).count();
-                    if remaining == 0 {
-                        FileOpStatus::Completed
-                    } else if remaining == paths.len() {
-                        FileOpStatus::Cancelled
-                    } else {
-                        FileOpStatus::Failed
-                    }
-                };
-                let delete_status = match self.delete_paths_native(paths.clone(), allow_undo, false) {
-                    Ok(()) => status_on_disk(&paths),
-                    // The user answered No to the confirmation: nothing was
-                    // deleted, and nothing else may be attempted.
-                    Err(e) if is_user_cancelled(&e) => FileOpStatus::Cancelled,
-                    Err(e) => {
-                        eprintln!("Native delete failed: {:?}", e);
-                        // Fallback for a genuinely broken native operation:
-                        // only ever the Recycle Bin (which asks for its own
-                        // confirmation), never a silent permanent delete.
-                        for path in &paths {
-                            self.delete_path(path);
-                        }
-                        status_on_disk(&paths)
-                    }
-                };
-                self.notifications_state.record_finished(
-                    crate::gui::windows::containers::notifications::FileOpKind::Delete,
-                    paths.len(),
-                    destination_label,
-                    delete_status,
-                    self.settings_window
-                        .current_settings
-                        .auto_open_notification_panel,
-                );
-
-                // Only untag items that are actually gone - a cancelled or
-                // partly failed delete must not strip tags from files that
-                // are still there.
-                let mut tags_changed = false;
-                for path in paths.iter().filter(|path| !path.exists()) {
-                    tags_changed |= self.tags_state.remove_path_prefix(path);
-                }
-
-                if tags_changed {
-                    self.persist_tags();
-                }
-
-                self.load_path();
+                self.request_delete(paths, permanent, false);
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
@@ -5709,9 +5653,9 @@ impl MainWindow {
             }
             Some(DiskUsageAction::Delete { paths, permanent }) => {
                 // The usual delete: confirmation, notification, and Undo.
-                // It's finished (or declined) when this returns.
-                self.handle_context_action(ItemViewerContextAction::Delete(paths.clone(), permanent));
-                self.disk_usage_state.files_removed(&paths);
+                // The results are pruned once the user confirms, not here -
+                // the confirmation makes this asynchronous.
+                self.request_delete(paths, permanent, true);
             }
             Some(DiskUsageAction::MoveTo(paths)) => {
                 let picked = crate::gui::windows::windowsoverrides::dialog()
@@ -7158,6 +7102,187 @@ impl MainWindow {
             }
         }
     }
+
+    /// Records a delete the user asked for so `draw_delete_confirm` can ask
+    /// before anything is removed.
+    pub(crate) fn request_delete(
+        &mut self,
+        paths: Vec<PathBuf>,
+        permanent: bool,
+        from_disk_usage: bool,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+        self.pending_local_delete =
+            Some(crate::gui::windows::structs::PendingLocalDelete { paths, permanent, from_disk_usage });
+    }
+
+    /// Actually deletes, once the user has confirmed.
+    pub(crate) fn perform_delete(&mut self, paths: Vec<PathBuf>, permanent: bool) {
+                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
+                let destination_label = if allow_undo {
+                    self.i18n.tr("recycle_bin")
+                } else {
+                    String::new()
+                };
+                use crate::gui::windows::containers::notifications::FileOpStatus;
+                // Whatever the shell API reports, the result on disk is what
+                // counts: answering No to the confirmation doesn't reliably
+                // come back as an error or an "aborted" flag, so a delete that
+                // left every item in place is reported as Cancelled rather
+                // than Completed, and one that removed only some as Failed.
+                let status_on_disk = |paths: &[PathBuf]| {
+                    let remaining = paths.iter().filter(|path| path.exists()).count();
+                    if remaining == 0 {
+                        FileOpStatus::Completed
+                    } else if remaining == paths.len() {
+                        FileOpStatus::Cancelled
+                    } else {
+                        FileOpStatus::Failed
+                    }
+                };
+                let delete_status = match self.delete_paths_native(paths.clone(), allow_undo, false) {
+                    Ok(()) => status_on_disk(&paths),
+                    // The user answered No to the confirmation: nothing was
+                    // deleted, and nothing else may be attempted.
+                    Err(e) if is_user_cancelled(&e) => FileOpStatus::Cancelled,
+                    Err(e) => {
+                        eprintln!("Native delete failed: {:?}", e);
+                        // Fallback for a genuinely broken native operation:
+                        // only ever the Recycle Bin (which asks for its own
+                        // confirmation), never a silent permanent delete.
+                        for path in &paths {
+                            self.delete_path(path);
+                        }
+                        status_on_disk(&paths)
+                    }
+                };
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Delete,
+                    paths.len(),
+                    destination_label,
+                    delete_status,
+                    self.settings_window
+                        .current_settings
+                        .auto_open_notification_panel,
+                );
+
+                // Only untag items that are actually gone - a cancelled or
+                // partly failed delete must not strip tags from files that
+                // are still there.
+                let mut tags_changed = false;
+                for path in paths.iter().filter(|path| !path.exists()) {
+                    tags_changed |= self.tags_state.remove_path_prefix(path);
+                }
+
+                if tags_changed {
+                    self.persist_tags();
+                }
+
+                self.load_path();
+    }
+
+    /// "Delete these items?" - the app's own confirmation.
+    ///
+    /// Windows only shows one for a recycle if the Recycle Bin's
+    /// confirmation is switched on, and that is off by default, so deletes
+    /// used to happen with no prompt at all.
+    pub(crate) fn draw_delete_confirm(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::core::utils::widgets::{
+            eden_button, modal_frame, modal_icon_header, primary_dialog_button,
+        };
+        use egui_phosphor::regular;
+        let Some(pending) = self.pending_local_delete.take() else {
+            return;
+        };
+        let mut confirmed = false;
+        let mut cancelled = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Area::new(egui::Id::new("local_delete_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                ui.interact(rect, ui.id().with("block"), egui::Sense::click());
+            });
+        egui::Area::new(egui::Id::new("local_delete_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                modal_frame(&ctx.style_of(ctx.theme()), palette).show(ui, |ui| {
+                    ui.set_width(420.0);
+                    let detail = if pending.paths.len() == 1 {
+                        pending.paths[0]
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    } else {
+                        format!("{} {}", pending.paths.len(), self.i18n.tr("items_capital"))
+                    };
+                    let hint = if pending.permanent {
+                        self.i18n.tr("delete_confirm_hint_permanent")
+                    } else {
+                        self.i18n.tr("delete_confirm_hint_recycle")
+                    };
+                    let title = if pending.permanent {
+                        self.i18n.tr("delete_confirm_title_permanent")
+                    } else {
+                        self.i18n.tr("delete_confirm_title")
+                    };
+                    modal_icon_header(
+                        ui,
+                        palette,
+                        regular::TRASH,
+                        ui.visuals().warn_fg_color,
+                        &title,
+                        Some(&format!("{detail}
+
+{hint}")),
+                    );
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        if primary_dialog_button(ui, palette, &self.i18n.tr("delete")).clicked() {
+                            confirmed = true;
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if eden_button(ui, palette, &self.i18n.tr("cancel")).clicked() {
+                                cancelled = true;
+                            }
+                        });
+                    });
+                });
+            });
+
+        if confirmed {
+            let paths = pending.paths.clone();
+            self.perform_delete(pending.paths, pending.permanent);
+            if pending.from_disk_usage {
+                self.disk_usage_state.files_removed(&paths);
+            }
+        } else if cancelled {
+            // Saying no is an outcome worth reporting, same as the shell's
+            // own prompt used to.
+            self.notifications_state.record_finished(
+                crate::gui::windows::containers::notifications::FileOpKind::Delete,
+                pending.paths.len(),
+                String::new(),
+                crate::gui::windows::containers::notifications::FileOpStatus::Cancelled,
+                self.settings_window
+                    .current_settings
+                    .auto_open_notification_panel,
+            );
+        } else {
+            // Still waiting for an answer.
+            self.pending_local_delete = Some(pending);
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -7371,4 +7496,5 @@ mod same_folder_tests {
         assert!(same_folder(Path::new(r"C:\Éclair"), Path::new(r"c:\éclair")));
         assert!(!same_folder(Path::new(r"C:\Photos"), Path::new(r"C:\Photos2")));
     }
+
 }

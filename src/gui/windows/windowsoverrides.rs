@@ -525,8 +525,14 @@ unsafe extern "system" fn custom_wndproc(
         WM_KEYDOWN | WM_SYSKEYDOWN => unsafe {
             // Every key press records whether it was Shift+Delete, so a
             // later, unrelated Cut (Ctrl+X) is never mistaken for it.
-            use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_DELETE, VK_SHIFT};
-            let shift_down = GetKeyState(VK_SHIFT.0 as i32) < 0;
+            use windows::Win32::UI::Input::KeyboardAndMouse::{
+                GetAsyncKeyState, VK_DELETE, VK_SHIFT,
+            };
+            // GetAsyncKeyState, not GetKeyState: the latter reports the
+            // state as of the last message this thread pulled off its
+            // queue, which lags behind the Shift that is physically held
+            // right now and left Shift+Delete looking like a plain Delete.
+            let shift_down = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0;
             SHIFT_DELETE_PRESSED.store(
                 shift_down && wparam.0 == VK_DELETE.0 as usize,
                 Ordering::SeqCst,
@@ -557,6 +563,11 @@ static SHIFT_DELETE_PRESSED: AtomicBool = AtomicBool::new(false);
 
 /// Whether the Cut command currently being handled actually came from
 /// Shift+Delete. Consumes the flag, so it's only honored once.
+///
+/// egui does not always turn Shift+Delete into a Cut - when it doesn't, no
+/// Cut arrives to consume this and the file view reads it directly instead
+/// (see the Delete key handling in `itemviewer_helper`), which is what makes
+/// Shift+Delete work at all.
 pub fn take_shift_delete() -> bool {
     SHIFT_DELETE_PRESSED.swap(false, Ordering::SeqCst)
 }

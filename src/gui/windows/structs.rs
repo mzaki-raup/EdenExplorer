@@ -8,6 +8,20 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// A delete the user has asked for but not yet confirmed.
+///
+/// Windows only shows its own "are you sure?" for a recycle when the user
+/// has turned the Recycle Bin's confirmation on (it is off by default), so
+/// the app asks for itself and tells the shell not to ask again.
+pub struct PendingLocalDelete {
+    pub paths: Vec<PathBuf>,
+    /// Skips the Recycle Bin - the delete cannot be undone.
+    pub permanent: bool,
+    /// Set when the Disk Usage dashboard asked, so its results can be
+    /// pruned once the delete actually happens.
+    pub from_disk_usage: bool,
+}
+
 #[derive(Default)]
 pub struct AboutWindow {
     pub open: bool,
