@@ -118,8 +118,6 @@ settings_windowsize_height = Tinggi
 settings_windowsize_reset_hover = Atur ulang ke default
 tooltip_settings_windowsize = Mengatur ukuran jendela saat EdenExplorer dibuka. Layar Penuh menyesuaikan resolusi monitor Anda.
 settings_contextmenu_enable = Aktifkan item menu konteks Windows
-settings_sidebar_sections = Sidebar Sections
-tooltip_settings_sidebar_sections = Choose which sections appear in the sidebar. Places and Storage are always shown.
 tooltip_settings_contextmenu = Menambahkan bagian Windows ke menu klik kanan dengan aksi shell.
 reset_data_title = Reset Data
 tooltip_reset_data = Remove everything you've created in one of these areas. Each reset asks for confirmation first and doesn't affect anything else.
@@ -1243,3 +1241,10 @@ network_location_manage = Kelola Lokasi Jaringan…
 network_location_empty_state = Belum ada lokasi jaringan - tambahkan satu untuk menjelajahi server seperti folder.
 network_location_no_selection = Pilih lokasi jaringan untuk mengubahnya, atau tambahkan yang baru.
 network_location_open = Buka Di Tab Baru
+
+# Settings > Sidebar (section order)
+settings_category_sidebar = Bilah Sisi
+tooltip_settings_sidebar = Atur ulang bagian bilah sisi. Pindahkan bagian ke atas atau ke bawah untuk mengubah posisinya.
+sidebar_order_reset = Kembalikan Ke Urutan Bawaan
+sidebar_order_visibility_hint = Untuk menampilkan atau menyembunyikan bagian, gunakan Bagian Bilah Sisi di Umum. Bagian yang disembunyikan tetap mempertahankan posisinya di sini.
+sidebar_order_always_shown = Selalu ditampilkan

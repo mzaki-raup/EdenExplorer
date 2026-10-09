@@ -229,6 +229,10 @@ pub struct MainWindow {
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
+    /// The order the sidebar draws its sections in (Settings > Sidebar).
+    /// Resolved once at startup rather than per frame - the sidebar is drawn
+    /// every frame and this never changes except when the user edits it.
+    pub(crate) sidebar_section_order: Vec<crate::core::sidebar_sections::SidebarSection>,
 
     // Misc. Variables
     pub(crate) icon_cache: Option<IconCache>,
@@ -417,6 +421,9 @@ impl Default for MainWindow {
             folder_sizes: HashMap::new(),
             folder_size_cache: crate::core::folder_size_cache::FolderSizeCache::load(),
 
+            sidebar_section_order: crate::core::sidebar_sections::ordered(
+                &crate::core::indexer::load_sidebar_order().order,
+            ),
             sidebar_state: {
                 let sections = crate::core::indexer::load_sidebar_sections();
                 SidebarState {
@@ -1063,6 +1070,7 @@ impl eframe::App for MainWindow {
                                                     &self.recent_locations_state,
                                                     current_settings.tag_icon_style,
                                                     current_settings.sidebar_visibility,
+                                                    &self.sidebar_section_order,
                                                     folder_tree,
                                                     places,
                                                 ));

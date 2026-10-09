@@ -244,6 +244,9 @@ pub struct SettingsWindow {
     /// share only by its position - so the page re-validates the selection
     /// against the list every frame rather than trusting an index across a
     /// removal. Transient, never persisted.
+    /// Settings > Sidebar: the section order being edited. Seeded from
+    /// disk the first time that page is drawn; empty means "not yet opened".
+    pub sidebar_section_order: Vec<crate::core::sidebar_sections::SidebarSection>,
     pub selected_network: Option<crate::gui::windows::network_location::NetworkSelection>,
     pub network_editor: Option<crate::gui::windows::network_location::NetworkLocationForm>,
     /// Result of the last Portable Mode switch (Settings > Advanced):

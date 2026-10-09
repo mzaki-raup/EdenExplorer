@@ -156,8 +156,6 @@ settings_windowsize_height = Height
 settings_windowsize_reset_hover = Reset To Default
 tooltip_settings_windowsize = Sets the window size EdenExplorer opens with. Full Screen matches your monitor's resolution.
 settings_contextmenu_enable = Enable Windows Context Menu Items
-settings_sidebar_sections = Sidebar Sections
-tooltip_settings_sidebar_sections = Choose which sections appear in the sidebar. Places and Storage are always shown.
 tooltip_settings_contextmenu = Adds a Windows section to the right-click menu with shell actions.
 reset_data_title = Reset Data
 tooltip_reset_data = Remove everything you've created in one of these areas. Each reset asks for confirmation first and doesn't affect anything else.
@@ -1240,3 +1238,10 @@ network_location_manage = Manage Network Locations…
 network_location_empty_state = No network locations yet - add one to browse a server like a folder.
 network_location_no_selection = Pick a network location to edit it, or add a new one.
 network_location_open = Open In A New Tab
+
+# Settings > Sidebar (section order)
+settings_category_sidebar = Sidebar
+tooltip_settings_sidebar = Rearrange the sidebar's sections. Move a section up or down to change where it appears.
+sidebar_order_reset = Reset To Default Order
+sidebar_order_visibility_hint = To show or hide a section, use Sidebar Sections in General. A hidden section keeps its place here.
+sidebar_order_always_shown = Always shown

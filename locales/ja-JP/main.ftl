@@ -116,8 +116,6 @@ settings_windowsize_height = 高さ
 settings_windowsize_reset_hover = デフォルトに戻す
 tooltip_settings_windowsize = EdenExplorerの起動時のウィンドウサイズを設定します。フルスクリーンはモニターの解像度に合わせます。
 settings_contextmenu_enable = Windowsコンテキストメニュー項目を有効化
-settings_sidebar_sections = Sidebar Sections
-tooltip_settings_sidebar_sections = Choose which sections appear in the sidebar. Places and Storage are always shown.
 tooltip_settings_contextmenu = 右クリックメニューにShell操作を含むWindowsセクションを追加します。
 reset_data_title = Reset Data
 tooltip_reset_data = Remove everything you've created in one of these areas. Each reset asks for confirmation first and doesn't affect anything else.
@@ -1244,3 +1242,10 @@ network_location_manage = ネットワーク場所を管理…
 network_location_empty_state = ネットワーク場所がまだありません。追加するとサーバーをフォルダーのように閲覧できます。
 network_location_no_selection = 編集するネットワーク場所を選んでください。または新しく追加します。
 network_location_open = 新しいタブで開く
+
+# Settings > Sidebar (section order)
+settings_category_sidebar = サイドバー
+tooltip_settings_sidebar = サイドバーのセクションを並べ替えます。上下に動かして表示位置を変更できます。
+sidebar_order_reset = 既定の順序に戻す
+sidebar_order_visibility_hint = セクションの表示・非表示は「一般」のサイドバーセクションで切り替えます。非表示にしてもここでの位置は保たれます。
+sidebar_order_always_shown = 常に表示

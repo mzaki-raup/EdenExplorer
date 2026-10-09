@@ -196,7 +196,9 @@ pub fn draw_sidebar(
     recent_locations_state: &RecentLocationsState,
     tag_icon_style: crate::core::indexer::TagIconStyle,
     sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
-    folder_tree: Option<FolderTreeSidebar<'_>>,
+    // The order to draw the sections in (Settings > Sidebar).
+    section_order: &[crate::core::sidebar_sections::SidebarSection],
+    mut folder_tree: Option<FolderTreeSidebar<'_>>,
     places: SidebarPlaces<'_>,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
@@ -225,6 +227,13 @@ pub fn draw_sidebar(
                     ui.add_space(8.0);
                     ui.spacing_mut().item_spacing.y *= palette.sidebar_item_spacing_y;
 
+                    // Drawn in the user's own order (Settings > Sidebar). Each
+                    // section is guarded by one cheap comparison per pass, so the
+                    // sections themselves stay exactly where they are in this file
+                    // rather than being shuffled into dispatch order.
+                    let mut places = places;
+                    for section in section_order.iter().copied() {
+                    if section == crate::core::sidebar_sections::SidebarSection::Places {
                     let (changed, _resp) = draw_section_header(
                         ui,
                         palette,
@@ -366,7 +375,9 @@ pub fn draw_sidebar(
                                 }
                             });
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Storage {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
                         ui,
@@ -455,9 +466,10 @@ pub fn draw_sidebar(
                             sidebar_state.non_ntfs_popup_path = None;
                         }
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Cloud {
                     // --- Cloud (OneDrive, Dropbox, Google Drive, ...) ---
-                    let mut places = places;
                     if let Some(expanded) = places.cloud_expanded.as_deref_mut() {
                         let folders = crate::core::places::cloud_folders();
                         if !folders.is_empty() {
@@ -482,7 +494,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Linux {
                     // --- Linux (WSL distributions) ---
                     if let Some(expanded) = places.linux_expanded.as_deref_mut() {
                         let distros = crate::core::places::wsl_distributions();
@@ -501,9 +515,11 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Folders {
                     // --- Folders (tree) ---
-                    if let Some(tree) = folder_tree {
+                    if let Some(tree) = folder_tree.as_mut() {
                         ui.add_space(6.0);
                         let (changed, _resp) = draw_section_header(
                             ui,
@@ -551,7 +567,9 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Favorites {
                     if sidebar_visibility.favorites {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
@@ -747,7 +765,9 @@ pub fn draw_sidebar(
                     }
                     } // favorites_expanded
                     } // sidebar_visibility.favorites
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::Tags {
                     if sidebar_visibility.tags {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
@@ -786,7 +806,9 @@ pub fn draw_sidebar(
                         }
                     }
                     } // sidebar_visibility.tags
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::SavedSearches {
                     if sidebar_visibility.saved_searches {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
@@ -905,8 +927,8 @@ pub fn draw_sidebar(
                     }
                     } // sidebar_visibility.saved_searches
 
-                    saved_searches_state.rename_state = saved_search_rename_state;
-                    if let Some((id, new_name)) = saved_search_rename_committed {
+                    saved_searches_state.rename_state = saved_search_rename_state.take();
+                    if let Some((id, new_name)) = saved_search_rename_committed.take() {
                         if let Some(item) = saved_searches_state
                             .items
                             .iter_mut()
@@ -918,7 +940,9 @@ pub fn draw_sidebar(
                             &saved_searches_state.to_snapshot(),
                         );
                     }
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::RecentLocations {
                     if sidebar_visibility.recent_locations {
                     ui.add_space(6.0);
                     let (changed, recent_locations_header_resp) = draw_section_header(
@@ -991,7 +1015,9 @@ pub fn draw_sidebar(
                         }
                     }
                     } // sidebar_visibility.recent_locations
+                    }
 
+                    if section == crate::core::sidebar_sections::SidebarSection::SharedNetwork {
                     if sidebar_visibility.shared_network {
                     ui.add_space(6.0);
                     let (changed, _resp) = draw_section_header(
@@ -1183,6 +1209,8 @@ pub fn draw_sidebar(
                         }
                     }
                     } // sidebar_visibility.shared_network
+                    }
+                    }
 
                     // Extra bottom padding so last items aren't clipped by scroll boundary.
                     ui.add_space(12.0);

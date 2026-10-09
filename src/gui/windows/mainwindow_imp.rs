@@ -4468,6 +4468,15 @@ impl MainWindow {
                         }
                     }
                 }
+                SettingsAction::SaveSidebarOrder => {
+                    let order = self.settings_window.sidebar_section_order.clone();
+                    crate::core::indexer::save_sidebar_order(
+                        &crate::core::indexer::SidebarSectionOrder {
+                            order: crate::core::sidebar_sections::ids(&order),
+                        },
+                    );
+                    self.sidebar_section_order = order;
+                }
                 SettingsAction::SaveNetworkLocation => {
                     if let Some(mut form) = self.settings_window.network_editor.take() {
                         match self.apply_network_location(&form) {

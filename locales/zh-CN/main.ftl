@@ -116,8 +116,6 @@ settings_windowsize_height = 高度
 settings_windowsize_reset_hover = 恢复默认值
 tooltip_settings_windowsize = 设置 EdenExplorer 启动时的窗口大小。全屏将匹配您显示器的分辨率。
 settings_contextmenu_enable = 启用 Windows 右键菜单项
-settings_sidebar_sections = Sidebar Sections
-tooltip_settings_sidebar_sections = Choose which sections appear in the sidebar. Places and Storage are always shown.
 tooltip_settings_contextmenu = 在右键菜单中添加带有 Shell 操作的 Windows 部分。
 reset_data_title = Reset Data
 tooltip_reset_data = Remove everything you've created in one of these areas. Each reset asks for confirmation first and doesn't affect anything else.
@@ -1244,3 +1242,10 @@ network_location_manage = 管理网络位置…
 network_location_empty_state = 还没有网络位置 - 添加一个即可像浏览文件夹一样浏览服务器。
 network_location_no_selection = 选择一个网络位置进行编辑，或添加一个新的。
 network_location_open = 在新标签页中打开
+
+# Settings > Sidebar (section order)
+settings_category_sidebar = 侧边栏
+tooltip_settings_sidebar = 重新排列侧边栏的分区。上移或下移即可改变其位置。
+sidebar_order_reset = 恢复默认顺序
+sidebar_order_visibility_hint = 要显示或隐藏分区，请在“常规”中使用“侧边栏分区”。隐藏的分区仍会保留此处的位置。
+sidebar_order_always_shown = 始终显示

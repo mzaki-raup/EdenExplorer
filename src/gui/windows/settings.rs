@@ -39,6 +39,7 @@ pub enum SettingsCategory {
     ContextMenu,
     SendTo,
     Network,
+    Sidebar,
     TabGroups,
     Tags,
     Toolbar,
@@ -47,19 +48,25 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 14] = [
+    /// The order the category list shows them in, which is the order the
+    /// repository owner asked for - related pages next to each other
+    /// (window behaviour up with General, the three "what the window is made
+    /// of" pages together, Network down by the other per-location settings)
+    /// rather than the order the variants happen to be declared in.
+    pub const ALL: [SettingsCategory; 15] = [
         SettingsCategory::General,
-        SettingsCategory::Behavior,
         SettingsCategory::Startup,
+        SettingsCategory::Behavior,
         SettingsCategory::Appearance,
+        SettingsCategory::Sidebar,
+        SettingsCategory::Toolbar,
         SettingsCategory::Favorites,
         SettingsCategory::ContextMenuOrder,
         SettingsCategory::ContextMenu,
         SettingsCategory::SendTo,
-        SettingsCategory::Network,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
-        SettingsCategory::Toolbar,
+        SettingsCategory::Network,
         SettingsCategory::Shortcuts,
         SettingsCategory::Advanced,
     ];
@@ -75,6 +82,7 @@ impl SettingsCategory {
             SettingsCategory::ContextMenu => regular::LIST,
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::Network => regular::GLOBE,
+            SettingsCategory::Sidebar => regular::SIDEBAR,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
             SettingsCategory::Toolbar => regular::TOOLBOX,
@@ -94,6 +102,7 @@ impl SettingsCategory {
             SettingsCategory::ContextMenu => i18n.tr("settings_category_context_menu"),
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::Network => i18n.tr("settings_category_network"),
+            SettingsCategory::Sidebar => i18n.tr("settings_category_sidebar"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
             SettingsCategory::Toolbar => i18n.tr("settings_category_toolbar"),
@@ -640,6 +649,7 @@ pub fn draw_settings_page(
                     | SettingsCategory::ContextMenu
                     | SettingsCategory::SendTo
                     | SettingsCategory::Network
+                    | SettingsCategory::Sidebar
                     | SettingsCategory::TabGroups
                     | SettingsCategory::Tags
             );
@@ -687,6 +697,13 @@ pub fn draw_settings_page(
                     }
                     SettingsCategory::Network => {
                         if let Some(a) = crate::gui::windows::network_ui::draw_network_settings(
+                            ui, i18n, settings, palette,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::Sidebar => {
+                        if let Some(a) = crate::gui::windows::sidebar_ui::draw_sidebar_settings(
                             ui, i18n, settings, palette,
                         ) {
                             action = Some(a);
@@ -1065,41 +1082,6 @@ fn draw_general_section(
         );
     });
 
-    settings_section(ui, palette, |ui| {
-        setting_label(
-            ui,
-            &i18n.tr("settings_sidebar_sections"),
-            Some((&i18n.tr("tooltip_settings_sidebar_sections"), palette)),
-            palette,
-        );
-        ui.add_space(SETTINGS_FIELD_GAP);
-        let visibility = &mut settings.current_settings.sidebar_visibility;
-        let prefs = &mut settings.current_settings.ui_prefs;
-        let toggles: [(&mut bool, &str); 8] = [
-            (&mut prefs.folder_tree, "folder_tree_section"),
-            (&mut prefs.sidebar_cloud, "places_cloud"),
-            (&mut prefs.sidebar_linux, "places_linux"),
-            (&mut visibility.favorites, "favorites"),
-            (&mut visibility.tags, "tags"),
-            (&mut visibility.saved_searches, "saved_searches"),
-            (&mut visibility.recent_locations, "recent_locations"),
-            (&mut visibility.shared_network, "shared_network"),
-        ];
-        for (index, (shown, label_key)) in toggles.into_iter().enumerate() {
-            if index > 0 {
-                ui.add_space(SETTINGS_FIELD_GAP);
-            }
-            if setting_checkbox(
-                ui,
-                palette,
-                shown,
-                RichText::new(i18n.tr(label_key)).color(palette.text_normal),
-                format!("settings_sidebar_section_{label_key}"),
-            ) {
-                *action = Some(SettingsAction::ApplySettings);
-            }
-        }
-    });
 }
 
 /// A checkbox row with an info tooltip that applies (and saves) the

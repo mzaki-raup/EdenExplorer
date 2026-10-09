@@ -1893,3 +1893,45 @@ mod tests {
         assert!(decoded.custom_themes.is_empty());
     }
 }
+
+/// The order the user has put the sidebar's sections in (Settings >
+/// Sidebar). Its own small file for the same reason `SidebarSectionVisibility`
+/// above is: appending to a shared `postcard` struct resets every other
+/// field in it for anyone loading an older save.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarSectionOrder {
+    /// `core::sidebar_sections::SidebarSection::id` values. Empty means
+    /// "never reordered", which `sidebar_sections::ordered` reads as the
+    /// default order.
+    pub order: Vec<String>,
+}
+
+fn sidebar_order_cache_path() -> Option<PathBuf> {
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("sidebar_order.bin"))
+}
+
+pub fn load_sidebar_order() -> SidebarSectionOrder {
+    let Some(path) = sidebar_order_cache_path() else {
+        return SidebarSectionOrder::default();
+    };
+    let Ok(data) = std::fs::read(&path) else {
+        return SidebarSectionOrder::default();
+    };
+    postcard::take_from_bytes::<SidebarSectionOrder>(&data)
+        .ok()
+        .filter(|(_, rest)| rest.is_empty())
+        .map(|(v, _)| v)
+        .unwrap_or_default()
+}
+
+pub fn save_sidebar_order(order: &SidebarSectionOrder) {
+    let Some(path) = sidebar_order_cache_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else { return };
+    let _ = std::fs::create_dir_all(parent);
+    if let Ok(data) = postcard::to_allocvec(order) {
+        let _ = std::fs::write(path, data);
+    }
+}

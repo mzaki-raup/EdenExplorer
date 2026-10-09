@@ -124,4 +124,7 @@ pub enum SettingsAction {
     /// stored password and host key), or a pinned network folder.
     RemoveRemoteConnection(u64),
     RemoveNetworkPlace(usize),
+    /// Settings > Sidebar: the section order changed - save it and apply it
+    /// to the live sidebar.
+    SaveSidebarOrder,
 }

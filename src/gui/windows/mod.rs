@@ -1,6 +1,7 @@
 pub mod archive_ops;
 pub mod network_location;
 pub mod network_ui;
+pub mod sidebar_ui;
 pub mod remote_ops;
 pub mod containers; // small reusable components
 pub mod command_palette;

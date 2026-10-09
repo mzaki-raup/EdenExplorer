@@ -1863,6 +1863,38 @@ PowerShell process) rather than the app's own code - if you're using the
   session with Settings active. Screenshot and confirm which tab is active
   before concluding a keyboard-driven test did nothing.
 
+- **Making the sidebar's sections reorderable did not require moving any of
+  them in the source, and trying to would have been the expensive mistake.**
+  `draw_sidebar` is one ~1000-line chain of ten contiguous blocks, and the
+  obvious way to make them orderable - cut each into a `match` arm - means
+  relocating essentially the whole function. Wrapping each block in
+  `if section == SidebarSection::X { ... }` inside a `for section in order`
+  loop instead left every block exactly where it was: 33 inserted lines in a
+  1660-line file, which is reviewable, where the `match` version would have
+  been an unreadable diff. Ten cheap comparisons per pass cost nothing
+  measurable next to the drawing itself. **Two things the loop does change,
+  both of which the compiler catches:** a `let` in one block is no longer
+  visible to the next (one hoist, `let mut places = places;`), and anything
+  consumed by `if let Some(x) = opt` is *moved* on the first pass, so
+  `folder_tree` became `.as_mut()` and two `Option` locals became `.take()`.
+  If another sequential UI chain here ever needs to become orderable, reach
+  for the guarded loop before the `match`.
+- **Synthetic clicks died again mid-session, and this time the ui-test
+  harness made it worse by clicking anyway.** A wrapper that tried
+  `focus.ps1` a few times and then went ahead regardless posted a click while
+  another window was foreground, and the screenshot that followed captured
+  **this agent's own conversation window** - the exact trap already
+  documented for `CopyFromScreen`, reached from a different direction. Any
+  helper that focuses and then acts must *abort* when focus does not stick,
+  and re-check focus again immediately before capturing, because a screenshot
+  of the wrong window is entirely plausible-looking and worse than none. Once
+  a control click (a large, unambiguous target that worked minutes earlier)
+  also does nothing, clicks are confirmed dead for the session - stop, and
+  verify by other means. Here that was enough anyway: the reorder had already
+  been exercised by a real click, so the saved `sidebar_order.bin`, the live
+  sidebar matching it, and the order surviving a restart proved the feature
+  end to end without a single synthetic click landing.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
