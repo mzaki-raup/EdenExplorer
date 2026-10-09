@@ -173,6 +173,31 @@ fn place_row(
 }
 
 /// The icon for a remote location's kind.
+/// The user's home folder. `dirs::home_dir` asks the shell
+/// (`SHGetKnownFolderPath`) and allocates, and the sidebar draws every
+/// frame - but the answer cannot change while the app is running.
+fn home_dir_cached() -> Option<&'static PathBuf> {
+    static HOME: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    HOME.get_or_init(dirs::home_dir).as_ref()
+}
+
+/// The real "Administrative Tools" folder, if this machine has one.
+///
+/// Reading the environment and `is_dir`-ing the result is a stat syscall,
+/// and this sits in the Places section - so it ran on every frame for a
+/// path that is fixed for the life of the process.
+fn admin_tools_cached() -> Option<&'static PathBuf> {
+    static ADMIN_TOOLS: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    ADMIN_TOOLS
+        .get_or_init(|| {
+            std::env::var("ProgramData")
+                .ok()
+                .map(|base| PathBuf::from(base).join("Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools"))
+                .filter(|p| p.is_dir())
+        })
+        .as_ref()
+}
+
 pub fn remote_glyph(kind: crate::core::remote::RemoteKind) -> &'static str {
     use crate::core::remote::RemoteKind;
     match kind {
@@ -274,7 +299,7 @@ pub fn draw_sidebar(
                                 }
                             });
 
-                        if let Some(home) = dirs::home_dir() {
+                        if let Some(home) = home_dir_cached() {
                             let resp = draw_sidebar_item(
                                 ui,
                                 icon_cache,
@@ -313,11 +338,7 @@ pub fn draw_sidebar(
                         // Viewer, Services, Task Scheduler, ...) - so this points
                         // straight at that one, the same way "My User Home" points at
                         // a real directory instead of a virtual shell folder.
-                        if let Some(admin_tools) = std::env::var("ProgramData").ok().map(|base| {
-                            PathBuf::from(base)
-                                .join("Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools")
-                        }).filter(|p| p.is_dir())
-                        {
+                        if let Some(admin_tools) = admin_tools_cached() {
                             let resp = draw_sidebar_item(
                                 ui,
                                 icon_cache,

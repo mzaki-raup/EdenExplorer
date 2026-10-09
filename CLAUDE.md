@@ -2037,6 +2037,45 @@ PowerShell process) rather than the app's own code - if you're using the
   same split already recorded for `gpgconf --kill gpg-agent`, reached from a
   different direction.
 
+- **The worst performance bug found in this codebase so far was a `metadata`
+  call per item, per frame, in the status bar.** Counting a *folder* is free -
+  `status_counts_for_view` reads `view.files`, already in memory - but the
+  **tag view** has no `view.files` to read (it builds its own row list), so
+  `status_counts_for_tag_group` walked the group's items calling
+  `std::fs::metadata` on each. The status bar is drawn every frame, so a tag
+  group of a hundred items meant roughly **six thousand filesystem calls a
+  second** to keep one line of text up to date - and on tagged items living
+  on a network path, each of those is a round trip. Fixed by memoizing on a
+  hash of (group id, its items, the selection); hashing is `O(bytes)` where
+  the old behaviour was `O(items)` *syscalls*. **The general lesson: when two
+  code paths compute the same display value and one of them has no in-memory
+  source for it, that path is where the syscalls hide.** Look for the
+  fallback, not the main case.
+- **Memoizing a displayed value is a correctness risk, so pin the signature
+  with tests rather than the result.** A stale status bar showing the wrong
+  item count is a worse bug than the cost it was avoiding. The two mistakes
+  worth testing against specifically are a key built from *lengths* (which
+  misses a different item being selected, or a group member being swapped for
+  another) and one built from a `HashSet`'s iteration order (which has none,
+  so the same selection can hash differently between frames). Both are pinned
+  in `tag_counts_tests`.
+- **A sweep of the whole app for per-frame work found three more of the same
+  shape, all in the sidebar - which redraws unconditionally.**
+  `dirs::home_dir()` asks the shell (`SHGetKnownFolderPath`) and allocates;
+  the Administrative Tools entry read an environment variable, built a
+  `PathBuf` and `is_dir`-ed it. Both answers are fixed for the life of the
+  process, and both are now `OnceLock`s. **Everything else checked out**, and
+  is worth recording so the next sweep can skip it: the COM/shell calls in
+  `mainwindow_imp` are all in file operations rather than draw code,
+  `icons.rs` is behind `DESKTOP_INI_CACHE` and the icon cache, drive
+  enumeration has a 30-second cache, and `dir_watch`'s per-frame check is a
+  relaxed atomic load. One known cost left alone deliberately:
+  `status_counts_for_view` is `O(files)` per frame and makes a second full
+  pass whenever anything is selected - real on a very large folder, but
+  in-memory, and memoizing it safely needs an invalidation signal the view
+  does not currently have (`view.files` has no generation counter), so
+  inventing one would mean touching every site that mutates it.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

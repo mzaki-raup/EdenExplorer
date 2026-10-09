@@ -707,6 +707,7 @@ fn cached_drive_space(path: &std::path::Path) -> Option<(u64, u64)> {
 /// gathered into one place so both the normal-directory and tag-view sources
 /// (see `status_counts_for_view`/`status_counts_for_tag_group`) can feed the
 /// same rendering code.
+#[derive(Clone, Copy)]
 struct StatusCounts {
     dir_count: usize,
     file_count: usize,
@@ -768,7 +769,72 @@ fn status_counts_for_view(
     }
 }
 
+/// The last counts worked out for a tag group, and what they were worked
+/// out from.
+///
+/// Counting a tag group needs a `metadata` call per item - unlike an ordinary
+/// folder, whose counts come from `view.files`, already in memory - and the
+/// status bar is drawn **every frame**. A group of a hundred items was
+/// therefore making six thousand filesystem calls a second just to keep a
+/// line of text up to date, for a number that only changes when the group or
+/// the selection does.
+///
+/// Hashing the inputs each frame is `O(bytes)` where the old behaviour was
+/// `O(items)` *syscalls*, so even for a large group this is far cheaper -
+/// and it stays correct when a group is edited, unlike a timer.
+static TAG_COUNTS_CACHE: std::sync::Mutex<Option<(u64, StatusCounts)>> =
+    std::sync::Mutex::new(None);
+
+/// What the counts depend on: which group, its items, and what is selected.
+fn tag_counts_signature(
+    tags_state: &TagsState,
+    group_id: u64,
+    selected_paths: &HashSet<PathBuf>,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    group_id.hash(&mut hasher);
+    if let Some(group) = tags_state.groups.iter().find(|g| g.id == group_id) {
+        for path in &group.items {
+            path.hash(&mut hasher);
+        }
+    }
+    // A set has no order, so combine each member commutatively rather than
+    // hashing the iteration order - which can differ between frames for the
+    // same selection.
+    let mut selection = 0u64;
+    for path in selected_paths {
+        let mut each = std::collections::hash_map::DefaultHasher::new();
+        path.hash(&mut each);
+        selection ^= each.finish();
+    }
+    selection.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn status_counts_for_tag_group(
+    tags_state: &TagsState,
+    group_id: u64,
+    selected_paths: &HashSet<PathBuf>,
+) -> StatusCounts {
+    let signature = tag_counts_signature(tags_state, group_id, selected_paths);
+    if let Ok(cache) = TAG_COUNTS_CACHE.lock()
+        && let Some((cached_signature, counts)) = cache.as_ref()
+        && *cached_signature == signature
+    {
+        return *counts;
+    }
+
+    let counts = count_tag_group(tags_state, group_id, selected_paths);
+    if let Ok(mut cache) = TAG_COUNTS_CACHE.lock() {
+        *cache = Some((signature, counts));
+    }
+    counts
+}
+
+/// The actual walk, run only when `status_counts_for_tag_group`'s inputs
+/// have changed.
+fn count_tag_group(
     tags_state: &TagsState,
     group_id: u64,
     selected_paths: &HashSet<PathBuf>,
@@ -840,4 +906,87 @@ fn status_size(
         .on_hover_text(tooltip);
     ui.label(RichText::new(icon).font(font_id.clone()).color(icon_color))
         .on_hover_text(tooltip);
+}
+
+#[cfg(test)]
+mod tag_counts_tests {
+    use super::*;
+    use crate::gui::windows::containers::structs::TagGroup;
+
+    fn group(id: u64, items: &[&str]) -> TagGroup {
+        TagGroup {
+            id,
+            name: "g".into(),
+            color: egui::Color32::WHITE,
+            items: items.iter().map(PathBuf::from).collect(),
+        }
+    }
+
+    fn state(groups: Vec<TagGroup>) -> TagsState {
+        TagsState {
+            groups,
+            ..Default::default()
+        }
+    }
+
+    fn selection(paths: &[&str]) -> HashSet<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// The cache is only sound if the signature moves whenever the counts
+    /// would. These pin that, because the alternative - a stale status bar
+    /// showing the wrong number of items - is a worse bug than the
+    /// per-frame `metadata` calls the cache exists to avoid.
+    #[test]
+    fn the_same_inputs_give_the_same_signature() {
+        let tags = state(vec![group(1, &["a", "b"])]);
+        let selected = selection(&["a"]);
+        assert_eq!(
+            tag_counts_signature(&tags, 1, &selected),
+            tag_counts_signature(&tags, 1, &selected)
+        );
+    }
+
+    #[test]
+    fn changing_the_selection_changes_the_signature() {
+        let tags = state(vec![group(1, &["a", "b"])]);
+        let before = tag_counts_signature(&tags, 1, &selection(&["a"]));
+        // Same number of items selected, a different one - the case a
+        // length-based cache key would miss.
+        let after = tag_counts_signature(&tags, 1, &selection(&["b"]));
+        assert_ne!(before, after);
+        assert_ne!(before, tag_counts_signature(&tags, 1, &selection(&[])));
+    }
+
+    #[test]
+    fn changing_the_group_contents_changes_the_signature() {
+        let selected = selection(&["a"]);
+        let before = tag_counts_signature(&state(vec![group(1, &["a", "b"])]), 1, &selected);
+        // Same count, different member.
+        let renamed = tag_counts_signature(&state(vec![group(1, &["a", "c"])]), 1, &selected);
+        let shorter = tag_counts_signature(&state(vec![group(1, &["a"])]), 1, &selected);
+        assert_ne!(before, renamed);
+        assert_ne!(before, shorter);
+    }
+
+    #[test]
+    fn two_groups_do_not_share_a_signature() {
+        let tags = state(vec![group(1, &["a"]), group(2, &["a"])]);
+        let selected = selection(&["a"]);
+        assert_ne!(
+            tag_counts_signature(&tags, 1, &selected),
+            tag_counts_signature(&tags, 2, &selected)
+        );
+    }
+
+    #[test]
+    fn the_selection_is_combined_without_depending_on_iteration_order() {
+        // `HashSet` has no order, and it can differ between frames for the
+        // same selection - so the signature must not depend on it, or the
+        // counts would be recomputed at random (or worse, flicker).
+        let tags = state(vec![group(1, &["a", "b", "c"])]);
+        let one = tag_counts_signature(&tags, 1, &selection(&["a", "b", "c"]));
+        let two = tag_counts_signature(&tags, 1, &selection(&["c", "a", "b"]));
+        assert_eq!(one, two);
+    }
 }
