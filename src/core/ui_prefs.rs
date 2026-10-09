@@ -82,6 +82,13 @@ pub struct UiPrefs {
     pub sidebar_cloud_expanded: bool,
     pub sidebar_linux: bool,
     pub sidebar_linux_expanded: bool,
+    /// Which groups inside the sidebar's network section are expanded, keyed
+    /// by `RemoteKind::label()` plus `windows` for the Windows network group.
+    /// A map rather than one bool per protocol, so adding a `RemoteKind`
+    /// needs no new field here. A key that is absent means expanded, so an
+    /// existing `ui_prefs.json` opens everything - which is what it did
+    /// before there were groups at all.
+    pub sidebar_network_groups: std::collections::BTreeMap<String, bool>,
 }
 
 /// A network folder pinned to the sidebar.
@@ -206,6 +213,7 @@ impl Default for UiPrefs {
             sidebar_cloud_expanded: true,
             sidebar_linux: true,
             sidebar_linux_expanded: true,
+            sidebar_network_groups: std::collections::BTreeMap::new(),
         }
     }
 }

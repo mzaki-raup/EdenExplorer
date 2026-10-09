@@ -1229,3 +1229,6 @@ update_failed = Update failed
 update_no_checksums = This release has no SHA256SUMS.txt, so it cannot be verified and will not be installed automatically. Open the release page to download it yourself.
 update_status_available = Update
 update_status_available_hint = A newer version is available - click for details
+
+# Group header inside the sidebar's network section
+sidebar_network_group_windows = Windows Network

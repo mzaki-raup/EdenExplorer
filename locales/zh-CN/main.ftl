@@ -1233,3 +1233,6 @@ update_failed = 更新失败
 update_no_checksums = 此版本没有 SHA256SUMS.txt，无法校验，因此不会自动安装。请打开发布页面手动下载。
 update_status_available = 更新
 update_status_available_hint = 有新版本可用 - 点击查看详情
+
+# Group header inside the sidebar's network section
+sidebar_network_group_windows = Windows 网络

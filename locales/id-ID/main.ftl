@@ -1232,3 +1232,6 @@ update_failed = Pembaruan gagal
 update_no_checksums = Rilis ini tidak memiliki SHA256SUMS.txt, sehingga tidak dapat diverifikasi dan tidak akan dipasang secara otomatis. Buka halaman rilis untuk mengunduhnya sendiri.
 update_status_available = Pembaruan
 update_status_available_hint = Versi lebih baru tersedia - klik untuk detail
+
+# Group header inside the sidebar's network section
+sidebar_network_group_windows = Jaringan Windows

@@ -1233,3 +1233,6 @@ update_failed = 更新に失敗しました
 update_no_checksums = このリリースには SHA256SUMS.txt がないため検証できず、自動インストールは行われません。リリースページから手動でダウンロードしてください。
 update_status_available = 更新
 update_status_available_hint = 新しいバージョンがあります - クリックして詳細を表示
+
+# Group header inside the sidebar's network section
+sidebar_network_group_windows = Windows ネットワーク

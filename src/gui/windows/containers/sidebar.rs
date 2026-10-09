@@ -65,6 +65,58 @@ fn draw_section_header(
     (toggled, resp)
 }
 
+/// How far a group header inside a section is indented from the section's own
+/// header, so the nesting is visible at a glance.
+const SUBSECTION_INDENT: f32 = 10.0;
+
+/// Key for the Windows-network group in `UiPrefs::sidebar_network_groups`.
+/// Not a `RemoteKind` label, so it cannot collide with one.
+const WINDOWS_NETWORK_GROUP: &str = "windows";
+
+/// A header for a group *inside* a section - the per-protocol groups under the
+/// network section.
+///
+/// Deliberately not `draw_section_header`: that draws strong, full-size text
+/// with no indent, so a nested group rendered with it reads as yet another
+/// top-level section. That is exactly why `Cloud` and `Linux` look like
+/// siblings of `Storage` rather than children of it, and why grouping the
+/// network section with that helper would have looked worse than the flat list
+/// it replaces.
+fn draw_subsection_header(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    label: &str,
+    expanded: &mut bool,
+) -> (bool, egui::Response) {
+    let chevron = if *expanded {
+        regular::CARET_DOWN
+    } else {
+        regular::CARET_RIGHT
+    };
+    let resp = ui
+        .horizontal(|ui| {
+            ui.add_space(SUBSECTION_INDENT);
+            ui.add(
+                egui::Button::new(
+                    egui::RichText::new(format!("{chevron}  {label}"))
+                        .size((palette.text_size - 1.0).max(1.0))
+                        .color(palette.text_header_section.gamma_multiply(0.7)),
+                )
+                .fill(egui::Color32::TRANSPARENT)
+                .stroke(egui::Stroke::NONE)
+                .frame(false),
+            )
+        })
+        .inner;
+    let toggled = if resp.clicked() {
+        *expanded = !*expanded;
+        true
+    } else {
+        false
+    };
+    (toggled, resp)
+}
+
 /// The extra places the sidebar shows: cloud folders and WSL distributions
 /// (their sections' expanded flags, `None` when turned off in Settings),
 /// remote locations and pinned network folders.
@@ -73,6 +125,9 @@ pub struct SidebarPlaces<'a> {
     pub linux_expanded: Option<&'a mut bool>,
     pub connections: &'a [crate::core::remote::RemoteConnection],
     pub network_places: &'a [crate::core::ui_prefs::NetworkPlace],
+    /// Which network groups are expanded, keyed as in
+    /// `UiPrefs::sidebar_network_groups`. Absent means expanded.
+    pub network_groups: &'a mut std::collections::BTreeMap<String, bool>,
     pub current: &'a std::path::Path,
 }
 
@@ -947,91 +1002,170 @@ pub fn draw_sidebar(
                     );
                     sections_changed |= changed;
                     if sidebar_state.shared_network_expanded {
+                        // Everything below is drawn as a group rather than one
+                        // flat list: with SFTP/FTP/FTPS/WebDAV/S3 locations and
+                        // Windows' own shares all in here, the section became an
+                        // undifferentiated pile as soon as more than a couple of
+                        // locations existed.
+                        let connections = places.connections;
+                        let network_places = places.network_places;
+
+                        // Windows' own network: the browser entry, pinned
+                        // shares, and whatever discovery has found.
+                        let mut windows_expanded = places
+                            .network_groups
+                            .get(WINDOWS_NETWORK_GROUP)
+                            .copied()
+                            .unwrap_or(true);
                         ui.add_space(4.0);
-
-                        let network_icon_path = PathBuf::from("Network");
-                        let resp = draw_sidebar_item(
+                        let (changed, _resp) = draw_subsection_header(
                             ui,
-                            icon_cache,
-                            &network_icon_path,
-                            &i18n.tr("network"),
-                            true,
-                            false,
                             palette,
-                            false,
-                            None,
+                            &i18n.tr("sidebar_network_group_windows"),
+                            &mut windows_expanded,
                         );
-                        if resp.clicked() {
-                            action.open_network_browser = true;
+                        if changed {
+                            places
+                                .network_groups
+                                .insert(WINDOWS_NETWORK_GROUP.to_string(), windows_expanded);
+                            action.places_toggled = true;
+                        }
+                        if windows_expanded {
+                            ui.add_space(4.0);
+
+                            let network_icon_path = PathBuf::from("Network");
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &network_icon_path,
+                                &i18n.tr("network"),
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+                            if resp.clicked() {
+                                action.open_network_browser = true;
+                            }
+
+                            // Pinned network folders (\\server\share).
+                            for (index, place) in network_places.iter().enumerate() {
+                                let is_current = places.current == place.path;
+                                let resp = place_row(
+                                    ui,
+                                    icon_cache,
+                                    palette,
+                                    regular::SHARE_NETWORK,
+                                    &place.name,
+                                    &place.path,
+                                    is_current,
+                                    &mut action,
+                                );
+                                let resp = resp.on_hover_text(place.path.display().to_string());
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(place.path.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("network_location_remove")).clicked() {
+                                            action.remove_network_place = Some(index);
+                                            ui.close();
+                                        }
+                                    });
+                            }
+
+                            for computer in network::get_network_computers_cached() {
+                                let resp = draw_sidebar_item(
+                                    ui,
+                                    icon_cache,
+                                    &computer.path,
+                                    &computer.name,
+                                    true,
+                                    false,
+                                    palette,
+                                    false,
+                                    None,
+                                );
+                                if resp.clicked() {
+                                    action.nav_to = Some(computer.path.clone());
+                                }
+                                if resp.middle_clicked() {
+                                    action.open_new_tab = Some(computer.path.clone());
+                                }
+                            }
                         }
 
-                        // Remote locations (SFTP, FTP, WebDAV, S3).
-                        for conn in places.connections {
-                            let root = crate::core::remote::path_for(conn.id, &[]);
-                            let start = crate::core::remote::path_for(conn.id, &conn.start_segments());
-                            let is_current = places.current.starts_with(&root);
-                            let resp = place_row(
-                                ui,
-                                icon_cache,
-                                palette,
-                                remote_glyph(conn.kind),
-                                &conn.display_name(),
-                                &start,
-                                is_current,
-                                &mut action,
-                            );
-                            let resp = resp.on_hover_text(format!("{} - {}", conn.kind.label(), conn.host));
-                            Popup::context_menu(&resp)
-                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                                .show(|ui| {
-                                    apply_eden_text_overrides(ui, palette);
-                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                        action.open_new_tab = Some(start.clone());
-                                        ui.close();
-                                    }
-                                    if ui.button(&i18n.tr("network_location_edit")).clicked() {
-                                        action.edit_remote = Some(conn.id);
-                                        ui.close();
-                                    }
-                                    if ui.button(&i18n.tr("network_location_disconnect")).clicked() {
-                                        action.disconnect_remote = Some(conn.id);
-                                        ui.close();
-                                    }
-                                    ui.separator();
-                                    if ui.button(&i18n.tr("network_location_remove")).clicked() {
-                                        action.remove_remote = Some(conn.id);
-                                        ui.close();
-                                    }
-                                });
+                        // One group per protocol, and only for protocols that
+                        // actually have a location saved - an empty group header
+                        // would be pure chrome.
+                        for kind in crate::core::remote::RemoteKind::ALL {
+                            if !connections.iter().any(|conn| conn.kind == kind) {
+                                continue;
+                            }
+                            let key = kind.label();
+                            let mut expanded =
+                                places.network_groups.get(key).copied().unwrap_or(true);
+                            ui.add_space(6.0);
+                            let (changed, _resp) =
+                                draw_subsection_header(ui, palette, key, &mut expanded);
+                            if changed {
+                                places.network_groups.insert(key.to_string(), expanded);
+                                action.places_toggled = true;
+                            }
+                            if !expanded {
+                                continue;
+                            }
+                            ui.add_space(4.0);
+                            for conn in connections.iter().filter(|conn| conn.kind == kind) {
+                                let root = crate::core::remote::path_for(conn.id, &[]);
+                                let start =
+                                    crate::core::remote::path_for(conn.id, &conn.start_segments());
+                                let is_current = places.current.starts_with(&root);
+                                let resp = place_row(
+                                    ui,
+                                    icon_cache,
+                                    palette,
+                                    remote_glyph(conn.kind),
+                                    &conn.display_name(),
+                                    &start,
+                                    is_current,
+                                    &mut action,
+                                );
+                                let resp = resp
+                                    .on_hover_text(format!("{} - {}", conn.kind.label(), conn.host));
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(start.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("network_location_edit")).clicked() {
+                                            action.edit_remote = Some(conn.id);
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .button(&i18n.tr("network_location_disconnect"))
+                                            .clicked()
+                                        {
+                                            action.disconnect_remote = Some(conn.id);
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button(&i18n.tr("network_location_remove")).clicked() {
+                                            action.remove_remote = Some(conn.id);
+                                            ui.close();
+                                        }
+                                    });
+                            }
                         }
-                        // Pinned network folders (\\server\share).
-                        for (index, place) in places.network_places.iter().enumerate() {
-                            let is_current = places.current == place.path;
-                            let resp = place_row(
-                                ui,
-                                icon_cache,
-                                palette,
-                                regular::SHARE_NETWORK,
-                                &place.name,
-                                &place.path,
-                                is_current,
-                                &mut action,
-                            );
-                            let resp = resp.on_hover_text(place.path.display().to_string());
-                            Popup::context_menu(&resp)
-                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                                .show(|ui| {
-                                    apply_eden_text_overrides(ui, palette);
-                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                        action.open_new_tab = Some(place.path.clone());
-                                        ui.close();
-                                    }
-                                    if ui.button(&i18n.tr("network_location_remove")).clicked() {
-                                        action.remove_network_place = Some(index);
-                                        ui.close();
-                                    }
-                                });
-                        }
+
+                        ui.add_space(6.0);
                         let add = draw_sidebar_item_with_icon(
                             ui,
                             icon_cache,
@@ -1046,26 +1180,6 @@ pub fn draw_sidebar(
                         );
                         if add.clicked() {
                             action.add_network_location = true;
-                        }
-
-                        for computer in network::get_network_computers_cached() {
-                            let resp = draw_sidebar_item(
-                                ui,
-                                icon_cache,
-                                &computer.path,
-                                &computer.name,
-                                true,
-                                false,
-                                palette,
-                                false,
-                                None,
-                            );
-                            if resp.clicked() {
-                                action.nav_to = Some(computer.path.clone());
-                            }
-                            if resp.middle_clicked() {
-                                action.open_new_tab = Some(computer.path.clone());
-                            }
                         }
                     }
                     } // sidebar_visibility.shared_network
