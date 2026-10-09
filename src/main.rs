@@ -10,7 +10,8 @@ use eframe::{NativeOptions, egui};
 use std::os::windows::ffi::OsStrExt;
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, MB_ICONERROR, MB_OK, MessageBoxW, SM_CXSCREEN, SM_CYSCREEN,
+    GetSystemMetrics, MB_ICONERROR, MB_OK, MessageBoxW, SM_CXSCREEN, SM_CXVIRTUALSCREEN,
+    SM_CYSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 use windows::core::PCWSTR;
 
@@ -65,13 +66,26 @@ fn main() -> eframe::Result<()> {
     let icon = load_icon();
     let window_size_mode = load_windows_size_mode_on_start();
 
+    // The primary monitor - what "full screen" means, and what a fresh
+    // install centres itself on.
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) } as f32;
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
 
+    // The desktop across *every* monitor. The origin can be negative, for a
+    // monitor placed left of or above the primary one.
+    let virtual_x = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) } as f32;
+    let virtual_y = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) } as f32;
+    let virtual_w = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) } as f32;
+    let virtual_h = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) } as f32;
+
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => egui::Vec2::new(screen_w, screen_h),
+        // Bounded by the whole desktop rather than the primary monitor: a
+        // window restored onto a second screen must not be shrunk to the
+        // primary's dimensions. `with_clamp_size_to_monitor_size(true)` below
+        // still trims it to whichever monitor it actually lands on.
         WindowSizeMode::Custom { width, height } => {
-            egui::Vec2::new(width.min(screen_w), height.min(screen_h))
+            egui::Vec2::new(width.min(virtual_w), height.min(virtual_h))
         }
     };
 
@@ -79,8 +93,20 @@ fn main() -> eframe::Result<()> {
     // saved position and it's still at least partly on a screen (guards
     // against a saved position from a monitor setup that's since changed) -
     // otherwise fall back to centering like a fresh install would.
+    //
+    // Checked against the whole desktop, not the primary monitor. The old
+    // check compared `x` against the *primary* monitor's width, so every
+    // position on a second monitor to the right of it failed and the window
+    // silently jumped back to the primary - verified on a two-monitor setup,
+    // where a saved x of 2100 (comfortably inside a 1920..3840 second screen)
+    // was discarded and the window re-centred on the primary.
     let (pos_x, pos_y) = match load_window_position() {
-        Some((x, y)) if x + window_size.x > 0.0 && y + window_size.y > 0.0 && x < screen_w && y < screen_h => {
+        Some((x, y))
+            if x + window_size.x > virtual_x
+                && y + window_size.y > virtual_y
+                && x < virtual_x + virtual_w
+                && y < virtual_y + virtual_h =>
+        {
             (x, y)
         }
         _ => (

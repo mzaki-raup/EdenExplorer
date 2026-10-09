@@ -1712,6 +1712,45 @@ PowerShell process) rather than the app's own code - if you're using the
   another process has to be exercised against a real running instance before
   it is described as working.**
 
+- **`GetSystemMetrics(SM_CXSCREEN)` is the *primary* monitor's width, not the
+  desktop's - and `main.rs` used it to decide whether a saved window position
+  was still valid, so the window could never be restored onto a second
+  monitor.** The guard read `x < screen_w`, which is exactly right for one
+  screen and silently wrong for two: any saved position far enough to the right
+  failed it and the window was re-centred on the primary instead. Verified on a
+  real two-monitor setup - a saved position comfortably inside the second
+  screen was discarded and the window jumped back. Fixed by checking the saved
+  rectangle against the **virtual desktop** (`SM_XVIRTUALSCREEN`/
+  `SM_YVIRTUALSCREEN`/`SM_CXVIRTUALSCREEN`/`SM_CYVIRTUALSCREEN`, whose origin
+  can be negative for a monitor placed left of or above the primary) and by
+  bounding the restored size by the virtual desktop rather than the primary -
+  `with_clamp_size_to_monitor_size(true)` still trims it to whatever monitor it
+  lands on. The centring *fallback* deliberately still uses the primary, since
+  that is what a fresh install should do.
+- **Two things that cost real time while testing the above, both about
+  measurement rather than the app.** (1) **A DPI-unaware process is lied to
+  about the desktop.** A first pass reported both monitors at 96 DPI / 100%;
+  the second monitor is actually 144 DPI / 150%, and the whole virtual desktop
+  is 3840 wide, not 3200. PowerShell is DPI-unaware by default, so every
+  coordinate and size it reads back is virtualized - call
+  `SetProcessDpiAwareness(2)` before `GetWindowRect`/`EnumDisplayMonitors`/a
+  screen capture or the numbers are quietly wrong. (2) **This app's window
+  positions are stored as logical points, not physical pixels** (they come from
+  `i.viewport().inner_rect`), so hand-writing a physical coordinate into
+  `window_position.bin` to simulate "it was on the second monitor" tests
+  something that never happens - on a 150% screen it is restored 1.5x further
+  out. The honest test is to move the real window, let the app's own per-frame
+  save run, then close and relaunch: done that way the round-trip is exact
+  (closed at physical (2200,150) on the 150% monitor, reopened at (2200,150)).
+- **`Process.MainWindowHandle` does not point at this app's real window.** For
+  EdenExplorer it resolves to an 11x11 untitled helper window; the real one is
+  the visible top-level window whose title is `EdenExplorer`. The ui-test
+  skill's `focus.ps1` uses `MainWindowHandle`, which is a likely contributor to
+  the focus flakiness documented at length above. When a script needs this
+  app's window, enumerate top-level windows and match the title (now reliably
+  set - see the CLI-forwarding entry) or the owning process, rather than
+  trusting `MainWindowHandle`.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
