@@ -1788,6 +1788,20 @@ PowerShell process) rather than the app's own code - if you're using the
   is replacing.** Finding a window is not evidence that anything is there to
   receive the message - and a forward that *succeeds* against a dying process
   is worse than one that fails, because it fails silently.
+  **The flag alone was not enough, for a reason worth remembering whenever a
+  bug is fixed in code that an *older* copy of the program is the one to
+  run: the update that installs this fix is still performed by the version
+  that has it wrong.** `restart()` belongs to the copy being replaced, so
+  updating from a release that predates `--replacing-previous` still spawns
+  the replacement without it - and failure mode (2) above would have bitten
+  exactly once more, on the very update meant to fix it, looking for all the
+  world like the fix had not worked. Covered by also having a *successful*
+  forward that carried **no paths** watch briefly for the instance it just
+  reached to disappear, and start up in its place if it does. Gated on there
+  being no paths deliberately: `EdenExplorer.exe <folder>` means a tab was
+  opened in a window the user is already looking at, and making every one of
+  those linger ~1.6s to insure against a case that cannot arise there is a
+  poor trade (measured: 153ms with the gate, 1779ms without).
 - **A live test that matched this app's window by title alone reported "the
   app started" when what had actually appeared was the error dialog saying it
   refused to.** While reproducing the bug above, the first harness looked for

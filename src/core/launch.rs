@@ -40,6 +40,10 @@ pub const REPLACING_PREVIOUS: &str = "--replacing-previous";
 /// mutex before giving up on a clean handover.
 const HANDOVER_ATTEMPTS: u32 = 25;
 const HANDOVER_RETRY: Duration = Duration::from_millis(200);
+/// How long to keep watching after a *successful* forward, in case the
+/// instance it reached was itself on the way out. Short: this only delays a
+/// background process that has already done its job.
+const SURVIVAL_ATTEMPTS: u32 = 8;
 const WINDOW_TITLE: &str = "EdenExplorer";
 const COPYDATA_ID: usize = 0x4544_454e;
 static FORWARDED_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
@@ -263,7 +267,32 @@ pub fn acquire_or_forward(paths: &[PathBuf]) -> Result<Option<InstanceGuard>, La
         return Ok(Some(guard));
     }
     let rejected = match forward_paths(paths) {
-        Ok(()) => return Ok(None),
+        Ok(()) => {
+            // The message landed, so an instance was alive a moment ago -
+            // which is not the same as one still being there once we exit.
+            // A copy performing a self-update spawns its replacement and
+            // only *then* exits, so a replacement started by a version that
+            // predates `REPLACING_PREVIOUS` can forward successfully to the
+            // very process it is replacing, exit, and leave nothing on
+            // screen at all. If the instance really does go away, start up
+            // in its place.
+            //
+            // Only when no paths were given, which is what a restart looks
+            // like: `EdenExplorer.exe <folder>` means a tab was opened in a
+            // window the user is already looking at, and making every one of
+            // those linger a second and a half to insure against a case that
+            // cannot arise there would be a poor trade.
+            if !paths.is_empty() {
+                return Ok(None);
+            }
+            for _ in 0..SURVIVAL_ATTEMPTS {
+                thread::sleep(HANDOVER_RETRY);
+                if let Claim::Owned(guard) = claim_instance()? {
+                    return Ok(Some(guard));
+                }
+            }
+            return Ok(None);
+        }
         Err(error) => error,
     };
     // Something holds the mutex but would not take the message. The usual
