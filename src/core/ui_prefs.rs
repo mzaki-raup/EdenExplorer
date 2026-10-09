@@ -118,6 +118,13 @@ pub struct TerminalPrefs {
     pub side_width: f32,
     /// In the WSL layout, the shell changes to each folder you open.
     pub wsl_follow: bool,
+    /// Width of the shell beside a server's files, in points. `0` means
+    /// "never dragged": the pane then opens at half the view, which is what
+    /// an equal split means for whatever size the window happens to be. Its
+    /// own setting rather than `side_width` so arranging one layout does not
+    /// silently resize the other.
+    #[serde(default)]
+    pub ssh_side_width: f32,
 }
 
 impl Default for TerminalPrefs {
@@ -130,6 +137,7 @@ impl Default for TerminalPrefs {
             wsl_layout: true,
             side_width: 560.0,
             wsl_follow: true,
+            ssh_side_width: 0.0,
         }
     }
 }

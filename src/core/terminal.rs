@@ -31,7 +31,27 @@ pub struct Listener {
     visible: Arc<AtomicBool>,
     /// Lets replies to the program's queries (cursor position, ...) go
     /// straight back from the reader thread, even while nothing is drawn.
-    pty: Arc<OnceLock<EventLoopSender>>,
+    pty: Arc<OnceLock<InputSink>>,
+}
+
+/// Where a reader thread sends bytes back: a local pseudo console, or an SSH
+/// channel. Only these two exist, so an enum beats a boxed closure.
+pub enum InputSink {
+    ConPty(EventLoopSender),
+    Ssh(crate::core::ssh_shell::SshSender),
+}
+
+impl InputSink {
+    fn send(&self, bytes: Cow<'static, [u8]>) {
+        match self {
+            InputSink::ConPty(tx) => {
+                let _ = tx.send(Msg::Input(bytes));
+            }
+            InputSink::Ssh(sender) => {
+                sender.send(crate::core::ssh_shell::Msg::Input(bytes.into_owned()))
+            }
+        }
+    }
 }
 
 impl EventListener for Listener {
@@ -41,7 +61,7 @@ impl EventListener for Listener {
             Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange => {}
             Event::PtyWrite(text) => {
                 if let Some(pty) = self.pty.get() {
-                    let _ = pty.send(Msg::Input(text.into_bytes().into()));
+                    pty.send(text.into_bytes().into());
                 }
                 return;
             }
@@ -57,10 +77,49 @@ impl EventListener for Listener {
 
 pub type SharedTerm = Arc<FairMutex<Term<Listener>>>;
 
+/// How a session talks to its shell. The grid, the renderer, key encoding
+/// and selection are all shared; only this differs between a local shell and
+/// one on a server.
+enum Transport {
+    ConPty(Notifier),
+    Ssh(crate::core::ssh_shell::SshShell),
+}
+
+impl Transport {
+    fn write(&self, bytes: Cow<'static, [u8]>) {
+        match self {
+            Transport::ConPty(notifier) => notifier.notify(bytes),
+            Transport::Ssh(shell) => {
+                shell.send(crate::core::ssh_shell::Msg::Input(bytes.into_owned()))
+            }
+        }
+    }
+
+    fn resize(&mut self, size: WindowSize) {
+        match self {
+            Transport::ConPty(notifier) => notifier.on_resize(size),
+            Transport::Ssh(shell) => shell.send(crate::core::ssh_shell::Msg::Resize(
+                size.num_cols,
+                size.num_lines,
+            )),
+        }
+    }
+
+    fn shutdown(&self) {
+        match self {
+            // Closing the pseudo console ends the shell.
+            Transport::ConPty(notifier) => {
+                let _ = notifier.0.send(Msg::Shutdown);
+            }
+            Transport::Ssh(shell) => shell.send(crate::core::ssh_shell::Msg::Shutdown),
+        }
+    }
+}
+
 pub struct TerminalSession {
     pub profile: ShellProfile,
     pub term: SharedTerm,
-    notifier: Notifier,
+    transport: Transport,
     events: Receiver<Event>,
     /// The title the shell set (PowerShell shows the folder), if any.
     pub title: Option<String>,
@@ -116,9 +175,64 @@ impl TerminalSession {
         let term = Arc::new(FairMutex::new(term));
         let event_loop = EventLoop::new(term.clone(), listener, pty, true, false).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
-        let _ = pty_sender.set(event_loop.channel());
+        let _ = pty_sender.set(InputSink::ConPty(event_loop.channel()));
         event_loop.spawn();
-        Ok(TerminalSession { profile: profile.clone(), term, notifier, events, title: None, exited: None, size, visible })
+        Ok(TerminalSession {
+            profile: profile.clone(),
+            term,
+            transport: Transport::ConPty(notifier),
+            events,
+            title: None,
+            exited: None,
+            size,
+            visible,
+        })
+    }
+
+    /// Starts a shell on the server `conn` points at, rather than locally.
+    ///
+    /// Signing in happens on the shell's own thread, so this returns at once
+    /// and a failure arrives as text in the grid - the pane has nowhere else
+    /// to show one.
+    pub fn start_ssh(
+        conn: &crate::core::remote::RemoteConnection,
+        secret: String,
+        cols: u16,
+        rows: u16,
+        cell: (u16, u16),
+        repaint: Arc<dyn Fn() + Send + Sync>,
+        // Already translated: `core` does not reach the i18n bundles.
+        connecting: String,
+    ) -> TerminalSession {
+        let size = WindowSize { num_lines: rows.max(1), num_cols: cols.max(2), cell_width: cell.0, cell_height: cell.1 };
+        let (tx, events) = crossbeam_channel::unbounded();
+        let visible = Arc::new(AtomicBool::new(true));
+        let pty_sender = Arc::new(OnceLock::new());
+        let listener = Listener { tx, repaint, visible: visible.clone(), pty: pty_sender.clone() };
+        let config = Config { scrolling_history: SCROLLBACK_LINES, ..Config::default() };
+        let term = Term::new(config, &TermSize::new(size.num_cols as usize, size.num_lines as usize), listener.clone());
+        let term = Arc::new(FairMutex::new(term));
+        let shell = crate::core::ssh_shell::start(
+            conn,
+            secret,
+            size.num_cols,
+            size.num_lines,
+            term.clone(),
+            listener,
+            connecting,
+        );
+        // Replies to the program's own queries go back down the same channel.
+        let _ = pty_sender.set(InputSink::Ssh(shell.sender()));
+        TerminalSession {
+            profile: ShellProfile::for_remote(conn),
+            term,
+            transport: Transport::Ssh(shell),
+            events,
+            title: None,
+            exited: None,
+            size,
+            visible,
+        }
     }
 
     /// Whether the pane shows this terminal (see `Listener::visible`).
@@ -129,7 +243,7 @@ impl TerminalSession {
     /// Sends keyboard input to the shell.
     pub fn write(&self, bytes: impl Into<Cow<'static, [u8]>>) {
         if self.exited.is_none() {
-            self.notifier.notify(bytes);
+            self.transport.write(bytes.into());
         }
     }
 
@@ -148,7 +262,7 @@ impl TerminalSession {
         }
         self.size = size;
         self.term.lock().resize(TermSize::new(size.num_cols as usize, size.num_lines as usize));
-        self.notifier.on_resize(size);
+        self.transport.resize(size);
     }
 
     /// Handles what the terminal reported since the last frame. `copy` is
@@ -179,8 +293,7 @@ impl TerminalSession {
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        // Closing the pseudo console ends the shell.
-        let _ = self.notifier.0.send(Msg::Shutdown);
+        self.transport.shutdown();
     }
 }
 

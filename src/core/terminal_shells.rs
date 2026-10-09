@@ -17,6 +17,10 @@ pub enum ShellKind {
     Wsl(String),
     Msys2,
     Cygwin,
+    /// A shell on the server a remote location points at, by connection id.
+    /// Nothing about it is local: it has no program to launch, and
+    /// `TerminalSession::start_ssh` opens it over SSH instead of ConPTY.
+    Ssh(u64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,6 +45,17 @@ pub struct Launch {
 }
 
 impl ShellProfile {
+    /// The profile for a remote location's own shell. `program` stays empty -
+    /// there is no local program, and `launch` is never called for this kind.
+    pub fn for_remote(conn: &crate::core::remote::RemoteConnection) -> Self {
+        Self {
+            id: format!("ssh:{}", conn.id),
+            name: conn.display_name(),
+            kind: ShellKind::Ssh(conn.id),
+            program: PathBuf::new(),
+        }
+    }
+
     pub fn launch(&self, dir: &Path) -> Launch {
         let mut args = Vec::new();
         let mut env = Vec::new();
@@ -69,6 +84,9 @@ impl ShellProfile {
                 };
                 args.extend(["-d".to_string(), distro.clone(), "--cd".to_string(), cd]);
             }
+            // Never reached: an SSH shell is opened by `start_ssh`, which
+            // does not go through a local command line at all.
+            ShellKind::Ssh(_) => {}
         }
         Launch { program: self.program.clone(), args, env, raw_args }
     }
@@ -93,6 +111,17 @@ impl ShellProfile {
                 WslDir::OtherDistro => "\x15cd ~\r".to_string(),
                 WslDir::Windows => format!("\x15cd \"$(wslpath -u '{}')\"\r", single(&path, "'\\''")),
             },
+            // `dir` here is the local-looking remote path
+            // (`\\?\EdenRemote\<id>\docs`); the server wants its own.
+            ShellKind::Ssh(id) => match crate::core::remote::split(dir) {
+                Some((path_id, segments)) if path_id == *id => {
+                    crate::core::ssh_shell::cd_command(&crate::core::remote::remote_path(&segments))
+                }
+                // A folder on some other connection, or not a remote path at
+                // all: there is nowhere sensible to go, so stay put rather
+                // than send the shell somewhere arbitrary.
+                _ => String::new(),
+            },
         }
     }
 
@@ -105,6 +134,7 @@ impl ShellProfile {
             ShellKind::GitBash => regular::GIT_BRANCH,
             ShellKind::Wsl(_) => regular::LINUX_LOGO,
             ShellKind::Msys2 | ShellKind::Cygwin => regular::CURRENCY_DOLLAR,
+            ShellKind::Ssh(_) => regular::CLOUD,
         }
     }
 }

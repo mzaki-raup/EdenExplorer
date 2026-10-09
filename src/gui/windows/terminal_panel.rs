@@ -85,6 +85,8 @@ pub struct TerminalPanels {
     family_ready: bool,
     /// The WSL distribution each tab's folder was in, last frame.
     wsl: HashMap<u64, String>,
+    /// The server whose shell each tab's folder belongs to, last frame.
+    remote_shell: HashMap<u64, u64>,
     /// Tabs whose pane opened by itself on entering WSL (and closes again
     /// on leaving it, unless the user toggled it meanwhile).
     auto_opened: HashSet<u64>,
@@ -130,6 +132,32 @@ impl TerminalPanels {
             None => {
                 self.wsl.remove(&tab);
                 self.want_profile.remove(&tab);
+                if self.auto_opened.remove(&tab) {
+                    self.open.remove(&tab);
+                    self.focused = false;
+                }
+            }
+        }
+    }
+
+    /// Called each frame with the connection id of the server whose shell
+    /// this tab's folder belongs to (`None` when it is not on one, or the
+    /// location has no shell). Entering one opens the pane beside the files;
+    /// leaving closes a pane that opened by itself. Mirrors `track_wsl`,
+    /// which does the same for a WSL distribution.
+    pub fn track_remote_shell(&mut self, tab: u64, connection: Option<u64>) {
+        if self.remote_shell.get(&tab).copied() == connection {
+            return;
+        }
+        match connection {
+            Some(id) => {
+                self.remote_shell.insert(tab, id);
+                if self.open.insert(tab) {
+                    self.auto_opened.insert(tab);
+                }
+            }
+            None => {
+                self.remote_shell.remove(&tab);
                 if self.auto_opened.remove(&tab) {
                     self.open.remove(&tab);
                     self.focused = false;
@@ -443,8 +471,41 @@ impl TerminalPanels {
                 None => start_profile = list.iter().find(|p| p.id == id).cloned(),
             }
         }
+        // A folder on a server that offers a shell runs *that server's*
+        // shell, not a local one. Checked before the default below so
+        // opening the pane on a remote folder never starts cmd.exe instead.
+        let remote_shell = crate::core::remote::connection_of(dir).filter(|c| c.has_shell());
+        if let Some(conn) = &remote_shell {
+            let id = format!("ssh:{}", conn.id);
+            match panel.sessions.iter().position(|s| s.profile.id == id) {
+                // Already running (or ended, and waiting for Enter to be
+                // restarted - not restarted from here, or a server that
+                // refuses to connect would be retried every frame).
+                Some(i) => panel.active = i,
+                None => {
+                    let secret =
+                        crate::core::remote::credentials::load(conn.id).unwrap_or_default();
+                    let session = TerminalSession::start_ssh(
+                        conn,
+                        secret,
+                        cols,
+                        rows,
+                        cell,
+                        repaint.clone(),
+                        i18n.tr("terminal_ssh_connecting"),
+                    );
+                    panel.sessions.push(session);
+                    panel.active = panel.sessions.len() - 1;
+                    panel.error = None;
+                    self.focus_next = true;
+                }
+            }
+            start_profile = None;
+        }
+
         // Start a shell: the picked one, or the default when the pane is empty.
-        if start_profile.is_none()
+        if remote_shell.is_none()
+            && start_profile.is_none()
             && panel.sessions.is_empty()
             && panel.error.is_none()
             && let Some(list) = shells
@@ -489,16 +550,32 @@ impl TerminalPanels {
         };
         session.resize(cols, rows, cell);
 
-        // Follow Folder: the WSL shell changes to each folder opened on the
-        // left (not while a full-screen program like vim or less runs).
-        if matches!(session.profile.kind, ShellKind::Wsl(_)) && session.exited.is_none() {
-            let last = self.followed.insert(tab, start_dir.clone());
+        // Follow Folder: the shell changes to each folder opened on the left
+        // (not while a full-screen program like vim or less runs).
+        //
+        // A server's shell follows the *remote* path, which `start_dir` is
+        // not: `usable_dir` turns a location the local filesystem cannot
+        // open into the home folder, which would send the shell somewhere
+        // unrelated on every navigation.
+        let follows = matches!(
+            session.profile.kind,
+            ShellKind::Wsl(_) | ShellKind::Ssh(_)
+        );
+        if follows && session.exited.is_none() {
+            let is_wsl = matches!(session.profile.kind, ShellKind::Wsl(_));
+            let follow_dir = if is_wsl { start_dir.clone() } else { dir.to_path_buf() };
+            let last = self.followed.insert(tab, follow_dir.clone());
             if layout.follow
-                && layout.wsl.is_some()
-                && last.as_ref().is_some_and(|last| *last != start_dir)
+                && (!is_wsl || layout.wsl.is_some())
+                && last.as_ref().is_some_and(|last| *last != follow_dir)
                 && !session.term.lock().mode().contains(TermMode::ALT_SCREEN)
             {
-                session.write(session.profile.cd_command(&start_dir).into_bytes());
+                // Empty when the folder belongs to some other connection:
+                // better to stay put than send the shell somewhere random.
+                let cd = session.profile.cd_command(&follow_dir);
+                if !cd.is_empty() {
+                    session.write(cd.into_bytes());
+                }
             }
         }
 
@@ -532,9 +609,29 @@ impl TerminalPanels {
                 let enter = input.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::Enter, pressed: true, .. }));
                 if enter {
                     let profile = session.profile.clone();
-                    match TerminalSession::start(&profile, &start_dir, cols, rows, cell, repaint) {
-                        Ok(new) => *session = new,
-                        Err(err) => panel.error = Some(err),
+                    // A server's shell has no local program to launch, so it
+                    // cannot go through `start` - that would try to run an
+                    // empty path.
+                    if let ShellKind::Ssh(id) = profile.kind {
+                        if let Some(conn) = crate::core::remote::connection(id) {
+                            let secret =
+                                crate::core::remote::credentials::load(id).unwrap_or_default();
+                            *session = TerminalSession::start_ssh(
+                                &conn,
+                                secret,
+                                cols,
+                                rows,
+                                cell,
+                                repaint,
+                                i18n.tr("terminal_ssh_connecting"),
+                            );
+                        }
+                    } else {
+                        match TerminalSession::start(&profile, &start_dir, cols, rows, cell, repaint)
+                        {
+                            Ok(new) => *session = new,
+                            Err(err) => panel.error = Some(err),
+                        }
                     }
                     return action;
                 }

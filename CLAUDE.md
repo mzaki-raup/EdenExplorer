@@ -1932,6 +1932,41 @@ PowerShell process) rather than the app's own code - if you're using the
   That catches a typo in a step that would otherwise only surface after a
   merge to `main`, by which point it has already published something wrong.
 
+- **A shell on a server reuses the whole terminal except the pipe, and that is
+  the only part worth writing.** `alacritty_terminal`'s `EventLoop` is built
+  around a local pseudo console, so there is nothing to reuse there - but the
+  grid, the renderer, key encoding, selection and scrollback are all
+  transport-agnostic. `core::ssh_shell` replaces just the loop: a thread reads
+  a `russh` channel, feeds bytes through the same `vte::ansi::Processor` into
+  the same `Term`, and sends keys and window-size changes back. `TerminalSession`
+  grew a two-variant `Transport` and `Listener`'s reply path an `InputSink`;
+  everything above them is unchanged. **Three things to know if this is
+  touched again:** (1) `Processor::new()` needs its default type parameter
+  named in type position (`let mut p: Processor = Processor::new()`), the
+  default does not apply to the call; (2) `SshShell`'s `Drop` ends the shell,
+  so the reader thread's reply path holds a separate send-only `SshSender`
+  rather than a clone - a clone would kill the shell when either copy dropped;
+  (3) it opens its **own** SSH connection rather than borrowing the SFTP one,
+  because that one lives on a current-thread runtime that only advances inside
+  a `block_on` per file operation, so a shell sharing it would only receive
+  output while the user happened to be listing a directory. Both still sign in
+  through the one `sftp::sign_in`.
+- **A feature that needs a server can still be verified almost entirely
+  without one, by testing the failure path on purpose.** The SSH shell could
+  not be exercised end to end here - the local `sshd` is installed but stopped,
+  and connecting to it would need the user's own Windows credentials, which is
+  not something to handle. What *is* reachable without any credential is a
+  refused TCP connect: seeding a connection in the dev profile's `ui_prefs.json`
+  (JSON, so hand-editable, unlike the `postcard` files beside it) pointing at a
+  port with nothing listening exercised the pane opening beside the files, the
+  equal split, the profile naming, the transport thread starting, and the error
+  arriving in the grid as readable text - everything except a successful
+  sign-in. **Reach for the failure path when the success path needs
+  credentials: it covers most of the same wiring and costs nothing.** Note the
+  CLI cannot be used to navigate there - `launch::is_virtual_path` only accepts
+  This PC and the Recycle Bin, so a `\\?\EdenRemote\...` argument is rejected
+  as "not an existing directory"; the sidebar entry is the way in.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

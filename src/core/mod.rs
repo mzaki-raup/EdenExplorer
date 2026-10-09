@@ -27,6 +27,7 @@ pub mod filter;
 pub mod material_icons;
 pub mod spring_load;
 pub mod sidebar_sections;
+pub mod ssh_shell;
 pub mod terminal;
 pub mod terminal_shells;
 pub mod mft_helper;

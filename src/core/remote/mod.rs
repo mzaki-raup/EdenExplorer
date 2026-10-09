@@ -90,6 +90,10 @@ pub struct RemoteConnection {
     /// S3 only.
     pub bucket: String,
     pub region: String,
+    /// SFTP: also open an interactive SSH shell beside the files. Same
+    /// server, same credentials, a second connection - so it is a checkbox
+    /// here rather than a protocol of its own.
+    pub shell: bool,
 }
 
 impl Default for RemoteConnection {
@@ -106,11 +110,17 @@ impl Default for RemoteConnection {
             key_file: None,
             bucket: String::new(),
             region: "us-east-1".into(),
+            shell: false,
         }
     }
 }
 
 impl RemoteConnection {
+    /// An interactive SSH shell is available beside the files.
+    pub fn has_shell(&self) -> bool {
+        self.shell && self.kind == RemoteKind::Sftp
+    }
+
     /// How it's shown when it has no name.
     pub fn display_name(&self) -> String {
         if !self.name.trim().is_empty() {

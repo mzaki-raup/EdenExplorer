@@ -504,6 +504,13 @@ fn draw_location_form(
                     field(ui, &mut form.conn.path, hint, false)
                 });
             }
+            // SFTP only: the shell is a second channel on the same SSH
+            // server, so there is nothing to offer for FTP/WebDAV/S3.
+            if kind == RemoteKind::Sftp {
+                row(ui, "", &mut |ui| {
+                    ui.checkbox(&mut form.conn.shell, i18n.tr("network_location_shell"));
+                });
+            }
         }
     }
 

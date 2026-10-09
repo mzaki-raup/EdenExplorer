@@ -5669,12 +5669,22 @@ impl MainWindow {
         action: crate::gui::windows::terminal_panel::PanelAction,
         dir: &std::path::Path,
     ) {
+        // Read before `prefs` borrows `self`: the server-shell pane keeps
+        // its own width, so resizing one layout never moves the other.
+        let on_remote_shell = crate::core::remote::connection_of(
+            &self.active_tab().view(self.focused_split).nav.current,
+        )
+        .is_some_and(|c| c.has_shell());
         let prefs = &mut self.settings_window.current_settings.ui_prefs;
         if let Some(height) = action.new_height {
             prefs.terminal.height = height.clamp(120.0, 2000.0);
         }
         if let Some(width) = action.new_width {
-            prefs.terminal.side_width = width.clamp(260.0, 3000.0);
+            if on_remote_shell {
+                prefs.terminal.ssh_side_width = width.clamp(260.0, 3000.0);
+            } else {
+                prefs.terminal.side_width = width.clamp(260.0, 3000.0);
+            }
         }
         if action.toggle_follow {
             prefs.terminal.wsl_follow = !prefs.terminal.wsl_follow;

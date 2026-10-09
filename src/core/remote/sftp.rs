@@ -61,53 +61,69 @@ impl client::Handler for HostKeyCheck {
     }
 }
 
+/// Connects and signs in. Both SFTP and the interactive shell
+/// (`core::ssh_shell`, which opens its own channel on its own connection)
+/// start here, so there is exactly one place that knows how this app
+/// authenticates against a server and checks its host key.
+pub(crate) async fn sign_in(
+    conn: &RemoteConnection,
+    secret: &str,
+) -> Result<client::Handle<HostKeyCheck>, String> {
+    let stream = tcp(&conn.host, conn.port)?;
+    stream.set_nonblocking(true).map_err(err)?;
+    let stream = tokio::net::TcpStream::from_std(stream).map_err(err)?;
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(Duration::from_secs(600)),
+        keepalive_interval: Some(Duration::from_secs(30)),
+        ..Default::default()
+    });
+    let check = HostKeyCheck {
+        host: conn.host.clone(),
+        port: conn.port,
+    };
+    let mut ssh = match client::connect_stream(config, stream, check).await {
+        Ok(ssh) => ssh,
+        Err(e) => return Err(format!("SSH connection failed: {e}")),
+    };
+    let signed_in = match &conn.key_file {
+        Some(key_file) => {
+            let key =
+                russh::keys::load_secret_key(key_file, (!secret.is_empty()).then_some(secret))
+                    .map_err(|e| format!("Couldn't read the key file: {e}"))?;
+            let hash = ssh.best_supported_rsa_hash().await.map_err(err)?.flatten();
+            ssh.authenticate_publickey(
+                &conn.username,
+                PrivateKeyWithHashAlg::new(Arc::new(key), hash),
+            )
+            .await
+            .map_err(err)?
+        }
+        None => ssh
+            .authenticate_password(&conn.username, secret)
+            .await
+            .map_err(err)?,
+    };
+    if !signed_in.success() {
+        return Err("Signing in failed (wrong user name, password or key).".to_string());
+    }
+    Ok(ssh)
+}
+
+/// Turns a failure from `sign_in` into something that says *why* when the
+/// cause was a host key that no longer matches.
+pub(crate) fn explain(conn: &RemoteConnection, e: String) -> String {
+    super::credentials::host_key_problem(&conn.host, conn.port).unwrap_or(e)
+}
+
 impl SftpFs {
     pub fn connect(conn: &RemoteConnection, secret: &str) -> Result<Self, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(err)?;
-        let stream = tcp(&conn.host, conn.port)?;
-        stream.set_nonblocking(true).map_err(err)?;
         let (ssh, sftp) = runtime
             .block_on(async {
-                let stream = tokio::net::TcpStream::from_std(stream).map_err(err)?;
-                let config = Arc::new(client::Config {
-                    inactivity_timeout: Some(Duration::from_secs(600)),
-                    keepalive_interval: Some(Duration::from_secs(30)),
-                    ..Default::default()
-                });
-                let check = HostKeyCheck {
-                    host: conn.host.clone(),
-                    port: conn.port,
-                };
-                let mut ssh = match client::connect_stream(config, stream, check).await {
-                    Ok(ssh) => ssh,
-                    Err(e) => return Err(format!("SSH connection failed: {e}")),
-                };
-                let signed_in = match &conn.key_file {
-                    Some(key_file) => {
-                        let key = russh::keys::load_secret_key(
-                            key_file,
-                            (!secret.is_empty()).then_some(secret),
-                        )
-                        .map_err(|e| format!("Couldn't read the key file: {e}"))?;
-                        let hash = ssh.best_supported_rsa_hash().await.map_err(err)?.flatten();
-                        ssh.authenticate_publickey(
-                            &conn.username,
-                            PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                        )
-                        .await
-                        .map_err(err)?
-                    }
-                    None => ssh
-                        .authenticate_password(&conn.username, secret)
-                        .await
-                        .map_err(err)?,
-                };
-                if !signed_in.success() {
-                    return Err("Signing in failed (wrong user name, password or key).".to_string());
-                }
+                let ssh = sign_in(conn, secret).await?;
                 let channel = ssh.channel_open_session().await.map_err(err)?;
                 channel.request_subsystem(true, "sftp").await.map_err(err)?;
                 let sftp = SftpSession::new(channel.into_stream())
@@ -115,10 +131,7 @@ impl SftpFs {
                     .map_err(|e| format!("The server doesn't offer SFTP: {e}"))?;
                 Ok((ssh, sftp))
             })
-            // A rejected host key surfaces as a generic error; say why.
-            .map_err(|e: String| {
-                super::credentials::host_key_problem(&conn.host, conn.port).unwrap_or(e)
-            })?;
+            .map_err(|e: String| explain(conn, e))?;
         Ok(Self {
             runtime,
             _ssh: ssh,

@@ -1325,13 +1325,31 @@ impl eframe::App for MainWindow {
                                             .then(|| crate::core::places::wsl_location(&dir).map(|(distro, _)| distro))
                                             .flatten();
                                         self.terminal.track_wsl(tab_id, wsl.as_deref());
+                                        // A folder on a server that offers a
+                                        // shell gets the same side-by-side
+                                        // treatment, running that server's
+                                        // shell instead of a local one.
+                                        let remote_shell = crate::core::remote::connection_of(&dir)
+                                            .filter(|c| c.has_shell())
+                                            .map(|c| c.id);
+                                        self.terminal.track_remote_shell(tab_id, remote_shell);
+                                        let side_width = if remote_shell.is_some() {
+                                            // Equal split until the user drags it.
+                                            if prefs.ssh_side_width > 0.0 {
+                                                prefs.ssh_side_width
+                                            } else {
+                                                full.width() / 2.0
+                                            }
+                                        } else {
+                                            prefs.side_width
+                                        };
                                         let layout = crate::gui::windows::terminal_panel::PaneLayout {
-                                            side: wsl.is_some(),
+                                            side: wsl.is_some() || remote_shell.is_some(),
                                             follow: prefs.wsl_follow,
                                             wsl,
                                         };
                                         let reserved = if layout.side {
-                                            self.terminal.reserved_width(tab_id, prefs.side_width, full.width()).map(|width| {
+                                            self.terminal.reserved_width(tab_id, side_width, full.width()).map(|width| {
                                                 let rect = egui::Rect::from_min_max(
                                                     egui::pos2(full.right() - width, full.top()),
                                                     full.max,
