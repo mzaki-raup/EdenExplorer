@@ -1329,9 +1329,8 @@ impl eframe::App for MainWindow {
                                         // shell gets the same side-by-side
                                         // treatment, running that server's
                                         // shell instead of a local one.
-                                        let remote_shell = crate::core::remote::connection_of(&dir)
-                                            .filter(|c| c.has_shell())
-                                            .map(|c| c.id);
+                                        let remote_shell =
+                                            crate::core::remote::shell_connection_of(&dir);
                                         self.terminal.track_remote_shell(tab_id, remote_shell);
                                         let side_width = if remote_shell.is_some() {
                                             // Equal split until the user drags it.

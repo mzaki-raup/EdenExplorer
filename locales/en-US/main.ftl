@@ -1250,3 +1250,8 @@ sidebar_order_always_shown = Always shown
 network_location_shell = Open an SSH shell beside the files
 terminal_ssh_connecting = Connecting to the server…
 update_incomplete = A newer release is published, but its program file is missing so it cannot be installed. Check the releases page
+
+# Redis locations (read-only key browsing)
+network_location_key_prefix = Start At Key Prefix
+network_location_database = Database
+network_location_redis_read_only = Read-only: keys are split on ":" into folders. Nothing here can change the database.

@@ -41,6 +41,24 @@ fn form_for(settings: &SettingsWindow, selection: NetworkSelection) -> Option<Ne
     }
 }
 
+/// Whether `selection` still points at something that exists.
+///
+/// Separate from `form_for` on purpose, and not written as
+/// `form_for(..).is_some()`: this is checked **every frame** the page is
+/// drawn, while building a form for a remote location calls
+/// `credentials::load` - a Windows Credential Manager read. Answering "does
+/// this still exist" was therefore hitting the credential store sixty times
+/// a second for as long as the page stayed open.
+fn selection_exists(settings: &SettingsWindow, selection: NetworkSelection) -> bool {
+    let prefs = &settings.current_settings.ui_prefs;
+    match selection {
+        // Being filled in, so there is nothing for it to point at yet.
+        NetworkSelection::New => true,
+        NetworkSelection::Share(index) => index < prefs.network_places.len(),
+        NetworkSelection::Remote(id) => prefs.remote_connections.iter().any(|c| c.id == id),
+    }
+}
+
 /// Selects `selection` and rebuilds the detail pane's form for it.
 pub(crate) fn select(settings: &mut SettingsWindow, selection: NetworkSelection) {
     settings.network_editor = form_for(settings, selection);
@@ -80,7 +98,7 @@ pub fn draw_network_settings(
     // left stale by a removal), then fall back to the first entry so the
     // detail pane isn't empty whenever there is something to show.
     if let Some(selection) = settings.selected_network
-        && form_for(settings, selection).is_none()
+        && !selection_exists(settings, selection)
     {
         settings.selected_network = None;
         settings.network_editor = None;
@@ -492,16 +510,33 @@ fn draw_location_form(
                 RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => {
                     Some("network_location_start_folder")
                 }
+                RemoteKind::Redis => Some("network_location_key_prefix"),
                 RemoteKind::S3 => None,
             };
             if let Some(label) = path_label {
-                let hint = if kind == RemoteKind::WebDav {
-                    "/remote.php/dav/files/me"
-                } else {
-                    "/home/me"
+                let hint = match kind {
+                    RemoteKind::WebDav => "/remote.php/dav/files/me",
+                    RemoteKind::Redis => "user:1000",
+                    _ => "/home/me",
                 };
                 row(ui, &i18n.tr(label), &mut |ui| {
                     field(ui, &mut form.conn.path, hint, false)
+                });
+            }
+            // Redis keeps several numbered databases; everything else has
+            // nothing to pick between.
+            if kind == RemoteKind::Redis {
+                row(ui, &i18n.tr("network_location_database"), &mut |ui| {
+                    ui.add(egui::DragValue::new(&mut form.conn.database).range(0..=15));
+                });
+                row(ui, "", &mut |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(i18n.tr("network_location_redis_read_only"))
+                                .color(palette.tooltip_text_color),
+                        )
+                        .selectable(false),
+                    );
                 });
             }
             // SFTP only: the shell is a second channel on the same SSH

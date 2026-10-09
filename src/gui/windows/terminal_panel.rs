@@ -474,19 +474,24 @@ impl TerminalPanels {
         // A folder on a server that offers a shell runs *that server's*
         // shell, not a local one. Checked before the default below so
         // opening the pane on a remote folder never starts cmd.exe instead.
-        let remote_shell = crate::core::remote::connection_of(dir).filter(|c| c.has_shell());
-        if let Some(conn) = &remote_shell {
-            let id = format!("ssh:{}", conn.id);
+        // Only the id each frame; the connection itself is cloned once, and
+        // only when a shell actually has to be started.
+        let remote_shell = crate::core::remote::shell_connection_of(dir);
+        if let Some(conn_id) = remote_shell {
+            let id = format!("ssh:{conn_id}");
             match panel.sessions.iter().position(|s| s.profile.id == id) {
                 // Already running (or ended, and waiting for Enter to be
                 // restarted - not restarted from here, or a server that
                 // refuses to connect would be retried every frame).
                 Some(i) => panel.active = i,
                 None => {
+                    let Some(conn) = crate::core::remote::connection(conn_id) else {
+                        return action;
+                    };
                     let secret =
                         crate::core::remote::credentials::load(conn.id).unwrap_or_default();
                     let session = TerminalSession::start_ssh(
-                        conn,
+                        &conn,
                         secret,
                         cols,
                         rows,

@@ -179,6 +179,7 @@ pub fn remote_glyph(kind: crate::core::remote::RemoteKind) -> &'static str {
         RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => regular::HARD_DRIVES,
         RemoteKind::WebDav => regular::GLOBE,
         RemoteKind::S3 => regular::CLOUD,
+        RemoteKind::Redis => regular::DATABASE,
     }
 }
 

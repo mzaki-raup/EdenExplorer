@@ -1254,3 +1254,8 @@ sidebar_order_always_shown = 常に表示
 network_location_shell = ファイルの横に SSH シェルを開く
 terminal_ssh_connecting = サーバーに接続中…
 update_incomplete = 新しいリリースが公開されていますが、プログラムファイルがないためインストールできません。リリースページをご確認ください
+
+# Redis locations (read-only key browsing)
+network_location_key_prefix = 開始するキー接頭辞
+network_location_database = データベース
+network_location_redis_read_only = 読み取り専用：キーは「:」でフォルダーに分割されます。ここからデータベースを変更することはできません。

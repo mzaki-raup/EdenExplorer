@@ -1967,6 +1967,76 @@ PowerShell process) rather than the app's own code - if you're using the
   This PC and the Recycle Bin, so a `\\?\EdenRemote\...` argument is rejected
   as "not an existing directory"; the sidebar entry is the way in.
 
+- **A key-value store can be browsed as a folder tree, but only because
+  `RemoteFs` is small and its optional fields are genuinely optional.** Redis
+  fits in seven methods over `/`-separated strings, and `RemoteEntry`'s `size`
+  and `modified` are both `Option` - which is what lets a store with no
+  modification time join at all. Keys split on `:` into folders, the same
+  prefix-as-folder trick `s3` already plays. **Where it stops fitting is the
+  part to keep in mind if this is ever extended:** only a `string` key has
+  bytes (everything else is rendered as JSON for reading), `mkdir` has nothing
+  to create because a folder is just a shared prefix in other keys' names, and
+  `remove_dir`'s documented "removes an empty folder" has no equivalent at all
+  - the operation that *would* make sense there is "delete every key under
+  this prefix", which is a far more destructive thing wearing the same name.
+  That is why the whole module is read-only: a file manager's reflexes are
+  fast (select-all, Delete) and a live database has no Recycle Bin and no
+  undo. If writing is added it needs its own confirmation, not the ordinary
+  file gestures.
+- **Two things about listing a keyspace that are easy to get wrong and cost
+  real money on a production server.** (1) `KEYS *` blocks the server for the
+  whole sweep - on a real instance that is an outage - so listing uses `SCAN`
+  with a cursor and a `COUNT`, accepting that it is not a snapshot (a key
+  added mid-scan may or may not appear, which for a folder listing is fine).
+  (2) A folder's leaf keys each need a `TYPE`, and the string ones a
+  `STRLEN`; done one at a time that is a sequential round trip per key, which
+  over any real network turns a thousand-key folder from instant into
+  unusable. They are **pipelined** instead - every request written, then every
+  reply read - so a batch costs one round trip rather than N. RESP makes this
+  trivial and it is the single biggest difference between this feeling fast
+  and feeling broken.
+- **A hand-rolled protocol client can be tested properly without the real
+  server, by writing the server.** `core::remote::redis`'s tests start a
+  `TcpListener` on port 0 that speaks just enough RESP2 - `PING`, `SCAN`'s
+  cursor-plus-array reply, `TYPE`, `STRLEN`, `GET`, `HGETALL` - and drive a
+  real `RedisFs` against it over a real socket. That covers the wire format,
+  the cursor loop, the folder/leaf splitting at each level, the pipelined
+  batch arriving in order, and the refusal of every write - none of which a
+  pure unit test of the path helpers would reach, and all of which runs in CI
+  with nothing installed. Prefer this to an `#[ignore]`d test needing a live
+  service whenever the protocol is simple enough to fake.
+
+- **Two performance mistakes of the same shape turned up in a sweep of
+  recently-added features, and both were a convenience helper called from
+  per-frame drawing code.** Neither is a hot loop; both are "ask a cheap
+  question with an expensive call", repeated sixty times a second. (1) The
+  SSH-shell layout asked `remote::connection_of(path).filter(|c|
+  c.has_shell())` on **every frame**, in two places - and that allocates a
+  `Vec<String>` of the path's segments *and* clones the whole
+  `RemoteConnection` (six `String`s) to answer yes/no. Replaced by
+  `shell_connection_of`, which parses only the leading id and returns it
+  under one lock. (2) Worse and subtler: Settings > Network validated its
+  selection with `form_for(..).is_none()`, and building a form for a remote
+  location calls `credentials::load` - so merely *having that page open* read
+  the **Windows Credential Manager on every frame**. Replaced by a
+  `selection_exists` check that touches nothing. **The rule worth keeping:
+  when adding a call to anything drawn every frame, look at what the helper
+  does, not at what it returns** - `Option<u64>` and `Option<RemoteConnection>`
+  read identically at the call site, and one of them is free. Both were found
+  by reading the diff of the last few days' features for calls reachable from
+  `draw`, which is a cheap sweep worth repeating after any run of UI work.
+- **`echo test | gpg --clearsign` does not prove git can sign, because git
+  may not be using that `gpg`.** After the recurring `signing failed: Timeout`
+  came back, that probe kept reporting the key locked even once it was not -
+  because `git config gpg.program` here is
+  `C:\Program Files\GnuPG\bin\gpg.exe` while Git Bash's own `gpg` on PATH is
+  MSYS2's `/usr/bin/gpg`: two installations, two agents, two separate
+  passphrase caches. The probe (and any unlock instruction given to the user)
+  has to name the same binary git uses - check `git config --get gpg.program`
+  first - or the only reliable test is retrying the commit itself. This is the
+  same split already recorded for `gpgconf --kill gpg-agent`, reached from a
+  different direction.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

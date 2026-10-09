@@ -1253,3 +1253,8 @@ sidebar_order_always_shown = Selalu ditampilkan
 network_location_shell = Buka shell SSH di samping berkas
 terminal_ssh_connecting = Menyambung ke server…
 update_incomplete = Rilis yang lebih baru telah diterbitkan, tetapi berkas programnya hilang sehingga tidak dapat dipasang. Periksa halaman rilis
+
+# Redis locations (read-only key browsing)
+network_location_key_prefix = Mulai Di Awalan Kunci
+network_location_database = Basis Data
+network_location_redis_read_only = Hanya-baca: kunci dipisah pada ":" menjadi folder. Tidak ada di sini yang dapat mengubah basis data.

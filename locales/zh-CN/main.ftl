@@ -1254,3 +1254,8 @@ sidebar_order_always_shown = 始终显示
 network_location_shell = 在文件旁打开 SSH 终端
 terminal_ssh_connecting = 正在连接到服务器…
 update_incomplete = 已发布更新的版本，但缺少程序文件，因此无法安装。请查看发布页面
+
+# Redis locations (read-only key browsing)
+network_location_key_prefix = 起始键前缀
+network_location_database = 数据库
+network_location_redis_read_only = 只读：键按“:”拆分为文件夹。此处的操作不会修改数据库。

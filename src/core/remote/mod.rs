@@ -8,6 +8,7 @@
 
 pub mod credentials;
 pub mod ftp;
+pub mod redis;
 pub mod s3;
 pub mod sftp;
 pub mod webdav;
@@ -31,15 +32,19 @@ pub enum RemoteKind {
     Ftps,
     WebDav,
     S3,
+    /// Browsed read-only: keys split on `:` into a folder tree. See
+    /// `redis` for why this is a mapping rather than a filesystem.
+    Redis,
 }
 
 impl RemoteKind {
-    pub const ALL: [RemoteKind; 5] = [
+    pub const ALL: [RemoteKind; 6] = [
         RemoteKind::Sftp,
         RemoteKind::Ftp,
         RemoteKind::Ftps,
         RemoteKind::WebDav,
         RemoteKind::S3,
+        RemoteKind::Redis,
     ];
 
     pub fn label(self) -> &'static str {
@@ -49,6 +54,7 @@ impl RemoteKind {
             RemoteKind::Ftps => "FTPS",
             RemoteKind::WebDav => "WebDAV",
             RemoteKind::S3 => "S3",
+            RemoteKind::Redis => "Redis",
         }
     }
 
@@ -56,6 +62,7 @@ impl RemoteKind {
         match self {
             RemoteKind::Sftp => 22,
             RemoteKind::Ftp | RemoteKind::Ftps => 21,
+            RemoteKind::Redis => 6379,
             RemoteKind::WebDav | RemoteKind::S3 => {
                 if https {
                     443
@@ -94,6 +101,10 @@ pub struct RemoteConnection {
     /// server, same credentials, a second connection - so it is a checkbox
     /// here rather than a protocol of its own.
     pub shell: bool,
+    /// Redis: which numbered database to browse (`SELECT`). Everything else
+    /// ignores it.
+    #[serde(default)]
+    pub database: u32,
 }
 
 impl Default for RemoteConnection {
@@ -111,6 +122,7 @@ impl Default for RemoteConnection {
             bucket: String::new(),
             region: "us-east-1".into(),
             shell: false,
+            database: 0,
         }
     }
 }
@@ -127,6 +139,9 @@ impl RemoteConnection {
             return self.name.trim().to_string();
         }
         match self.kind {
+            RemoteKind::Redis if self.database > 0 => {
+                format!("Redis: {}/{}", self.host, self.database)
+            }
             RemoteKind::S3 => format!("S3: {}", self.bucket),
             _ if self.username.is_empty() => format!("{}: {}", self.kind.label(), self.host),
             _ => format!("{}: {}@{}", self.kind.label(), self.username, self.host),
@@ -136,6 +151,9 @@ impl RemoteConnection {
     /// The folder (as path segments) the location opens at.
     pub fn start_segments(&self) -> Vec<String> {
         match self.kind {
+            // Redis has no real folders, but a saved prefix is still a
+            // useful place to start in a big keyspace.
+            RemoteKind::Redis => segments_of(&self.path),
             RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => segments_of(&self.path),
             // WebDAV's path is the root itself; S3 starts at the bucket.
             RemoteKind::WebDav | RemoteKind::S3 => Vec::new(),
@@ -193,6 +211,7 @@ pub fn connect_with_secret(
         RemoteKind::Ftp | RemoteKind::Ftps => Ok(Box::new(ftp::FtpFs::connect(conn, &secret)?)),
         RemoteKind::WebDav => Ok(Box::new(webdav::WebDavFs::new(conn, &secret)?)),
         RemoteKind::S3 => Ok(Box::new(s3::S3Fs::new(conn, &secret)?)),
+        RemoteKind::Redis => Ok(Box::new(redis::RedisFs::connect(conn, &secret)?)),
     }
 }
 
@@ -248,6 +267,12 @@ pub fn url_for(path: &Path) -> Option<String> {
         RemoteKind::Sftp => format!("sftp://{user}{}:{}{encoded}", conn.host, conn.port),
         RemoteKind::Ftp => format!("ftp://{user}{}:{}{encoded}", conn.host, conn.port),
         RemoteKind::Ftps => format!("ftps://{user}{}:{}{encoded}", conn.host, conn.port),
+        // redis://host:port/db/key - the usual shape, with the key path
+        // where a URL would normally carry one.
+        RemoteKind::Redis => format!(
+            "redis://{user}{}:{}/{}{encoded}",
+            conn.host, conn.port, conn.database
+        ),
         RemoteKind::WebDav => {
             let base = webdav::encode_path(&format!("/{}", segments_of(&conn.path).join("/")));
             let scheme = if conn.https { "https" } else { "http" };
@@ -291,8 +316,40 @@ pub fn connection(id: u64) -> Option<RemoteConnection> {
 }
 
 /// The connection a remote path belongs to.
+///
+/// Clones the whole record. Fine for a one-off (opening a location, copying
+/// a path); for anything asked every frame use `connection_id_of` or
+/// `shell_connection_of` instead.
 pub fn connection_of(path: &Path) -> Option<RemoteConnection> {
     split(path).and_then(|(id, _)| connection(id))
+}
+
+/// Just the connection id a remote path starts with, without building the
+/// `Vec<String>` of segments `split` returns.
+pub fn connection_id_of(path: &Path) -> Option<u64> {
+    let s = path.to_string_lossy();
+    let rest = s.strip_prefix(PREFIX)?;
+    let id = rest.split(['/', '\\']).next()?;
+    id.parse().ok()
+}
+
+/// The id of the connection `path` is on, if that connection offers a shell.
+///
+/// Deliberately returns an id rather than a `RemoteConnection`: the terminal
+/// pane asks this on **every frame** a remote folder is open, and the
+/// obvious spelling - `connection_of(path).filter(|c| c.has_shell())` -
+/// allocates a `Vec<String>` of the path's segments *and* clones the whole
+/// record (six `String`s) to answer a yes/no question, every frame, in two
+/// places at once.
+pub fn shell_connection_of(path: &Path) -> Option<u64> {
+    let id = connection_id_of(path)?;
+    CONNECTIONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|c| c.id == id)
+        .filter(|c| c.has_shell())
+        .map(|c| c.id)
 }
 
 // --- Workers ----------------------------------------------------------------
@@ -802,5 +859,39 @@ mod tests {
     fn dates() {
         assert_eq!(parse_date("Tue, 15 Nov 1994 08:12:31 GMT"), Some(784887151));
         assert_eq!(parse_date("2024-01-02T03:04:05.000Z"), Some(1704164645));
+    }
+}
+
+#[cfg(test)]
+mod perf_tests {
+    use super::*;
+
+    #[test]
+    fn a_connection_id_is_read_without_splitting_the_whole_path() {
+        let path = path_for(7, &["a".into(), "b".into(), "c".into()]);
+        assert_eq!(connection_id_of(&path), Some(7));
+        assert_eq!(connection_id_of(&path_for(42, &[])), Some(42));
+    }
+
+    #[test]
+    fn a_local_path_has_no_connection_id() {
+        assert_eq!(connection_id_of(Path::new(r"C:\Users\me")), None);
+        assert_eq!(connection_id_of(Path::new("")), None);
+    }
+
+    #[test]
+    fn only_a_connection_offering_a_shell_answers() {
+        set_connections(&[
+            RemoteConnection { id: 1, kind: RemoteKind::Sftp, shell: true, ..Default::default() },
+            RemoteConnection { id: 2, kind: RemoteKind::Sftp, shell: false, ..Default::default() },
+            // A shell flag left over from an SFTP connection that was later
+            // changed to another protocol must not count.
+            RemoteConnection { id: 3, kind: RemoteKind::WebDav, shell: true, ..Default::default() },
+        ]);
+        assert_eq!(shell_connection_of(&path_for(1, &["x".into()])), Some(1));
+        assert_eq!(shell_connection_of(&path_for(2, &["x".into()])), None);
+        assert_eq!(shell_connection_of(&path_for(3, &["x".into()])), None);
+        assert_eq!(shell_connection_of(Path::new(r"C:\Users\me")), None);
+        set_connections(&[]);
     }
 }

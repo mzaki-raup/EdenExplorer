@@ -5671,10 +5671,10 @@ impl MainWindow {
     ) {
         // Read before `prefs` borrows `self`: the server-shell pane keeps
         // its own width, so resizing one layout never moves the other.
-        let on_remote_shell = crate::core::remote::connection_of(
+        let on_remote_shell = crate::core::remote::shell_connection_of(
             &self.active_tab().view(self.focused_split).nav.current,
         )
-        .is_some_and(|c| c.has_shell());
+        .is_some();
         let prefs = &mut self.settings_window.current_settings.ui_prefs;
         if let Some(height) = action.new_height {
             prefs.terminal.height = height.clamp(120.0, 2000.0);
