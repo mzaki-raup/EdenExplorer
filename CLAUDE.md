@@ -1666,6 +1666,28 @@ PowerShell process) rather than the app's own code - if you're using the
   a single attempt at process start is not enough if your own restart path is
   what created the file.**
 
+- **A custom context menu command cannot be waited on, so refreshing the view
+  after it is a watching problem, not a timing one.** The obvious fix for "my
+  script's output does not appear until I refresh" is to wait for the launched
+  process and reload when it exits - and for the real-world command this was
+  built for that would have been useless. That command is a `.vbs` that calls
+  `shell.Run ..., 0, False` (explicitly *not* waiting), which starts a detached
+  `cmd`, which runs a `.bat` that appends to a queue and exits; only whichever
+  instance wins a lock folder then runs the PowerShell script that does the
+  actual work, seconds later and for however long a zip takes. The process this
+  app launched is gone almost immediately, and nothing it can see is still
+  running - so `WaitForSingleObject` on it would return just as uselessly early
+  as the old flat 900ms timer did. `core::dir_watch` watches the folder instead
+  (`FindFirstChangeNotificationW`), which works regardless of how many processes
+  deep the real work is. **Two things to keep in mind if that module is ever
+  touched: (1) a file being written signals continuously, so refreshes are rate
+  limited to one per `MIN_REFRESH_GAP` with a guaranteed final one when the
+  folder goes quiet - without that, zipping a large folder re-lists its parent
+  hundreds of times mid-operation; (2) the watcher only exists while a command
+  might still be working (it stops after `QUIET` with no change), so normal
+  browsing costs nothing, and the per-frame check in `MainWindow::ui` is a
+  relaxed atomic load rather than a lock.**
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

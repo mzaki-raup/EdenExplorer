@@ -702,6 +702,20 @@ impl eframe::App for MainWindow {
             }
         }
 
+        // A folder watched after a custom context menu command actually
+        // changed (`core::dir_watch`). Costs one relaxed atomic load per frame
+        // when nothing has, and only re-lists the pane whose folder it was.
+        if let Some(changed) = crate::core::dir_watch::take_changed() {
+            for side in [SplitSide::Primary, SplitSide::Secondary] {
+                if side == SplitSide::Secondary && self.active_tab().split_view.is_none() {
+                    continue;
+                }
+                if self.active_tab().view(side).nav.current == changed {
+                    self.load_view(side);
+                }
+            }
+        }
+
         let palette = get_palette(self.theme);
 
         if self.hwnd.is_none() {

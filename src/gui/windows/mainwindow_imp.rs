@@ -6911,6 +6911,14 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     explorer
                         .pending_command_refreshes
                         .push(now + std::time::Duration::from_millis(900));
+
+                    // That timer only catches a command that finishes almost
+                    // at once. Anything slower - and anything that hands its
+                    // real work to a detached grandchild this app never had a
+                    // handle on - is caught by watching the folder instead,
+                    // which refreshes when the result actually lands however
+                    // long it takes. See `core::dir_watch`.
+                    crate::core::dir_watch::watch(&context_dir);
                 }
             }
         }
