@@ -1227,6 +1227,40 @@ impl MainWindow {
         self.load_view_with_fallback(side, DisplayModeFallback::Default);
     }
 
+    /// Re-lists a pane's own folder, keeping what was selected.
+    ///
+    /// `load_view` clears the selection unconditionally, which is right when
+    /// navigating somewhere else and wrong when re-listing the folder the
+    /// user is already looking at - Explorer keeps the selection across a
+    /// refresh, and losing it is especially bad for a refresh the user never
+    /// asked for (`core::dir_watch`). Anything that has since been deleted
+    /// simply never comes back, because `pending_selection_paths` only
+    /// selects paths the new listing actually contains.
+    pub(crate) fn refresh_view(&mut self, side: SplitSide) {
+        let state = &self.active_tab().view(side).explorer_state;
+        // A selection that has not landed yet counts too: a just-created
+        // item is selected through `pending_selection_paths`, and the scan
+        // it is waiting for may not even have finished, so reading only
+        // `selected_paths` would quietly drop exactly the item the user is
+        // busy with.
+        let keep: Vec<PathBuf> = match &state.pending_selection_paths {
+            Some(pending) if !pending.is_empty() => pending.clone(),
+            _ => state.selected_paths.iter().cloned().collect(),
+        };
+        self.load_view(side);
+        if !keep.is_empty() {
+            self.active_tab_mut()
+                .view_mut(side)
+                .explorer_state
+                .pending_selection_paths = Some(keep);
+        }
+    }
+
+    /// Refreshes the focused pane (F5, Ctrl+R, the toolbar button).
+    pub(crate) fn refresh_path(&mut self) {
+        self.refresh_view(self.focused_split);
+    }
+
     fn load_view_with_fallback(&mut self, side: SplitSide, fallback: DisplayModeFallback) {
         let (current_path, is_root) = {
             let view = self.active_tab().view(side);
@@ -4714,7 +4748,7 @@ impl MainWindow {
                 .map(|t| t.refresh_current_directory)
                 .unwrap_or(false)
             {
-                self.load_path();
+                self.refresh_path();
             }
             if let Some(target_dir) = tabbar_action
                 .as_ref()
@@ -5838,7 +5872,7 @@ impl MainWindow {
                 self.handle_tabs_action(Some(action), None);
             }
             ShortcutAction::NewFolder => self.create_new_folder(),
-            ShortcutAction::Refresh => self.load_path(),
+            ShortcutAction::Refresh => self.refresh_path(),
             ShortcutAction::Fullscreen => self.toggle_fullscreen(),
             ShortcutAction::AddressBar => self.enter_address_bar_edit_mode(),
             ShortcutAction::Rename => {

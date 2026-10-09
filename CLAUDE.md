@@ -1818,6 +1818,51 @@ PowerShell process) rather than the app's own code - if you're using the
   test asserts "the app is up", assert on something a failure dialog cannot
   also satisfy.
 
+- **The folder watcher added for custom context menu commands turned out to
+  destroy any rename the user was in the middle of, including the one the app
+  itself starts for a brand-new folder.** Reported as "when I create a new
+  folder/file I don't get the chance to rename it, and the highlight stopped".
+  `core::dir_watch` refreshes the view whenever a watched folder changes - and
+  **creating a folder in that folder is itself a change it sees**, so the
+  refresh fired a second or two after `create_new_folder` had opened the
+  inline rename editor, re-listed the view, and took the editor's row out from
+  under it. Two defects, not one, and only the first is about the watcher:
+  (1) a refresh nobody asked for must not interrupt an edit in progress -
+  `MainWindow::ui` now parks the change in `pending_dir_refresh` and applies
+  it once `rename_state` is `None`, which costs nothing because committing or
+  cancelling a rename reloads the view anyway; (2) `load_view_with_fallback`
+  clears `selected_paths`/`selection_anchor`/`selection_focus`
+  unconditionally, which is right when *navigating* and wrong when *refreshing
+  the folder you are already in* - Explorer keeps the selection across a
+  refresh. A new `refresh_view`/`refresh_path` pair captures the selection and
+  restores it through `pending_selection_paths`, and F5, the toolbar button
+  and the watcher all go through it now. It also has to read
+  `pending_selection_paths` when `selected_paths` is still empty, since a
+  just-created item is selected through the pending mechanism and the scan it
+  is waiting on may not have finished. **The lesson is about background
+  refreshes generally: anything that re-lists a view on its own schedule is
+  invisible until it lands on top of something the user is doing, and the two
+  things it can destroy are an in-progress edit and the selection.** If
+  another automatic reload is ever added here, check it against both.
+- **Two testing traps hit while verifying that fix, both of which produced a
+  confident wrong answer first.** (1) The obvious check for "is the watcher
+  armed?" - make an external change and see whether the view updates by
+  itself - was run **70 seconds** after the last change, long past
+  `dir_watch`'s 20-second `QUIET` timeout, so the watcher had already stopped
+  and the probe proved nothing; the earlier "the rename survived, so the fix
+  works" conclusion drawn from it was invalid, because the rename would have
+  survived an unarmed watcher too. The sound version arms the watcher and
+  probes **inside** the window, and proves the negative and the positive in
+  one run: with no rename open the probe file appears on its own (watcher
+  demonstrably live), with a rename open the same probe does *not* appear
+  (deferral working), and ending the rename makes it appear (nothing stale).
+  **A test for "feature X didn't fire" is worthless unless the same run also
+  shows X firing when it should.** (2) A first attempt sent `Ctrl+Shift+N` to
+  what turned out to be the **Settings** tab, which has no file list, so
+  nothing happened and it looked like a failure - the window had restored its
+  session with Settings active. Screenshot and confirm which tab is active
+  before concluding a keyboard-driven test did nothing.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

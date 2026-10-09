@@ -210,6 +210,9 @@ pub struct MainWindow {
     /// `core::folder_size_cache`.
     pub(crate) folder_size_cache: crate::core::folder_size_cache::FolderSizeCache,
     pub(crate) rename_state: Option<RenameState>,
+    /// A folder `core::dir_watch` reported as changed, held until any rename
+    /// in progress finishes (see `MainWindow::ui`).
+    pub(crate) pending_dir_refresh: Option<PathBuf>,
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) tags_state: TagsState,
@@ -430,6 +433,7 @@ impl Default for MainWindow {
             },
 
             rename_state: None,
+            pending_dir_refresh: None,
             theme: match saved_theme.as_deref() {
                 Some("light") => ThemeMode::Light,
                 Some("dark") | _ => ThemeMode::Dark,
@@ -703,12 +707,23 @@ impl eframe::App for MainWindow {
         // changed (`core::dir_watch`). Costs one relaxed atomic load per frame
         // when nothing has, and only re-lists the pane whose folder it was.
         if let Some(changed) = crate::core::dir_watch::take_changed() {
+            self.pending_dir_refresh = Some(changed);
+        }
+        // Re-listing throws away the row the rename editor is attached to, so
+        // a refresh nobody asked for would close an edit the user is part way
+        // through typing - which is what creating a new folder in a watched
+        // folder did, since creating it is itself a change the watcher sees.
+        // Holding it costs nothing: committing or cancelling the rename
+        // reloads the view anyway, so the result can never stay stale.
+        if self.rename_state.is_none()
+            && let Some(changed) = self.pending_dir_refresh.take()
+        {
             for side in [SplitSide::Primary, SplitSide::Secondary] {
                 if side == SplitSide::Secondary && self.active_tab().split_view.is_none() {
                     continue;
                 }
                 if self.active_tab().view(side).nav.current == changed {
-                    self.load_view(side);
+                    self.refresh_view(side);
                 }
             }
         }
