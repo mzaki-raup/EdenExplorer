@@ -1232,3 +1232,11 @@ update_status_available_hint = A newer version is available - click for details
 
 # Group header inside the sidebar's network section
 sidebar_network_group_windows = Windows Network
+
+# Settings > Network (network locations live here now)
+settings_category_network = Network
+tooltip_settings_network = Add, edit and remove network locations - remote servers (SFTP, FTP, FTPS, WebDAV, S3) and pinned network folders. The sidebar lists whatever is configured here.
+network_location_manage = Manage Network Locations…
+network_location_empty_state = No network locations yet - add one to browse a server like a folder.
+network_location_no_selection = Pick a network location to edit it, or add a new one.
+network_location_open = Open In A New Tab

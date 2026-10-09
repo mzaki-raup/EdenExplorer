@@ -239,6 +239,13 @@ pub struct SettingsWindow {
     pub selected_tab_group_id: Option<u64>,
     pub selected_tag_group_id: Option<u64>,
     pub selected_send_to_id: Option<u64>,
+    /// Settings > Network: which entry the left column has selected, and the
+    /// form for it. A remote location is tracked by its stable id, a pinned
+    /// share only by its position - so the page re-validates the selection
+    /// against the list every frame rather than trusting an index across a
+    /// removal. Transient, never persisted.
+    pub selected_network: Option<crate::gui::windows::network_location::NetworkSelection>,
+    pub network_editor: Option<crate::gui::windows::network_location::NetworkLocationForm>,
     /// Result of the last Portable Mode switch (Settings > Advanced):
     /// `(succeeded, message)`, shown under the checkbox.
     pub portable_mode_status: Option<(bool, String)>,

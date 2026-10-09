@@ -154,7 +154,6 @@ pub struct MainWindow {
     /// A local delete waiting on its "are you sure?" confirmation.
     pub(crate) pending_local_delete: Option<crate::gui::windows::structs::PendingLocalDelete>,
     /// The Add/Edit Network Location dialog, when open.
-    pub(crate) network_location_dialog: Option<crate::gui::windows::network_location::NetworkLocationDialog>,
     /// Git status of the repositories being browsed.
     pub(crate) git: crate::core::git::GitService,
     /// For waking the window from background threads.
@@ -456,7 +455,6 @@ impl Default for MainWindow {
             command_palette: None,
             terminal: Default::default(),
             git: Default::default(),
-            network_location_dialog: None,
             remote_jobs: HashMap::new(),
             next_silent_remote_job: u64::MAX,
             remote_clipboard: None,
@@ -639,7 +637,6 @@ impl eframe::App for MainWindow {
                 || self.pending_checksum.is_some()
                 || self.update_state.blocks_input()
                 || self.select_by_pattern.is_some()
-                || self.network_location_dialog.is_some()
                 || self.pending_remote_delete.is_some()
                 || self.pending_local_delete.is_some()
                 || self.command_palette.is_some()
@@ -1918,7 +1915,6 @@ impl eframe::App for MainWindow {
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
         self.draw_select_by_pattern_modal(ui.ctx(), &palette);
-        self.draw_network_location_dialog(ui.ctx(), &palette);
         self.draw_remote_delete_confirm(ui.ctx(), &palette);
         self.draw_delete_confirm(ui.ctx(), &palette);
         self.draw_quick_look(ui.ctx(), &palette);

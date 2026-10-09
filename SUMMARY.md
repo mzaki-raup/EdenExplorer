@@ -33,7 +33,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
   - `utils/` — clipboard, colors, dialogs, file helpers, fonts, sorting, tabs, text, thumbnails, widgets
 - **`gui/`** — UI layer:
   - `mod.rs`, `theme.rs`, `icons.rs`, `i18n.rs`, `utils.rs`, `dragdrop.rs`
-  - `windows/` — application windows/panels: main window (+ impl split), navigation, settings, about, theme customization, drag-and-drop, shell context menu, Windows-specific overrides
+  - `windows/` — application windows/panels: main window (+ impl split), navigation, settings (including the Network page where network locations are added/edited), about, theme customization, drag-and-drop, shell context menu, Windows-specific overrides
   - `windows/containers/` — explorer view, item viewer (+ gallery/navbar/helper variants), sidebar, tabs, tags, topbar, shared structs/enums
 - **`locales/`** — translation files (English, Indonesian, Japanese, multiple Chinese variants)
 - **`scripts/`, `logo/`** — build/release helper scripts and branding assets

@@ -1236,3 +1236,11 @@ update_status_available_hint = 有較新版本可用 - 按一下查看詳情
 
 # Group header inside the sidebar's network section
 sidebar_network_group_windows = Windows 網絡
+
+# Settings > Network (network locations live here now)
+settings_category_network = 網絡
+tooltip_settings_network = 新增、編輯和刪除網絡位置 - 遠程似服器（SFTP、FTP、FTPS、WebDAV、S3）和釘選的網絡文件夾。側邊欄僅顯示在此設定的內容。
+network_location_manage = 管理網絡位置…
+network_location_empty_state = 尚未有網絡位置 - 新增一個即可像瀏覽文件夾一樣瀏覽似服器。
+network_location_no_selection = 選擇一個網絡位置進行編輯，或新增一個。
+network_location_open = 在新標籤頁中開啟

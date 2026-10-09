@@ -1,7 +1,11 @@
-//! The Add/Edit Network Location dialog: a remote location (SFTP, FTP,
-//! FTPS, WebDAV, S3) or a network folder (`\\server\share`) pinned to the
-//! sidebar. Passwords go straight to Windows Credential Manager; Test
-//! Connection signs in with what's typed (in the background).
+//! A network location: a remote one (SFTP, FTP, FTPS, WebDAV, S3) or a
+//! network folder (`\\server\share`) pinned to the sidebar. Passwords go
+//! straight to Windows Credential Manager; Test Connection signs in with
+//! what's typed (in the background).
+//!
+//! This module holds the form's state and everything that happens when it is
+//! saved or removed. The form itself is drawn by `network_ui`, which hosts it
+//! in Settings > Network - the sidebar only lists what is already configured.
 
 use crate::core::remote::{RemoteConnection, RemoteKind, credentials};
 use crate::core::ui_prefs::NetworkPlace;
@@ -9,14 +13,26 @@ use crate::gui::windows::mainwindow::MainWindow;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
-/// What the dialog is adding.
+/// What the form is adding.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LocationType {
     Share,
     Remote(RemoteKind),
 }
 
-pub struct NetworkLocationDialog {
+/// Which entry Settings > Network has selected. A remote location is tracked
+/// by its stable id; a pinned share only has its position in the list, so the
+/// page re-validates that index against the list every frame rather than
+/// trusting it across a removal.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum NetworkSelection {
+    Share(usize),
+    Remote(u64),
+    /// Being filled in, not saved yet.
+    New,
+}
+
+pub struct NetworkLocationForm {
     /// The remote location being edited (`None`: adding one).
     pub editing: Option<u64>,
     pub kind: LocationType,
@@ -33,7 +49,7 @@ pub struct NetworkLocationDialog {
     pub error: Option<String>,
 }
 
-impl NetworkLocationDialog {
+impl NetworkLocationForm {
     pub fn new() -> Self {
         Self {
             editing: None,
@@ -63,6 +79,16 @@ impl NetworkLocationDialog {
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
+            ..Self::new()
+        }
+    }
+
+    /// A pinned `\\server\share` folder being edited.
+    pub fn edit_share(place: &NetworkPlace) -> Self {
+        Self {
+            kind: LocationType::Share,
+            share_path: place.path.display().to_string(),
+            share_name: place.name.clone(),
             ..Self::new()
         }
     }
@@ -118,30 +144,46 @@ impl NetworkLocationDialog {
             self.password.clone()
         }
     }
-}
 
-enum Outcome {
-    Save,
-    Cancel,
+    /// Signs in with what's typed, on a background thread.
+    pub fn start_test(&mut self, ctx: &egui::Context) {
+        match self.connection() {
+            Ok(conn) => {
+                let (tx, rx) = channel();
+                let secret = self.secret();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let start = crate::core::remote::remote_path(&conn.start_segments());
+                    let result = crate::core::remote::connect_with_secret(&conn, &secret)
+                        .and_then(|mut fs| fs.list(&start))
+                        .map(|items| format!("Connected ({} items).", items.len()));
+                    let _ = tx.send(result);
+                    ctx.request_repaint();
+                });
+                self.test = None;
+                self.error = None;
+                self.test_rx = Some(rx);
+            }
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    /// Picks up a finished test; call once per frame while the form is shown.
+    pub fn poll_test(&mut self) {
+        if let Some(rx) = &self.test_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            self.test = Some(result);
+            self.test_rx = None;
+        }
+    }
+
+    pub fn testing(&self) -> bool {
+        self.test_rx.is_some()
+    }
 }
 
 impl MainWindow {
-    pub(crate) fn open_network_location_dialog(&mut self, editing: Option<u64>) {
-        let existing = editing.and_then(|id| {
-            self.settings_window
-                .current_settings
-                .ui_prefs
-                .remote_connections
-                .iter()
-                .find(|c| c.id == id)
-                .cloned()
-        });
-        self.network_location_dialog = Some(match existing {
-            Some(conn) => NetworkLocationDialog::edit(&conn),
-            None => NetworkLocationDialog::new(),
-        });
-    }
-
     fn save_remote_connections(&mut self) {
         let prefs = &self.settings_window.current_settings.ui_prefs;
         crate::core::remote::set_connections(&prefs.remote_connections);
@@ -169,333 +211,27 @@ impl MainWindow {
         }
     }
 
-    pub(crate) fn draw_network_location_dialog(
+    /// Saves whatever the Settings > Network form has open. Unlike the modal
+    /// this replaced, it does not navigate anywhere - the Settings page is
+    /// itself the current tab, so opening the location would close the page
+    /// the user is still working in.
+    /// Returns how to keep the saved entry selected.
+    pub(crate) fn apply_network_location(
         &mut self,
-        ctx: &egui::Context,
-        palette: &crate::gui::theme::ThemePalette,
-    ) {
-        use crate::core::utils::widgets::{
-            eden_button, modal_frame, modal_icon_header, primary_dialog_button,
-        };
-        use egui_phosphor::regular;
-
-        let Some(mut dlg) = self.network_location_dialog.take() else {
-            return;
-        };
-        if let Some(rx) = &dlg.test_rx
-            && let Ok(result) = rx.try_recv()
-        {
-            dlg.test = Some(result);
-            dlg.test_rx = None;
-        }
-        let i18n = &self.i18n;
-        let mut outcome: Option<Outcome> = None;
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            outcome = Some(Outcome::Cancel);
-        }
-
-        egui::Area::new(egui::Id::new("network_location_scrim"))
-            .order(egui::Order::Middle)
-            .interactable(true)
-            .show(ctx, |ui| {
-                let rect = ctx.content_rect();
-                ui.painter()
-                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
-                ui.interact(rect, ui.id().with("block"), egui::Sense::click());
-            });
-
-        // The dialog sits just above its scrim, below Foreground, so the
-        // Type combo's popup (a Foreground layer) always shows over it.
-        let scrim =
-            egui::LayerId::new(egui::Order::Middle, egui::Id::new("network_location_scrim"));
-        let area = egui::LayerId::new(egui::Order::Middle, egui::Id::new("network_location_area"));
-        ctx.set_sublayer(scrim, area);
-        egui::Area::new(egui::Id::new("network_location_area"))
-            .order(egui::Order::Middle)
-            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-            .show(ctx, |ui| {
-                modal_frame(&ctx.style_of(ctx.theme()), palette).show(ui, |ui| {
-                    ui.set_width(460.0);
-                    let title = if dlg.editing.is_some() {
-                        "network_location_edit_title"
-                    } else {
-                        "network_location_add_title"
-                    };
-                    modal_icon_header(
-                        ui,
-                        palette,
-                        regular::GLOBE,
-                        palette.primary,
-                        &i18n.tr(title),
-                        Some(&i18n.tr("network_location_hint")),
-                    );
-                    ui.add_space(12.0);
-
-                    let label_width = 130.0;
-                    let row =
-                        |ui: &mut egui::Ui, label: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
-                            ui.horizontal(|ui| {
-                                ui.add_sized(
-                                    [label_width, 22.0],
-                                    egui::Label::new(label).halign(egui::Align::Min),
-                                );
-                                add(ui);
-                            });
-                            ui.add_space(4.0);
-                        };
-                    let field =
-                        |ui: &mut egui::Ui, value: &mut String, hint: &str, password: bool| {
-                            ui.add(
-                                egui::TextEdit::singleline(value)
-                                    .hint_text(hint)
-                                    .password(password)
-                                    .desired_width(f32::INFINITY),
-                            );
-                        };
-
-                    // Type.
-                    let type_label = |t: LocationType| match t {
-                        LocationType::Share => i18n.tr("network_location_type_share"),
-                        LocationType::Remote(kind) => kind.label().to_string(),
-                    };
-                    let editing = dlg.editing.is_some();
-                    row(ui, &i18n.tr("network_location_type"), &mut |ui| {
-                        ui.add_enabled_ui(!editing, |ui| {
-                            egui::ComboBox::from_id_salt("network_location_type")
-                                .selected_text(type_label(dlg.kind))
-                                .width(260.0)
-                                .show_ui(ui, |ui| {
-                                    let mut types = vec![LocationType::Share];
-                                    types.extend(RemoteKind::ALL.map(LocationType::Remote));
-                                    for t in types {
-                                        if ui
-                                            .selectable_label(dlg.kind == t, type_label(t))
-                                            .clicked()
-                                            && dlg.kind != t
-                                        {
-                                            dlg.kind = t;
-                                            if let LocationType::Remote(kind) = t {
-                                                dlg.conn.kind = kind;
-                                                dlg.conn.port = kind.default_port(dlg.conn.https);
-                                            }
-                                            dlg.test = None;
-                                        }
-                                    }
-                                });
-                        });
-                    });
-
-                    match dlg.kind {
-                        LocationType::Share => {
-                            row(ui, &i18n.tr("network_location_folder"), &mut |ui| {
-                                field(ui, &mut dlg.share_path, r"\\server\share\folder", false)
-                            });
-                            row(ui, &i18n.tr("network_location_name"), &mut |ui| {
-                                field(ui, &mut dlg.share_name, "", false)
-                            });
-                        }
-                        LocationType::Remote(kind) => {
-                            row(ui, &i18n.tr("network_location_name"), &mut |ui| {
-                                field(
-                                    ui,
-                                    &mut dlg.conn.name,
-                                    &i18n.tr("network_location_name_hint"),
-                                    false,
-                                )
-                            });
-                            let server_label = if kind == RemoteKind::S3 {
-                                "network_location_endpoint"
-                            } else {
-                                "network_location_server"
-                            };
-                            let server_hint = if kind == RemoteKind::S3 {
-                                "s3.example.com (empty = Amazon S3)"
-                            } else {
-                                "example.com"
-                            };
-                            row(ui, &i18n.tr(server_label), &mut |ui| {
-                                field(ui, &mut dlg.conn.host, server_hint, false)
-                            });
-                            row(ui, &i18n.tr("network_location_port"), &mut |ui| {
-                                ui.add(egui::DragValue::new(&mut dlg.conn.port).range(1..=65535));
-                                if matches!(kind, RemoteKind::WebDav | RemoteKind::S3) {
-                                    ui.add_space(12.0);
-                                    if ui.checkbox(&mut dlg.conn.https, "HTTPS").changed() {
-                                        dlg.conn.port = kind.default_port(dlg.conn.https);
-                                    }
-                                }
-                            });
-                            if kind == RemoteKind::S3 {
-                                row(ui, &i18n.tr("network_location_region"), &mut |ui| {
-                                    field(ui, &mut dlg.conn.region, "us-east-1", false)
-                                });
-                                row(ui, &i18n.tr("network_location_bucket"), &mut |ui| {
-                                    field(ui, &mut dlg.conn.bucket, "my-bucket", false)
-                                });
-                            }
-                            let user_label = if kind == RemoteKind::S3 {
-                                "network_location_access_key"
-                            } else {
-                                "network_location_user"
-                            };
-                            row(ui, &i18n.tr(user_label), &mut |ui| {
-                                field(ui, &mut dlg.conn.username, "", false)
-                            });
-                            if kind == RemoteKind::Sftp {
-                                row(ui, "", &mut |ui| {
-                                    ui.checkbox(
-                                        &mut dlg.use_key_file,
-                                        i18n.tr("network_location_use_key"),
-                                    );
-                                });
-                                if dlg.use_key_file {
-                                    row(ui, &i18n.tr("network_location_key_file"), &mut |ui| {
-                                        if eden_button(ui, palette, &i18n.tr("browse")).clicked()
-                                            && let Some(path) =
-                                                crate::gui::windows::windowsoverrides::dialog()
-                                                    .pick_file()
-                                        {
-                                            dlg.key_file = path.display().to_string();
-                                        }
-                                        field(
-                                            ui,
-                                            &mut dlg.key_file,
-                                            r"C:\Users\me\.ssh\id_ed25519",
-                                            false,
-                                        );
-                                    });
-                                }
-                            }
-                            let secret_label = match kind {
-                                RemoteKind::S3 => "network_location_secret_key",
-                                RemoteKind::Sftp if dlg.use_key_file => {
-                                    "network_location_passphrase"
-                                }
-                                _ => "network_location_password",
-                            };
-                            let secret_hint = if dlg.has_stored_password {
-                                i18n.tr("network_location_password_kept")
-                            } else {
-                                String::new()
-                            };
-                            row(ui, &i18n.tr(secret_label), &mut |ui| {
-                                field(ui, &mut dlg.password, &secret_hint, true)
-                            });
-                            let path_label = match kind {
-                                RemoteKind::WebDav => Some("network_location_path"),
-                                RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => {
-                                    Some("network_location_start_folder")
-                                }
-                                RemoteKind::S3 => None,
-                            };
-                            if let Some(label) = path_label {
-                                let hint = if kind == RemoteKind::WebDav {
-                                    "/remote.php/dav/files/me"
-                                } else {
-                                    "/home/me"
-                                };
-                                row(ui, &i18n.tr(label), &mut |ui| {
-                                    field(ui, &mut dlg.conn.path, hint, false)
-                                });
-                            }
-                        }
-                    }
-
-                    if let Some(error) = &dlg.error {
-                        ui.colored_label(ui.visuals().warn_fg_color, error);
-                    }
-                    match &dlg.test {
-                        Some(Ok(text)) => {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(110, 190, 120),
-                                format!("{} {text}", regular::CHECK_CIRCLE),
-                            );
-                        }
-                        Some(Err(text)) => {
-                            ui.colored_label(
-                                ui.visuals().warn_fg_color,
-                                format!("{} {text}", regular::WARNING),
-                            );
-                        }
-                        None if dlg.test_rx.is_some() => {
-                            ui.horizontal(|ui| {
-                                ui.spinner();
-                                ui.label(i18n.tr("network_location_testing"));
-                            });
-                        }
-                        None => {}
-                    }
-                    ui.add_space(12.0);
-                    ui.horizontal(|ui| {
-                        if primary_dialog_button(ui, palette, &i18n.tr("save")).clicked() {
-                            outcome = Some(Outcome::Save);
-                        }
-                        if matches!(dlg.kind, LocationType::Remote(_))
-                            && ui
-                                .add_enabled_ui(dlg.test_rx.is_none(), |ui| {
-                                    eden_button(ui, palette, &i18n.tr("network_location_test"))
-                                })
-                                .inner
-                                .clicked()
-                        {
-                            match dlg.connection() {
-                                Ok(conn) => {
-                                    let (tx, rx) = channel();
-                                    let secret = dlg.secret();
-                                    let ctx = ctx.clone();
-                                    std::thread::spawn(move || {
-                                        let start = crate::core::remote::remote_path(
-                                            &conn.start_segments(),
-                                        );
-                                        let result = crate::core::remote::connect_with_secret(
-                                            &conn, &secret,
-                                        )
-                                        .and_then(|mut fs| fs.list(&start))
-                                        .map(|items| format!("Connected ({} items).", items.len()));
-                                        let _ = tx.send(result);
-                                        ctx.request_repaint();
-                                    });
-                                    dlg.test = None;
-                                    dlg.error = None;
-                                    dlg.test_rx = Some(rx);
-                                }
-                                Err(e) => dlg.error = Some(e),
-                            }
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if eden_button(ui, palette, &i18n.tr("cancel")).clicked() {
-                                outcome = Some(Outcome::Cancel);
-                            }
-                        });
-                    });
-                });
-            });
-
-        match outcome {
-            Some(Outcome::Cancel) => {}
-            Some(Outcome::Save) => {
-                if let Err(e) = self.apply_network_location(&dlg) {
-                    dlg.error = Some(e);
-                    self.network_location_dialog = Some(dlg);
-                }
-            }
-            None => self.network_location_dialog = Some(dlg),
-        }
-    }
-
-    fn apply_network_location(&mut self, dlg: &NetworkLocationDialog) -> Result<(), String> {
-        if dlg.kind == LocationType::Share {
-            let path = dlg.share_path.trim().trim_end_matches('\\').to_string();
+        form: &NetworkLocationForm,
+    ) -> Result<NetworkSelection, String> {
+        if form.kind == LocationType::Share {
+            let path = form.share_path.trim().trim_end_matches('\\').to_string();
             if path.is_empty() {
                 return Err("Enter the folder's path.".into());
             }
             let path = PathBuf::from(path);
-            let name = if dlg.share_name.trim().is_empty() {
+            let name = if form.share_name.trim().is_empty() {
                 path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| path.display().to_string())
             } else {
-                dlg.share_name.trim().to_string()
+                form.share_name.trim().to_string()
             };
             let prefs = &mut self.settings_window.current_settings.ui_prefs;
             prefs.network_places.retain(|p| p.path != path);
@@ -504,12 +240,11 @@ impl MainWindow {
                 path: path.clone(),
             });
             crate::core::ui_prefs::save_ui_prefs(prefs);
-            self.open_path_in_current_view(path);
-            return Ok(());
+            return Ok(NetworkSelection::Share(prefs.network_places.len() - 1));
         }
-        let mut conn = dlg.connection()?;
+        let mut conn = form.connection()?;
         let prefs = &mut self.settings_window.current_settings.ui_prefs;
-        conn.id = match dlg.editing {
+        conn.id = match form.editing {
             Some(id) => id,
             None => {
                 prefs
@@ -521,8 +256,8 @@ impl MainWindow {
                     + 1
             }
         };
-        if !dlg.password.is_empty() || !dlg.has_stored_password {
-            credentials::store(conn.id, &dlg.password)
+        if !form.password.is_empty() || !form.has_stored_password {
+            credentials::store(conn.id, &form.password)
                 .map_err(|e| format!("Couldn't save the password: {e}"))?;
         }
         match prefs
@@ -536,11 +271,7 @@ impl MainWindow {
         // Reconnect with the new settings next time.
         crate::core::remote::disconnect(conn.id);
         self.save_remote_connections();
-        self.open_path_in_current_view(crate::core::remote::path_for(
-            conn.id,
-            &conn.start_segments(),
-        ));
-        Ok(())
+        Ok(NetworkSelection::Remote(conn.id))
     }
 
     /// Opens `path` in the focused pane.

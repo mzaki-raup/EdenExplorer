@@ -1170,13 +1170,13 @@ pub fn draw_sidebar(
                             ui,
                             icon_cache,
                             &PathBuf::from("AddNetworkLocation"),
-                            &i18n.tr("network_location_add"),
+                            &i18n.tr("network_location_manage"),
                             true,
                             false,
                             palette,
                             false,
                             None,
-                            Some(SidebarIconOverride::Glyph(regular::PLUS_CIRCLE)),
+                            Some(SidebarIconOverride::Glyph(regular::GEAR)),
                         );
                         if add.clicked() {
                             action.add_network_location = true;

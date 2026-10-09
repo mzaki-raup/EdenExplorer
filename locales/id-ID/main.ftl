@@ -1235,3 +1235,11 @@ update_status_available_hint = Versi lebih baru tersedia - klik untuk detail
 
 # Group header inside the sidebar's network section
 sidebar_network_group_windows = Jaringan Windows
+
+# Settings > Network (network locations live here now)
+settings_category_network = Jaringan
+tooltip_settings_network = Tambah, ubah, dan hapus lokasi jaringan - server jarak jauh (SFTP, FTP, FTPS, WebDAV, S3) dan folder jaringan yang disematkan. Bilah sisi menampilkan apa pun yang diatur di sini.
+network_location_manage = Kelola Lokasi Jaringan…
+network_location_empty_state = Belum ada lokasi jaringan - tambahkan satu untuk menjelajahi server seperti folder.
+network_location_no_selection = Pilih lokasi jaringan untuk mengubahnya, atau tambahkan yang baru.
+network_location_open = Buka Di Tab Baru

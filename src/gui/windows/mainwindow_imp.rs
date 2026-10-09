@@ -4434,6 +4434,48 @@ impl MainWindow {
                         }
                     }
                 }
+                SettingsAction::SaveNetworkLocation => {
+                    if let Some(mut form) = self.settings_window.network_editor.take() {
+                        match self.apply_network_location(&form) {
+                            // Re-open the saved entry so the form picks up the
+                            // id it was just given and stops offering to set a
+                            // password that is now stored.
+                            Ok(selection) => crate::gui::windows::network_ui::select(
+                                &mut self.settings_window,
+                                selection,
+                            ),
+                            Err(e) => {
+                                form.error = Some(e);
+                                self.settings_window.network_editor = Some(form);
+                            }
+                        }
+                    }
+                }
+                SettingsAction::OpenNetworkLocation => {
+                    use crate::gui::windows::network_location::NetworkSelection;
+                    let prefs = &self.settings_window.current_settings.ui_prefs;
+                    let path = match self.settings_window.selected_network {
+                        Some(NetworkSelection::Share(index)) => {
+                            prefs.network_places.get(index).map(|p| p.path.clone())
+                        }
+                        Some(NetworkSelection::Remote(id)) => prefs
+                            .remote_connections
+                            .iter()
+                            .find(|c| c.id == id)
+                            .map(|c| crate::core::remote::path_for(c.id, &c.start_segments())),
+                        Some(NetworkSelection::New) | None => None,
+                    };
+                    if let Some(path) = path {
+                        self.open_new_tab(path);
+                        self.load_path();
+                    }
+                }
+                SettingsAction::RemoveRemoteConnection(id) => {
+                    self.remove_remote_connection(id);
+                }
+                SettingsAction::RemoveNetworkPlace(index) => {
+                    self.remove_network_place(index);
+                }
                 SettingsAction::ExportSendTo => {
                     if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Send To", &["json"])
@@ -5224,11 +5266,25 @@ impl MainWindow {
             if action.folder_tree_toggled || action.places_toggled {
                 crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
             }
+            // Adding and editing live in Settings > Network now - the
+            // sidebar only lists what is already configured.
             if action.add_network_location {
-                self.open_network_location_dialog(None);
+                crate::gui::windows::network_ui::select(
+                    &mut self.settings_window,
+                    crate::gui::windows::network_location::NetworkSelection::New,
+                );
+                self.settings_window.selected_category =
+                    crate::gui::windows::settings::SettingsCategory::Network;
+                self.open_or_focus_settings_tab();
             }
             if let Some(id) = action.edit_remote {
-                self.open_network_location_dialog(Some(id));
+                crate::gui::windows::network_ui::select(
+                    &mut self.settings_window,
+                    crate::gui::windows::network_location::NetworkSelection::Remote(id),
+                );
+                self.settings_window.selected_category =
+                    crate::gui::windows::settings::SettingsCategory::Network;
+                self.open_or_focus_settings_tab();
             }
             if let Some(id) = action.disconnect_remote {
                 crate::core::remote::disconnect(id);

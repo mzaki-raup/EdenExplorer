@@ -1236,3 +1236,11 @@ update_status_available_hint = 新しいバージョンがあります - クリ�
 
 # Group header inside the sidebar's network section
 sidebar_network_group_windows = Windows ネットワーク
+
+# Settings > Network (network locations live here now)
+settings_category_network = ネットワーク
+tooltip_settings_network = リモートサーバー（SFTP、FTP、FTPS、WebDAV、S3）とピン留めしたネットワークフォルダーを追加・編集・削除します。サイドバーにはここで設定したものが表示されます。
+network_location_manage = ネットワーク場所を管理…
+network_location_empty_state = ネットワーク場所がまだありません。追加するとサーバーをフォルダーのように閲覧できます。
+network_location_no_selection = 編集するネットワーク場所を選んでください。または新しく追加します。
+network_location_open = 新しいタブで開く

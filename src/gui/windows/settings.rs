@@ -38,6 +38,7 @@ pub enum SettingsCategory {
     ContextMenuOrder,
     ContextMenu,
     SendTo,
+    Network,
     TabGroups,
     Tags,
     Toolbar,
@@ -46,7 +47,7 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 13] = [
+    pub const ALL: [SettingsCategory; 14] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
@@ -55,6 +56,7 @@ impl SettingsCategory {
         SettingsCategory::ContextMenuOrder,
         SettingsCategory::ContextMenu,
         SettingsCategory::SendTo,
+        SettingsCategory::Network,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
         SettingsCategory::Toolbar,
@@ -72,6 +74,7 @@ impl SettingsCategory {
             SettingsCategory::ContextMenuOrder => regular::SORT_ASCENDING,
             SettingsCategory::ContextMenu => regular::LIST,
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
+            SettingsCategory::Network => regular::GLOBE,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
             SettingsCategory::Toolbar => regular::TOOLBOX,
@@ -90,6 +93,7 @@ impl SettingsCategory {
             SettingsCategory::ContextMenuOrder => i18n.tr("settings_category_context_menu_order"),
             SettingsCategory::ContextMenu => i18n.tr("settings_category_context_menu"),
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
+            SettingsCategory::Network => i18n.tr("settings_category_network"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
             SettingsCategory::Toolbar => i18n.tr("settings_category_toolbar"),
@@ -635,6 +639,7 @@ pub fn draw_settings_page(
                     | SettingsCategory::Favorites
                     | SettingsCategory::ContextMenu
                     | SettingsCategory::SendTo
+                    | SettingsCategory::Network
                     | SettingsCategory::TabGroups
                     | SettingsCategory::Tags
             );
@@ -676,6 +681,13 @@ pub fn draw_settings_page(
                     SettingsCategory::SendTo => {
                         if let Some(a) = crate::gui::windows::send_to_ui::draw_send_to_settings(
                             ui, i18n, settings, palette, icon_cache,
+                        ) {
+                            action = Some(a);
+                        }
+                    }
+                    SettingsCategory::Network => {
+                        if let Some(a) = crate::gui::windows::network_ui::draw_network_settings(
+                            ui, i18n, settings, palette,
                         ) {
                             action = Some(a);
                         }

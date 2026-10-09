@@ -113,4 +113,15 @@ pub enum SettingsAction {
     /// same theme editor that used to be its own floating window) - handled
     /// identically to how that window's actions always were.
     ThemeCustomizer(ThemeCustomizerAction),
+    /// Settings > Network: save whatever the detail pane has open - a new
+    /// location, or changes to the selected one.
+    SaveNetworkLocation,
+    /// Settings > Network: open the selected location in the focused pane.
+    /// Saving deliberately doesn't navigate (the Settings page is itself the
+    /// current tab), so this is how a location gets opened from here.
+    OpenNetworkLocation,
+    /// Settings > Network: remove a remote location (also forgetting its
+    /// stored password and host key), or a pinned network folder.
+    RemoveRemoteConnection(u64),
+    RemoveNetworkPlace(usize),
 }
