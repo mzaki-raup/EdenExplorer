@@ -10,9 +10,25 @@
 # Call this before send-keys.ps1 (SendKeys always goes to whatever window has
 # *real* OS focus, not whatever click.ps1 last posted to) and before
 # screenshot.ps1 if you need the window raised above other windows first.
+#
+# The window is found by walking the top-level windows rather than via
+# Process.MainWindowHandle. While the app is MINIMIZED, MainWindowHandle
+# resolves to a small untitled helper window this process also owns, not the
+# real one - and MainWindowTitle then reads empty, so the old
+# `Where-Object { $_.MainWindowTitle -eq "EdenExplorer" }` filter matched
+# nothing and this script reported "EdenExplorer is not running" for an app
+# that was running perfectly well (the false negative recorded in CLAUDE.md).
+# Focusing that helper also did nothing visible, which looks identical to
+# "focus silently failed".
+#
+# Matching on the title alone is not enough either: a Windows Explorer window
+# showing a folder *named* EdenExplorer has exactly that title, so the owning
+# process is checked as well.
 Add-Type @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 public class EdenFocus {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -21,13 +37,53 @@ public class EdenFocus {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder text, int count);
+
+  delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
+
+  static List<uint> wantedPids;
+  static IntPtr found;
+
+  static bool Visit(IntPtr hWnd, IntPtr lParam) {
+    if (!IsWindowVisible(hWnd)) return true;
+    uint pid; GetWindowThreadProcessId(hWnd, out pid);
+    if (!wantedPids.Contains(pid)) return true;
+    var title = new StringBuilder(256);
+    GetWindowTextW(hWnd, title, title.Capacity);
+    if (title.ToString() != "EdenExplorer") return true;
+    found = hWnd;
+    return false;
+  }
+
+  // The real window: owned by one of EdenExplorer.exe's processes AND titled
+  // "EdenExplorer". Works whether the window is minimized or not.
+  public static IntPtr FindWindow(uint[] pids) {
+    wantedPids = new List<uint>(pids);
+    found = IntPtr.Zero;
+    EnumWindows(Visit, IntPtr.Zero);
+    return found;
+  }
 }
 "@
 
-$proc = Get-Process EdenExplorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq "EdenExplorer" } | Select-Object -First 1
-if (-not $proc) { Write-Output "NOT FOUND: EdenExplorer is not running (or has no visible window yet)"; exit 1 }
+$procs = @(Get-Process EdenExplorer -ErrorAction SilentlyContinue)
+if ($procs.Count -eq 0) {
+    Write-Output "NOT FOUND: EdenExplorer is not running"
+    exit 1
+}
 
-$target = $proc.MainWindowHandle
+$pids = [uint32[]]($procs | ForEach-Object { [uint32]$_.Id })
+$target = [EdenFocus]::FindWindow($pids)
+if ($target -eq [IntPtr]::Zero) {
+    # The process is alive but has no window titled EdenExplorer yet - it is
+    # still starting up, or the title has not been set (see
+    # `windowsoverrides::apply_window_override`).
+    Write-Output "NOT FOUND: EdenExplorer is running (pid $($procs[0].Id)) but has no window titled 'EdenExplorer' yet"
+    exit 1
+}
+
 $fg = [EdenFocus]::GetForegroundWindow()
 $fgThread = 0
 [EdenFocus]::GetWindowThreadProcessId($fg, [ref]$fgThread) | Out-Null
@@ -53,5 +109,5 @@ if ($actual -ne $target) {
     exit 1
 }
 
-Write-Output "focused EdenExplorer (pid $($proc.Id))"
+Write-Output "focused EdenExplorer (pid $($procs[0].Id), hwnd $target)"
 exit 0

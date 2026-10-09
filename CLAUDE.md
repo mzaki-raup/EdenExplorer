@@ -1742,14 +1742,21 @@ PowerShell process) rather than the app's own code - if you're using the
   out. The honest test is to move the real window, let the app's own per-frame
   save run, then close and relaunch: done that way the round-trip is exact
   (closed at physical (2200,150) on the 150% monitor, reopened at (2200,150)).
-- **`Process.MainWindowHandle` does not point at this app's real window.** For
-  EdenExplorer it resolves to an 11x11 untitled helper window; the real one is
-  the visible top-level window whose title is `EdenExplorer`. The ui-test
-  skill's `focus.ps1` uses `MainWindowHandle`, which is a likely contributor to
-  the focus flakiness documented at length above. When a script needs this
-  app's window, enumerate top-level windows and match the title (now reliably
-  set - see the CLI-forwarding entry) or the owning process, rather than
-  trusting `MainWindowHandle`.
+- **`Process.MainWindowHandle` points at the wrong window while this app is
+  minimized**, and that is the source of the long-recorded `focus.ps1` false
+  negative. Normally it resolves correctly (the real 1885x775 window titled
+  `EdenExplorer`), but this process also owns a small untitled helper window,
+  and while the main window is minimized `MainWindowHandle` resolves to *that*
+  instead - so `MainWindowTitle` reads empty, the old
+  `Where-Object { $_.MainWindowTitle -eq "EdenExplorer" }` filter matched
+  nothing, and the script reported "EdenExplorer is not running" for an app
+  that was running fine. Focusing the helper also did nothing visible, which
+  is indistinguishable from "focus silently failed". `focus.ps1` now walks the
+  top-level windows instead, matching title **and** owning process - the title
+  alone is not enough, because a Windows Explorer window showing a folder
+  *named* EdenExplorer carries exactly that title. `click.ps1`, `drag.ps1` and
+  `screenshot.ps1` still use the old `MainWindowHandle`/`MainWindowTitle`
+  pattern and have the same blind spot when the window is minimized.
 
 ## Build & release workflow
 
