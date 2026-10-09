@@ -1249,3 +1249,8 @@ tooltip_settings_sidebar = 重新排列側邊欄的區塊。上移或下移即�
 sidebar_order_reset = 重設為預設順序
 sidebar_order_visibility_hint = 要顯示或隱藏區塊，請在「一般」中使用「側邊欄區塊」。隱藏的區塊仍會保留此處的位置。
 sidebar_order_always_shown = 始終顯示
+
+# SSH shell beside an SFTP location's files
+network_location_shell = 在檔案旁開啟 SSH 終端
+terminal_ssh_connecting = 正在連線到伺服器…
+update_incomplete = 已發佈更新的版本，但缺少程式檔案，因此無法安裝。請查看發佈頁面

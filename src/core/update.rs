@@ -42,6 +42,10 @@ pub enum Event {
     /// never reports this - it only speaks up when there is something to say.
     UpToDate,
     Available(Update),
+    /// A newer release exists, but it has no program attached - so there is
+    /// nothing to download and nothing to verify it with. Reported instead of
+    /// `UpToDate`, which is what this used to look like.
+    Incomplete { version: Version, page: String },
     /// A check or a download failed. The string is already user-facing.
     Failed(String),
     /// Verified and ready to install.
@@ -210,12 +214,26 @@ pub fn check(manual: bool) {
                     post(Event::Failed(error));
                 }
             }
-            Ok(None) => {
-                if manual {
-                    post(Event::UpToDate);
+            Ok(Found::None { newest }) => {
+                // A newer release that could not be offered is worth saying
+                // out loud: it means the publish did not finish, and claiming
+                // the user is up to date hides that from everyone at once.
+                match newest {
+                    Some(newest) if newest > Version::running() => {
+                        post(Event::Incomplete {
+                            version: newest,
+                            page: releases_page(),
+                        });
+                    }
+                    _ => {
+                        if manual {
+                            post(Event::UpToDate);
+                        }
+                    }
                 }
             }
-            Ok(Some(update)) => {
+            Ok(Found::Update(update)) => {
+                let update = *update;
                 // A skipped release is still reported for a check the user
                 // asked for - they went looking.
                 if manual || !skipped(&update) {
@@ -226,10 +244,34 @@ pub fn check(manual: bool) {
     });
 }
 
-fn fetch(url: &str) -> Result<Option<Update>, String> {
+/// What a check found: an update, or - when there is none to offer - the
+/// newest version published, so an incomplete release can be named rather
+/// than silently ignored.
+enum Found {
+    Update(Box<Update>),
+    None { newest: Option<Version> },
+}
+
+fn fetch(url: &str) -> Result<Found, String> {
     let body = get(&agent(), url, MAX_JSON)?;
     let json = String::from_utf8(body).map_err(|_| "the forge's answer was not text".to_string())?;
-    Ok(release::newer_than(&json, Version::running()))
+    Ok(match release::newer_than(&json, Version::running()) {
+        Some(update) => Found::Update(Box::new(update)),
+        None => Found::None {
+            newest: release::newest_version(&json),
+        },
+    })
+}
+
+/// The page a release with no assets can still be opened at, so "go and look"
+/// is actionable.
+fn releases_page() -> String {
+    release::RELEASES_API
+        .split("/api/v1/repos/")
+        .nth(1)
+        .and_then(|rest| rest.split("/releases").next())
+        .map(|repo| format!("https://git.zacx.net/{repo}/releases"))
+        .unwrap_or_else(|| "https://git.zacx.net".to_string())
 }
 
 /// Downloads the program, checks it against the published checksum, and leaves

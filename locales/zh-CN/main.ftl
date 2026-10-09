@@ -1249,3 +1249,8 @@ tooltip_settings_sidebar = 重新排列侧边栏的分区。上移或下移即�
 sidebar_order_reset = 恢复默认顺序
 sidebar_order_visibility_hint = 要显示或隐藏分区，请在“常规”中使用“侧边栏分区”。隐藏的分区仍会保留此处的位置。
 sidebar_order_always_shown = 始终显示
+
+# SSH shell beside an SFTP location's files
+network_location_shell = 在文件旁打开 SSH 终端
+terminal_ssh_connecting = 正在连接到服务器…
+update_incomplete = 已发布更新的版本，但缺少程序文件，因此无法安装。请查看发布页面

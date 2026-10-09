@@ -1249,3 +1249,8 @@ tooltip_settings_sidebar = サイドバーのセクションを並べ替えま�
 sidebar_order_reset = 既定の順序に戻す
 sidebar_order_visibility_hint = セクションの表示・非表示は「一般」のサイドバーセクションで切り替えます。非表示にしてもここでの位置は保たれます。
 sidebar_order_always_shown = 常に表示
+
+# SSH shell beside an SFTP location's files
+network_location_shell = ファイルの横に SSH シェルを開く
+terminal_ssh_connecting = サーバーに接続中…
+update_incomplete = 新しいリリースが公開されていますが、プログラムファイルがないためインストールできません。リリースページをご確認ください

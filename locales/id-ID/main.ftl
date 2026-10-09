@@ -1248,3 +1248,8 @@ tooltip_settings_sidebar = Atur ulang bagian bilah sisi. Pindahkan bagian ke ata
 sidebar_order_reset = Kembalikan Ke Urutan Bawaan
 sidebar_order_visibility_hint = Untuk menampilkan atau menyembunyikan bagian, gunakan Bagian Bilah Sisi di Umum. Bagian yang disembunyikan tetap mempertahankan posisinya di sini.
 sidebar_order_always_shown = Selalu ditampilkan
+
+# SSH shell beside an SFTP location's files
+network_location_shell = Buka shell SSH di samping berkas
+terminal_ssh_connecting = Menyambung ke server…
+update_incomplete = Rilis yang lebih baru telah diterbitkan, tetapi berkas programnya hilang sehingga tidak dapat dipasang. Periksa halaman rilis

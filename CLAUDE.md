@@ -1895,6 +1895,43 @@ PowerShell process) rather than the app's own code - if you're using the
   sidebar matching it, and the order surviving a restart proved the feature
   end to end without a single synthetic click landing.
 
+- **Two releases in a row published with no program attached, every job went
+  green, and the app told everyone they were running the latest.** Reported by
+  the owner: "my current version is 1.4.1, but the latest release is 1.5.0 -
+  it said you're running the latest update". The API showed why at once:
+  v1.5.0 had **no assets at all** and v1.4.2 had **only its zip**, while
+  v1.4.1 and everything before it had the full set. `core::release::newer_than`
+  deliberately passes over a release with no `EdenExplorer.exe`
+  (`exe: r.asset(EXE_ASSET)?` - there is nothing to install and nothing to
+  check it against), so both were skipped and the check reported `UpToDate`.
+  **The root cause is one missing line**: the publish step never set
+  `$ErrorActionPreference = "Stop"`, so `Get-ChildItem release/dist -File`
+  over a missing or empty directory wrote a *non-terminating* error and the
+  upload loop then iterated over nothing at all. No throw, no failed step, and
+  the metadata loop right after it still ran and set the title and notes
+  correctly - which is precisely why the releases looked fine from the forge's
+  own release page. **The deeper mistake is one this file already records and
+  only half-applied:** after v1.0.2 came out with no notes, the lesson written
+  down was "after any write through the forge's API, read the object back and
+  assert on the fields you care about" - and that was done for the *title and
+  notes*, which got a read-back-and-retry loop, while the *assets* stayed
+  fire-and-forget. A rule applied to one half of a step is not applied. The
+  publish step now sets `Stop`, refuses to publish unless `EdenExplorer.exe`
+  and `SHA256SUMS.txt` are actually staged, and re-reads the release after
+  uploading to confirm both are attached - re-uploading and finally failing
+  the job if they are not. `core::update` also stopped reporting this as
+  "up to date": a newer version that exists but cannot be installed is now
+  its own `Event::Incomplete`, shown even for an automatic check, because a
+  broken publish is otherwise invisible to everybody at once.
+- **A workflow's PowerShell can be syntax-checked without running the
+  workflow**, which is worth doing when the only other way to find out is to
+  cut a release. Pull the step's `run:` block out of the YAML, replace the
+  `${{ ... }}` expressions with a placeholder (they are not PowerShell), and
+  parse it:
+  `[System.Management.Automation.Language.Parser]::ParseFile(path, [ref]$null, [ref]$errs)`.
+  That catches a typo in a step that would otherwise only surface after a
+  merge to `main`, by which point it has already published something wrong.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

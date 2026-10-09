@@ -1245,3 +1245,8 @@ tooltip_settings_sidebar = Rearrange the sidebar's sections. Move a section up o
 sidebar_order_reset = Reset To Default Order
 sidebar_order_visibility_hint = To show or hide a section, use Sidebar Sections in General. A hidden section keeps its place here.
 sidebar_order_always_shown = Always shown
+
+# SSH shell beside an SFTP location's files
+network_location_shell = Open an SSH shell beside the files
+terminal_ssh_connecting = Connecting to the server…
+update_incomplete = A newer release is published, but its program file is missing so it cannot be installed. Check the releases page

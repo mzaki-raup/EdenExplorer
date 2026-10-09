@@ -122,6 +122,15 @@ jobs:
           # repository; the API below is their /api/v1, not GitHub's.
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Without this a non-terminating error carries on: `Get-ChildItem`
+          # over a missing release/dist writes an error, the upload loop then
+          # iterates over nothing, and the job goes green having attached no
+          # program at all. That is exactly how v1.4.2 published with only its
+          # zip and v1.5.0 with no assets whatsoever, leaving every user stuck
+          # on v1.4.1 - the app passes over a release with no EdenExplorer.exe,
+          # so both simply read as "you are running the latest".
+          $ErrorActionPreference = "Stop"
+
           $api = "${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
           $headers = @{ Authorization = "token $env:TOKEN" }
           $tag = "${{ steps.plan.outputs.tag }}"
@@ -164,7 +173,24 @@ jobs:
             Write-Host "The forge already has a release for $tag (id $($release.id))"
           }
 
-          foreach ($file in Get-ChildItem release/dist -File) {
+          # The app downloads these two by name and refuses a release it
+          # cannot check, so a release without them is worse than no release:
+          # it looks published and can never be installed.
+          $dist = "release/dist"
+          $required = @("EdenExplorer.exe", "SHA256SUMS.txt")
+          if (-not (Test-Path $dist)) {
+            throw "$dist is missing - scripts/build-and-package.ps1 should have written it."
+          }
+          $staged = @(Get-ChildItem $dist -File)
+          Write-Host "Staged for upload: $($staged.Count) file(s)"
+          $staged | ForEach-Object { Write-Host ("  {0,-46} {1,12:N0} bytes" -f $_.Name, $_.Length) }
+          foreach ($name in $required) {
+            if (-not ($staged | Where-Object { $_.Name -eq $name })) {
+              throw "$name is not in $dist - refusing to publish a release the app cannot install."
+            }
+          }
+
+          foreach ($file in $staged) {
             # A re-run must not end up with the same asset attached twice.
             $existing = Invoke-RestMethod -Method Get -Headers $headers -Uri "$api/releases/$($release.id)"
             foreach ($old in @($existing.assets | Where-Object { $_.name -eq $file.Name })) {
@@ -175,6 +201,34 @@ jobs:
             $uri = "$api/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($file.Name))"
             Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Form @{ attachment = Get-Item $file.FullName } | Out-Null
             Write-Host "Attached $($file.Name)"
+          }
+
+          # Uploading is not the same as having uploaded. The title and notes
+          # below have been confirmed by reading them back ever since v1.0.2
+          # came out empty; the assets were still fire-and-forget, which is
+          # the other half of that same lesson and the reason this went
+          # unnoticed for two releases.
+          foreach ($attempt in 1..3) {
+            $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
+            $have = @($check.assets | ForEach-Object { $_.name })
+            $missing = @($required | Where-Object { $have -notcontains $_ })
+            if ($missing.Count -eq 0) {
+              Write-Host "Confirmed on the release: $($have -join ', ')"
+              break
+            }
+            Write-Host "Attempt ${attempt}: still missing $($missing -join ', ') - re-uploading."
+            foreach ($name in $missing) {
+              $file = $staged | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+              $uri = "$api/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($name))"
+              Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Form @{ attachment = Get-Item $file.FullName } | Out-Null
+            }
+            Start-Sleep -Seconds 5
+          }
+          $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
+          $have = @($check.assets | ForEach-Object { $_.name })
+          $missing = @($required | Where-Object { $have -notcontains $_ })
+          if ($missing.Count -gt 0) {
+            throw "the release is missing $($missing -join ', ') after re-uploading - users could never install it."
           }
 
           # Now make the title and notes stick, re-checking after a pause so a

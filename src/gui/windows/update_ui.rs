@@ -70,6 +70,18 @@ impl super::mainwindow::MainWindow {
                     self.update_state.message = Some(self.i18n.tr("update_up_to_date"));
                     self.update_state.modal_open = true;
                 }
+                // Always shown, even for an automatic check: a release that
+                // cannot be installed is a problem on the publishing end that
+                // nobody finds out about if the app stays quiet.
+                Event::Incomplete { version, page } => {
+                    self.update_state.available = None;
+                    self.update_state.message = Some(format!(
+                        "{} ({version})
+{page}",
+                        self.i18n.tr("update_incomplete")
+                    ));
+                    self.update_state.modal_open = true;
+                }
                 Event::Failed(error) => {
                     self.update_state.downloading = false;
                     self.update_state.message =

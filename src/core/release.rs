@@ -142,6 +142,24 @@ pub fn newer_than(json: &str, current: Version) -> Option<Update> {
         .max_by_key(|u| u.version)
 }
 
+/// The newest published version, whether or not it can actually be
+/// installed.
+///
+/// `newer_than` deliberately passes over a release with no `EdenExplorer.exe`
+/// attached, which is right - there is nothing to install and nothing to
+/// check it against. But it leaves "you are running the latest" and "there is
+/// a newer release whose upload is incomplete" looking identical to the user,
+/// and a broken publish then reads as nothing being wrong at all. This tells
+/// the two apart.
+pub fn newest_version(json: &str) -> Option<Version> {
+    let releases: Vec<ApiRelease> = serde_json::from_str(json).ok()?;
+    releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .filter_map(|r| Version::parse(&r.tag_name))
+        .max()
+}
+
 /// The checksum of `name` in a `SHA256SUMS.txt` (lines of "<hex>  <file name>",
 /// as `sha256sum` and the release workflow both write them), lowercased.
 pub fn sha256_of(sums: &str, name: &str) -> Option<String> {
@@ -255,6 +273,47 @@ mod tests {
         let json = r#"[{"tag_name":"v2.0.0","html_url":"h","assets":[{"name":"EdenExplorer.exe","browser_download_url":"u"}]}]"#;
         let found = newer_than(json, v(1, 0, 0)).expect("an update");
         assert!(found.sums.is_none(), "there is no SHA256SUMS.txt to report");
+    }
+
+    /// The shape that actually shipped: v1.5.0 published with no assets at
+    /// all and v1.4.2 with only its zip, because the release workflow's
+    /// upload loop silently iterated over nothing. Neither can be installed,
+    /// so neither is offered - but a user on v1.4.1 was then told they were
+    /// running the latest, which is how a broken publish stayed invisible.
+    #[test]
+    fn a_release_with_no_program_attached_is_not_offered_but_is_still_seen() {
+        let json = r#"[
+            {"tag_name":"v1.5.0","draft":false,"prerelease":false,"body":"",
+             "html_url":"https://example/1.5.0","assets":[]},
+            {"tag_name":"v1.4.2","draft":false,"prerelease":false,"body":"",
+             "html_url":"https://example/1.4.2","assets":[
+               {"name":"EdenExplorer-1.4.2-windows-x64.zip","browser_download_url":"https://example/zip","size":1}]},
+            {"tag_name":"v1.4.1","draft":false,"prerelease":false,"body":"",
+             "html_url":"https://example/1.4.1","assets":[
+               {"name":"EdenExplorer.exe","browser_download_url":"https://example/exe","size":1},
+               {"name":"SHA256SUMS.txt","browser_download_url":"https://example/sums","size":1}]}
+        ]"#;
+
+        // Nothing to offer someone already on the last complete release.
+        assert_eq!(newer_than(json, v(1, 4, 1)), None);
+        // But the forge plainly has something newer, and saying so is the
+        // difference between "you are up to date" and "the publish broke".
+        assert_eq!(newest_version(json), Some(v(1, 5, 0)));
+
+        // Someone further behind is still offered the newest *installable*
+        // release rather than being stranded by the broken ones above it.
+        let found = newer_than(json, v(1, 4, 0)).expect("v1.4.1 is complete and newer");
+        assert_eq!(found.version, v(1, 4, 1));
+    }
+
+    #[test]
+    fn newest_version_ignores_drafts_and_pre_releases() {
+        let json = r#"[
+            {"tag_name":"v2.0.0","draft":true,"prerelease":false,"body":"","html_url":"","assets":[]},
+            {"tag_name":"v1.9.0","draft":false,"prerelease":true,"body":"","html_url":"","assets":[]},
+            {"tag_name":"v1.5.0","draft":false,"prerelease":false,"body":"","html_url":"","assets":[]}
+        ]"#;
+        assert_eq!(newest_version(json), Some(v(1, 5, 0)));
     }
 
     #[test]
