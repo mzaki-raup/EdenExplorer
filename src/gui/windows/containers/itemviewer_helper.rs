@@ -1107,8 +1107,16 @@ fn draw_windows_menu_items(
         };
 
         if clicked {
-            if let Err(err) = menu.invoke(hwnd, item.id) {
-                eprintln!("Windows menu invoke failed: {}", err);
+            match menu.invoke(hwnd, item.id) {
+                Ok(()) => {
+                    // A shell verb runs in its own process - "Add to archive",
+                    // an image converter and friends write their output with
+                    // nothing telling this app when they are done - so watch
+                    // the folder and refresh when it actually lands, the same
+                    // way a custom context menu command does.
+                    crate::core::dir_watch::watch(menu.context_dir());
+                }
+                Err(err) => eprintln!("Windows menu invoke failed: {}", err),
             }
             ui.close();
         }

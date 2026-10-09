@@ -45,13 +45,19 @@ pub struct ShellContextMenu {
     id_base: u32,
     full_pidls: Vec<*mut ITEMIDLIST>,
     parent_pidl: *mut ITEMIDLIST,
+    /// The folder this menu acts in - the items' shared parent, or the folder
+    /// itself for a background menu. Kept so a verb that writes something can
+    /// have that folder watched afterwards (see `core::dir_watch`); a shell
+    /// verb runs in its own process, so there is nothing else to tell this app
+    /// when its output has landed.
+    context_dir: PathBuf,
 }
 
 impl ShellContextMenu {
     pub fn for_paths(paths: &[PathBuf], hwnd: HWND) -> windows::core::Result<Self> {
-        if shared_parent(paths).is_none() {
+        let Some(context_dir) = shared_parent(paths) else {
             return Err(Error::from(HRESULT(0x80004005u32 as i32)));
-        }
+        };
 
         let mut full_pidls = Vec::with_capacity(paths.len());
         for path in paths {
@@ -126,6 +132,7 @@ impl ShellContextMenu {
             id_base: CONTEXT_MENU_ID_BASE,
             full_pidls,
             parent_pidl: std::ptr::null_mut(),
+            context_dir,
         })
     }
 
@@ -184,7 +191,13 @@ impl ShellContextMenu {
             id_base: CONTEXT_MENU_ID_BASE,
             full_pidls: vec![pidl],
             parent_pidl: std::ptr::null_mut(),
+            context_dir: dir.to_path_buf(),
         })
+    }
+
+    /// The folder this menu acts in.
+    pub fn context_dir(&self) -> &Path {
+        &self.context_dir
     }
 
     pub fn items(&self) -> &[ShellContextMenuItem] {
