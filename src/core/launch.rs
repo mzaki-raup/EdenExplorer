@@ -17,11 +17,15 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Foundation::{GetLastError, HWND, LPARAM, WPARAM};
 use windows::Win32::Globalization::GetUserDefaultUILanguage;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
-use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex};
-use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, SW_RESTORE, SendMessageW, SetForegroundWindow, ShowWindow, WM_COPYDATA,
+use windows::Win32::System::Threading::{
+    CreateMutexW, GetCurrentProcessId, OpenProcess, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, ReleaseMutex,
 };
-use windows::core::PCWSTR;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, FindWindowW, GetWindowThreadProcessId, IsWindowVisible, SW_RESTORE, SendMessageW,
+    SetForegroundWindow, ShowWindow, WM_COPYDATA,
+};
+use windows::core::{BOOL, PCWSTR, PWSTR};
 
 #[derive(RustEmbed)]
 #[folder = "locales/"]
@@ -310,6 +314,81 @@ fn load_locale(bundle: &mut FluentBundle<FluentResource>, locale: &str) {
     }
 }
 
+/// The running instance's main window.
+///
+/// Not by title alone. This app strips `WS_CAPTION` and paints its own chrome,
+/// and the viewport is built `.with_title_shown(false)` - which left the window
+/// text empty, so `FindWindowW` matched nothing and forwarding failed with
+/// `WindowNotReady` no matter how long it retried. The text is now set
+/// explicitly (`windowsoverrides::apply_window_override`), but an instance that
+/// is still starting up will not have it yet, so fall back to looking for a
+/// visible top-level window owned by another EdenExplorer process.
+fn find_instance_window() -> Option<HWND> {
+    let title = wide(WINDOW_TITLE);
+    let hwnd = unsafe { FindWindowW(None, PCWSTR(title.as_ptr())) }.unwrap_or_default();
+    if !hwnd.is_invalid() {
+        return Some(hwnd);
+    }
+
+    let mut found: Option<HWND> = None;
+    let _ = unsafe {
+        EnumWindows(
+            Some(enum_instance_window),
+            LPARAM(&mut found as *mut Option<HWND> as isize),
+        )
+    };
+    found
+}
+
+unsafe extern "system" fn enum_instance_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    const KEEP_GOING: BOOL = BOOL(1);
+    const STOP: BOOL = BOOL(0);
+
+    if !unsafe { IsWindowVisible(hwnd) }.as_bool() || !window_is_another_instance(hwnd) {
+        return KEEP_GOING;
+    }
+    let out = unsafe { &mut *(lparam.0 as *mut Option<HWND>) };
+    *out = Some(hwnd);
+    STOP
+}
+
+/// Whether `hwnd` belongs to a *different* process running this same program.
+fn window_is_another_instance(hwnd: HWND) -> bool {
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    if pid == 0 || pid == unsafe { GetCurrentProcessId() } {
+        return false;
+    }
+
+    let Ok(process) =
+        (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
+    else {
+        return false;
+    };
+    let mut buffer = [0u16; 512];
+    let mut len = buffer.len() as u32;
+    let queried = unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+    };
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+    if queried.is_err() {
+        return false;
+    }
+
+    let path = String::from_utf16_lossy(&buffer[..len as usize]);
+    Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("EdenExplorer.exe"))
+}
+
 fn forward_paths(paths: &[PathBuf]) -> Result<(), LaunchError> {
     let mut payload: Vec<u16> = Vec::new();
     for path in paths {
@@ -318,11 +397,11 @@ fn forward_paths(paths: &[PathBuf]) -> Result<(), LaunchError> {
     }
     payload.push(0);
 
-    let title = wide(WINDOW_TITLE);
+    // The instance may still be starting up, so give it a moment to appear.
     let mut hwnd = HWND::default();
     for _ in 0..30 {
-        hwnd = unsafe { FindWindowW(None, PCWSTR(title.as_ptr())) }.unwrap_or_default();
-        if !hwnd.is_invalid() {
+        if let Some(found) = find_instance_window() {
+            hwnd = found;
             break;
         }
         thread::sleep(Duration::from_millis(100));

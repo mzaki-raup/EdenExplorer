@@ -1688,6 +1688,30 @@ PowerShell process) rather than the app's own code - if you're using the
   browsing costs nothing, and the per-frame check in `MainWindow::ui` is a
   relaxed atomic load rather than a lock.**
 
+- **The single-instance CLI forwarding was written but had never worked, and
+  reading the code made it look fine.** `EdenExplorer.exe <folder>` is supposed
+  to hand the path to an already-running instance, which opens it in a new tab.
+  Two independent bugs stopped it, and both were only visible by running it:
+  (1) `main.rs` created the single-instance mutex **only when a path was given**
+  (`if launch_options.new_window || launch_paths.is_empty() { None }`), so an
+  instance started the ordinary way - no arguments, from the Start menu or a
+  shortcut, which is virtually always - never registered itself, and a later
+  CLI invocation found nothing to forward to; (2) `forward_paths` located the
+  window with `FindWindowW(None, "EdenExplorer")`, but the viewport is built
+  `.with_title_shown(false)` and the app strips `WS_CAPTION` to paint its own
+  chrome, so the window text was **empty** and that lookup matched nothing -
+  forwarding then failed with `WindowNotReady` after retrying for three
+  seconds. Fixed by registering the instance regardless of arguments, setting
+  the window text explicitly in `apply_window_override` (invisible, since there
+  is no caption, but it is what `FindWindowW` and the ui-test scripts both
+  match on), and adding an `EnumWindows` fallback that finds a visible
+  top-level window owned by another `EdenExplorer.exe` process - so the lookup
+  no longer depends on a title at all. **The lesson is not about Win32: this
+  was confidently reported as working on a code read alone, and a single
+  command would have disproved it. Anything whose whole purpose is to talk to
+  another process has to be exercised against a real running instance before
+  it is described as working.**
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

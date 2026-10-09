@@ -261,6 +261,13 @@ fn color32_to_dwm(color: egui::Color32) -> u32 {
 
 pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
     unsafe {
+        // The caption is stripped below, so this text is never drawn as a title
+        // bar - but it is what `core::launch`'s single-instance forwarding finds
+        // the running window by, and what Alt+Tab labels it. eframe leaves it
+        // empty because the viewport is built `.with_title_shown(false)`, which
+        // silently broke forwarding: `FindWindowW` had nothing to match.
+        let _ = SetWindowTextW(hwnd, &windows::core::HSTRING::from("EdenExplorer"));
+
         let style = GetWindowLongW(hwnd, GWL_STYLE);
 
         let new_style = (style & !(WS_CAPTION.0 as i32))

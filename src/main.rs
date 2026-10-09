@@ -41,7 +41,11 @@ fn main() -> eframe::Result<()> {
         }
     };
 
-    let _instance_guard = if launch_options.new_window || launch_paths.is_empty() {
+    // Not gated on having paths: an instance launched the ordinary way (no
+    // arguments at all - Start menu, taskbar, a shortcut) has to register
+    // itself too, or a later `EdenExplorer.exe <folder>` finds no instance to
+    // forward to and starts a second window instead of opening a tab.
+    let _instance_guard = if launch_options.new_window {
         None
     } else {
         match acquire_or_forward(&launch_paths) {
