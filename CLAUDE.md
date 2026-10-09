@@ -1758,6 +1758,52 @@ PowerShell process) rather than the app's own code - if you're using the
   `screenshot.ps1` still use the old `MainWindowHandle`/`MainWindowTitle`
   pattern and have the same blind spot when the window is minimized.
 
+- **A self-update left the user with no program at all, because `restart()`
+  spawned the replacement *before* the outgoing process had gone.** Reported
+  as a dialog right after updating - "The running EdenExplorer window did not
+  accept the request." - and the app simply never came back. `restart()` did
+  `Command::new(exe).spawn()` and then `std::process::exit(0)`, so the new
+  copy routinely started while the old one still held the single-instance
+  mutex and still owned a window. The new copy's `acquire_or_forward` (the
+  very first thing `main` does) therefore concluded "another instance is
+  already running", found that window, and tried to hand its arguments over -
+  to a process that was seconds from exiting. **There were two failure modes,
+  and the quieter one was the worse of the two**, both reproduced here against
+  the real unfixed binary: (1) if the outgoing window had already stopped
+  pumping messages, `SendMessageW` returned 0 for two seconds of retries and
+  the user got that dialog and no app; (2) if it was *still* pumping, the
+  forward **succeeded** - so the replacement exited having handed its
+  arguments to a program that then exited too, leaving **no window and no
+  error at all**. A silent disappearance after an update, with nothing on
+  screen to explain it. Fixed in two places: `restart()` now passes
+  `launch::REPLACING_PREVIOUS` (`--replacing-previous`) and a copy started
+  that way never forwards - it waits for the mutex and takes over; and
+  `acquire_or_forward` no longer gives up when a forward is refused, waiting
+  for the mutex and taking over instead. The second half can never produce two
+  instances, because `CreateMutexW` decides who owns it rather than any guess
+  about whether the other process still looks alive - verified by holding the
+  mutex throughout and confirming the app still refuses to start. **The
+  general lesson: a "hand my arguments to the instance that is already
+  running" path has to know whether the instance it just found is the one it
+  is replacing.** Finding a window is not evidence that anything is there to
+  receive the message - and a forward that *succeeds* against a dying process
+  is worse than one that fails, because it fails silently.
+- **A live test that matched this app's window by title alone reported "the
+  app started" when what had actually appeared was the error dialog saying it
+  refused to.** While reproducing the bug above, the first harness looked for
+  a visible top-level window titled `EdenExplorer` owned by an
+  `EdenExplorer.exe` process - exactly the rule `focus.ps1` uses - and
+  cheerfully printed "NOT REPRODUCED: a window appeared". The window it found
+  was `show_launch_error`'s own `MessageBoxW`, whose caption is also
+  "EdenExplorer" and which is also owned by `EdenExplorer.exe`. The fix is to
+  check the window **class** as well: a message box is class `#32770`, the
+  real window is winit's own `Window Class`. This is the same shape as the
+  documented screenshot gotchas - the check exits cleanly and the result looks
+  entirely plausible - and it would have produced a confident, wrong "the bug
+  does not reproduce" if the numbers had not been printed and read. When a
+  test asserts "the app is up", assert on something a failure dialog cannot
+  also satisfy.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

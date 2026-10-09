@@ -317,7 +317,14 @@ pub fn install(new: &Path) -> Result<(), String> {
 /// nothing buffered that this would drop.
 pub fn restart() {
     if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).spawn();
+        // The copy starts before this process has exited, so it is told it
+        // is replacing us: without that it finds our single-instance mutex
+        // still held, treats us as "the running instance", and hands its
+        // arguments to a program that is about to exit - which ended with
+        // no window at all after an update (see `acquire_replacing_previous`).
+        let _ = std::process::Command::new(exe)
+            .arg(crate::core::launch::REPLACING_PREVIOUS)
+            .spawn();
     }
     std::process::exit(0);
 }

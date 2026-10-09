@@ -32,6 +32,14 @@ use windows::core::{BOOL, PCWSTR, PWSTR};
 struct LaunchLocalizations;
 
 const INSTANCE_MUTEX: &str = "Local\\EdenExplorer.SingleInstance.v1";
+/// The option `core::update::restart` passes to the copy it starts. Not
+/// documented for users: it only means "the instance you are replacing is
+/// still shutting down", which nothing but the updater can truthfully say.
+pub const REPLACING_PREVIOUS: &str = "--replacing-previous";
+/// How long a starting instance waits for an outgoing one to let go of the
+/// mutex before giving up on a clean handover.
+const HANDOVER_ATTEMPTS: u32 = 25;
+const HANDOVER_RETRY: Duration = Duration::from_millis(200);
 const WINDOW_TITLE: &str = "EdenExplorer";
 const COPYDATA_ID: usize = 0x4544_454e;
 static FORWARDED_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
@@ -68,6 +76,9 @@ pub struct InstanceGuard {
 pub struct LaunchOptions {
     pub paths: Vec<PathBuf>,
     pub new_window: bool,
+    /// Started by a self-update to take over from the instance that is on
+    /// its way out (see `REPLACING_PREVIOUS`).
+    pub replacing_previous: bool,
 }
 
 #[derive(Debug)]
@@ -197,6 +208,8 @@ where
             after_double_dash = true;
         } else if !after_double_dash && arg == "--new-window" {
             options.new_window = true;
+        } else if !after_double_dash && arg == REPLACING_PREVIOUS {
+            options.replacing_previous = true;
         } else if !after_double_dash && arg.starts_with('-') {
             return Err(LaunchError::UnknownOption(arg));
         } else if !arg.is_empty() {
@@ -222,20 +235,75 @@ pub fn existing_directories(options: &LaunchOptions) -> Result<Vec<PathBuf>, Lau
     Ok(paths)
 }
 
-pub fn acquire_or_forward(paths: &[PathBuf]) -> Result<Option<InstanceGuard>, LaunchError> {
+/// Whether this process got to be the single instance.
+enum Claim {
+    Owned(InstanceGuard),
+    AlreadyRunning,
+}
+
+/// Asks for the single-instance mutex once. `CreateMutexW` is the only
+/// authority on who holds it - never a guess about whether some other
+/// process still looks alive.
+fn claim_instance() -> Result<Claim, LaunchError> {
     let name = wide(INSTANCE_MUTEX);
     let handle = unsafe { CreateMutexW(None, true, PCWSTR(name.as_ptr())) }
         .map_err(|e| LaunchError::MutexCreate(e.to_string()))?;
-
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
-        let result = forward_paths(paths);
         unsafe {
             let _ = CloseHandle(handle);
         }
-        result.map(|_| None)
+        Ok(Claim::AlreadyRunning)
     } else {
-        Ok(Some(InstanceGuard { handle }))
+        Ok(Claim::Owned(InstanceGuard { handle }))
     }
+}
+
+pub fn acquire_or_forward(paths: &[PathBuf]) -> Result<Option<InstanceGuard>, LaunchError> {
+    if let Claim::Owned(guard) = claim_instance()? {
+        return Ok(Some(guard));
+    }
+    let rejected = match forward_paths(paths) {
+        Ok(()) => return Ok(None),
+        Err(error) => error,
+    };
+    // Something holds the mutex but would not take the message. The usual
+    // reason is that it is already shutting down - its window gone, or past
+    // pumping messages, between being found and being written to. Refusing
+    // to start then leaves the user with no window at all, so wait for the
+    // mutex to come free and take over instead. If the other instance is
+    // genuinely alive it keeps the mutex, ownership never comes, and the
+    // original error is still what the user sees.
+    for _ in 0..HANDOVER_ATTEMPTS {
+        thread::sleep(HANDOVER_RETRY);
+        if let Claim::Owned(guard) = claim_instance()? {
+            return Ok(Some(guard));
+        }
+    }
+    Err(rejected)
+}
+
+/// Takes the single-instance mutex for a copy started by a self-update,
+/// waiting for the instance it replaces to let go of it.
+///
+/// This deliberately never forwards. `core::update::restart` spawns the new
+/// copy and only *then* exits, so the new copy routinely starts while the
+/// outgoing one still holds the mutex and still owns a window - and handing
+/// our arguments to a program that is seconds from exiting ends with no
+/// window at all and nothing on screen to explain why.
+///
+/// If the previous instance somehow never goes away, start anyway without
+/// the guard: a second window is a much smaller problem than an update that
+/// leaves the user with no program.
+pub fn acquire_replacing_previous() -> Result<Option<InstanceGuard>, LaunchError> {
+    for attempt in 0..HANDOVER_ATTEMPTS {
+        if let Claim::Owned(guard) = claim_instance()? {
+            return Ok(Some(guard));
+        }
+        if attempt + 1 < HANDOVER_ATTEMPTS {
+            thread::sleep(HANDOVER_RETRY);
+        }
+    }
+    Ok(None)
 }
 
 pub fn receive_copydata(lparam: LPARAM) -> bool {
@@ -599,6 +667,24 @@ mod tests {
             options.paths,
             vec![PathBuf::from("C:\\Projects"), PathBuf::from("D:\\Archive")]
         );
+    }
+
+    #[test]
+    fn the_self_update_restart_flag_is_recognised_and_is_not_a_path() {
+        // `core::update::restart` passes exactly this, and a copy started
+        // that way must wait for the instance it replaces rather than
+        // forwarding to it - so the flag has to parse, and must never be
+        // mistaken for a folder to open.
+        let options = parse_args(["EdenExplorer.exe", REPLACING_PREVIOUS]).unwrap();
+        assert!(options.replacing_previous);
+        assert!(options.paths.is_empty());
+        assert!(!options.new_window);
+    }
+
+    #[test]
+    fn an_ordinary_launch_does_not_claim_to_be_replacing_anything() {
+        let options = parse_args(["EdenExplorer.exe", "C:\\Projects"]).unwrap();
+        assert!(!options.replacing_previous);
     }
 
     #[test]

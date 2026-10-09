@@ -3,7 +3,9 @@ mod core;
 mod gui;
 
 use crate::core::indexer::{WindowSizeMode, load_window_position, load_windows_size_mode_on_start};
-use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
+use crate::core::launch::{
+    LaunchError, acquire_or_forward, acquire_replacing_previous, existing_directories, parse_args,
+};
 use crate::core::utils::fonts::apply_custom_font_definitions;
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
 use eframe::{NativeOptions, egui};
@@ -48,6 +50,16 @@ fn main() -> eframe::Result<()> {
     // forward to and starts a second window instead of opening a tab.
     let _instance_guard = if launch_options.new_window {
         None
+    } else if launch_options.replacing_previous {
+        // Started by a self-update: wait for the instance being replaced
+        // rather than forwarding to it.
+        match acquire_replacing_previous() {
+            Ok(guard) => guard,
+            Err(error) => {
+                show_launch_error(&error);
+                return Ok(());
+            }
+        }
     } else {
         match acquire_or_forward(&launch_paths) {
             Ok(Some(guard)) => Some(guard),
