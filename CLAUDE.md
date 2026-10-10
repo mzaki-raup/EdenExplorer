@@ -2329,6 +2329,33 @@ PowerShell process) rather than the app's own code - if you're using the
   that codec is separately pinned against hand-built bytes and known vectors.
   Decide per layer which half of the pair is allowed to be shared.
 
+- **Page a search engine by cursor, not by offset - the offset has a hard
+  ceiling, not just a slope.** Elasticsearch refuses `from + size` past
+  `max_result_window` (10,000 by default) outright, so an offset-paged listing
+  doesn't merely get slow on a large index, it stops returning anything. The
+  scroll API is the cursor equivalent, and it has an obligation attached:
+  every open scroll holds search context on every shard until it expires, so
+  it is cleared with a `DELETE` when the walk ends. The test asserts all
+  three - that the first request opens a scroll, that later ones follow it,
+  and that it is given back - because the cleanup is the part that works
+  silently either way.
+- **When an id can contain the path separator, escape it, don't sanitise
+  it.** Elasticsearch document ids may contain `/`, and paths in this app are
+  split on `/`. Replacing it (the way `mongodb` does for ids it can only
+  match client-side) invents a folder level *and* loses the real id, so the
+  document can't be fetched back. Percent-encoding `/`, `\\` and `%` keeps the
+  name one segment and perfectly reversible - a round-trip test over
+  awkward ids is what pins it, and it caught nothing only because it was
+  written first.
+- **Compute a test's expected value independently, not by running the code
+  and copying what it printed.** The `@timestamp` test asserted that
+  `2026-10-10T08:30:00Z` is epoch 1,791,707,400; the code said
+  1,791,621,000 and the code was right - the hand-written constant was a day
+  out. The temptation at that point is to paste in whatever the code
+  produced, which turns the test into a tautology. Checking the date
+  separately confirmed which side was wrong, and the constant is now derived
+  once and reused across all three assertions.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

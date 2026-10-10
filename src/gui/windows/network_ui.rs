@@ -651,6 +651,7 @@ fn draw_location_form(
                 RemoteKind::Redis => Some("network_location_key_prefix"),
                 RemoteKind::CouchDb => Some("network_location_database_name"),
                 RemoteKind::MongoDb => Some("network_location_auth_database"),
+                RemoteKind::Elasticsearch => Some("network_location_index_name"),
                 RemoteKind::S3 => None,
             };
             if let Some(label) = path_label {
@@ -659,6 +660,7 @@ fn draw_location_form(
                     RemoteKind::Redis => "user:1000",
                     RemoteKind::CouchDb => "mydb",
                     RemoteKind::MongoDb => "admin",
+                    RemoteKind::Elasticsearch => "logs-2026",
                     _ => "/home/me",
                 };
                 row(ui, &i18n.tr(label), &mut |ui| {

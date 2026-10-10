@@ -1278,3 +1278,4 @@ network_location_move_up = 在此分组内上移
 network_location_move_down = 在此分组内下移
 network_location_database_name = 数据库
 network_location_auth_database = 认证数据库
+network_location_index_name = 索引

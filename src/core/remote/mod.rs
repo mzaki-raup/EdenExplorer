@@ -8,6 +8,7 @@
 
 pub mod couchdb;
 pub mod credentials;
+pub mod elasticsearch;
 pub mod ftp;
 pub mod mongodb;
 pub mod redis;
@@ -41,10 +42,13 @@ pub enum RemoteKind {
     CouchDb,
     /// Browsed read-only: database, collection, document.
     MongoDb,
+    /// Browsed read-only: indices are folders, documents are files. Covers
+    /// OpenSearch too - the read API this uses is the same.
+    Elasticsearch,
 }
 
 impl RemoteKind {
-    pub const ALL: [RemoteKind; 8] = [
+    pub const ALL: [RemoteKind; 9] = [
         RemoteKind::Sftp,
         RemoteKind::Ftp,
         RemoteKind::Ftps,
@@ -53,6 +57,7 @@ impl RemoteKind {
         RemoteKind::Redis,
         RemoteKind::CouchDb,
         RemoteKind::MongoDb,
+        RemoteKind::Elasticsearch,
     ];
 
     pub fn label(self) -> &'static str {
@@ -65,6 +70,7 @@ impl RemoteKind {
             RemoteKind::Redis => "Redis",
             RemoteKind::CouchDb => "CouchDB",
             RemoteKind::MongoDb => "MongoDB",
+            RemoteKind::Elasticsearch => "Elasticsearch",
         }
     }
 
@@ -74,6 +80,7 @@ impl RemoteKind {
             RemoteKind::Ftp | RemoteKind::Ftps => 21,
             RemoteKind::Redis => 6379,
             RemoteKind::MongoDb => 27017,
+            RemoteKind::Elasticsearch => 9200,
             // CouchDB's own defaults, which differ from plain HTTP's.
             RemoteKind::CouchDb => {
                 if https {
@@ -179,6 +186,8 @@ impl RemoteConnection {
             // MongoDB's `path` names the database credentials live in, not
             // a place to browse - so it always opens at the root.
             RemoteKind::MongoDb => Vec::new(),
+            // A saved index to open straight into, like CouchDB's database.
+            RemoteKind::Elasticsearch => segments_of(&self.path),
             RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => segments_of(&self.path),
             // WebDAV's path is the root itself; S3 starts at the bucket.
             RemoteKind::WebDav | RemoteKind::S3 => Vec::new(),
@@ -239,6 +248,9 @@ pub fn connect_with_secret(
         RemoteKind::Redis => Ok(Box::new(redis::RedisFs::connect(conn, &secret)?)),
         RemoteKind::CouchDb => Ok(Box::new(couchdb::CouchFs::new(conn, &secret)?)),
         RemoteKind::MongoDb => Ok(Box::new(mongodb::MongoFs::connect(conn, &secret)?)),
+        RemoteKind::Elasticsearch => {
+            Ok(Box::new(elasticsearch::ElasticFs::new(conn, &secret)?))
+        }
     }
 }
 
@@ -300,6 +312,13 @@ pub fn url_for(path: &Path) -> Option<String> {
             "redis://{user}{}:{}/{}{encoded}",
             conn.host, conn.port, conn.database
         ),
+        // Plain HTTP, and its own URLs are `scheme://host:port/index/_doc/id`
+        // - close enough that showing the real address is more use than an
+        // invented scheme.
+        RemoteKind::Elasticsearch => {
+            let scheme = if conn.https { "https" } else { "http" };
+            format!("{scheme}://{user}{}:{}{encoded}", conn.host, conn.port)
+        }
         // Its own connection-string scheme, which is what anyone using
         // MongoDB will recognise.
         RemoteKind::MongoDb => {

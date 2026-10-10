@@ -1278,3 +1278,4 @@ network_location_move_up = 在此群組內上移
 network_location_move_down = 在此群組內下移
 network_location_database_name = 資料庫
 network_location_auth_database = 驗證資料庫
+network_location_index_name = 索引

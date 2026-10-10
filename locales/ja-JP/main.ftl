@@ -1278,3 +1278,4 @@ network_location_move_up = このグループ内で上へ移動
 network_location_move_down = このグループ内で下へ移動
 network_location_database_name = データベース
 network_location_auth_database = 認証データベース
+network_location_index_name = インデックス

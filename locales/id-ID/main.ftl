@@ -1277,3 +1277,4 @@ network_location_move_up = Naikkan dalam Grup Ini
 network_location_move_down = Turunkan dalam Grup Ini
 network_location_database_name = Basis Data
 network_location_auth_database = Basis Data Autentikasi
+network_location_index_name = Indeks

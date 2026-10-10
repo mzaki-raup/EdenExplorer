@@ -108,6 +108,7 @@
   <li><b>Custom Context Menu</b> commands and <b>Send To</b> destinations, with a reorderable right-click menu</li>
   <li><b>Extract archives</b> - zip, 7z, tar, tar.gz, tar.bz2, tar.xz, gz, bz2, xz (rar and more via 7-Zip): Extract Here, Extract To "name\", Extract Each To Its Own Folder, Extract To…, with progress and Cancel</li>
   <li><b>Browse archives like folders</b> - double-click a zip, 7z, or tar to look inside (read-only), with thumbnails, previews, Quick Look, and extracting single items</li>
+  <li><b>Browse Elasticsearch and OpenSearch like folders</b> - indices are folders, documents are JSON files, listed through the scroll API (read-only)</li>
   <li><b>Browse MongoDB like folders</b> - databases and collections are folders, documents are JSON files with a real Modified date from their ObjectId (read-only)</li>
   <li><b>Browse CouchDB like folders</b> - databases become folders and documents become <code>.json</code> files, pretty-printed in the preview pane (read-only)</li>
   <li><b>Rearrange network locations</b> - order the protocol groups (SFTP, FTP, FTPS, WebDAV, S3, Redis, Windows shares) and the locations inside each one, from Settings &gt; Network</li>
