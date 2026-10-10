@@ -434,6 +434,40 @@ PowerShell process) rather than the app's own code - if you're using the
   early-return/placeholder branch is and confirm the handler's scope
   actually covers it, rather than assuming it does because they're drawn
   in the same physical space.
+- **A gesture wired into one view is not wired into "the item viewer" -
+  this codebase draws the same folder six different ways, and four of them
+  had no background double-click handler at all.** Reported as a *store*
+  problem ("why in seeweed, when i double click mouse, it not go to
+  parent?"), which sent the first hour into `go_up`, remote path parsing
+  and `\\?\EdenRemote\...` - all of which turned out to be correct (a
+  three-line probe printing `Path::parent()` for a remote path settled it
+  immediately, and is worth writing before reading any navigation code).
+  The actual cause was a one-line grep away: `double_click_navigates_up`
+  appeared in `itemviewer.rs` and `sqlite_ui.rs` and **nowhere else**, so
+  Gallery, Columns, Column+Preview and Preview had never had the gesture,
+  for any folder, local or remote - the report only came from S3 because
+  that is what the user happened to be browsing. This is the same shape as
+  the "handler wired up only inside the `!visible_items_empty` branch"
+  entry above, one level out: that one is about a handler covering only one
+  *branch* of a view, this one about it covering only one *view* of six.
+  **When a user reports a gesture missing in some specific context, grep
+  for the setting or action that drives it before investigating that
+  context at all** - a hit count far lower than the number of places it
+  ought to appear is the answer, and it reframes "a bug in S3" as "a gap in
+  four shared views" that fixing once covers every store, present and
+  future. Two further things fell out of fixing it: (1) the three
+  non-Details views have no `ItemViewerNavBarAction` to write into, so the
+  gesture had to become an `ItemViewerAction::NavigateUp` handled centrally
+  - which is better anyway, because `Navigation::go_up` knows about This PC,
+  drive roots, remote roots, tag and search views, and three views each
+  computing their own parent path would each have got one of those wrong;
+  (2) the column browser usually does **not** fill its pane, so the dead
+  space to the right of a single 180px column belonged to no column's
+  background rect - sensing "each column's own width" looked complete and
+  left the largest, most obvious target in the view inert. Only live
+  testing found that; reading the code it looks finished. If a view's
+  content doesn't span its pane, check what owns the leftover space before
+  calling a background handler done.
 - **`egui::Window` remembers its rendered size across every future `show`
   call with the same title/Id within a session - it does not shrink back
   down on its own just because a later call's content got shorter.** The

@@ -82,7 +82,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Multi-language UI (English, Indonesian, Japanese, Chinese variants) via Fluent i18n
 - Persistent settings via an efficient binary cache; column sort/view state persists per directory
 - Rich keyboard shortcut set (tab management, navigation, rename, properties, refresh, etc.)
-- Six view modes (Details, Detail+Preview, Gallery, Columns, Column+Preview, Preview) with per-directory column layout, fit-to-content, and reordering
+- Six view modes (Details, Detail+Preview, Gallery, Columns, Column+Preview, Preview) with per-directory column layout, fit-to-content, and reordering - and double-clicking a view's empty background goes up a level in every one of them (one shared `ItemViewerAction::NavigateUp` routed through the toolbar's own Up handler, rather than each view computing a parent path)
 - Preview pane for text (with syntax highlighting for code files), Markdown (rendered, including highlighted fenced code blocks and native-rendered Mermaid flowchart/sequence diagrams), images, animated GIFs, SVG (rasterized, including gzip-compressed .svgz), video, audio (waveform + transport controls), PDF/Word/EPUB text extraction, and zip/7z archive listings — with selectable text and right-click copy. Video and audio playback never starts or loops on its own - it waits for the user to press play, and stops at the end
 - Delete to Recycle Bin plus an explicit "Delete Permanently" action using the native Windows confirmation
 - Explorer-style click-pause-click inline rename (extension excluded from the selection)

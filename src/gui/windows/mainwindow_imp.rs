@@ -6905,6 +6905,18 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 // ✅ Defer refresh (important)
                 explorer.dropped_files_pending_ui_refresh = true;
             }
+            // Handed to the same code the toolbar's Up button runs, so the
+            // history entry and the "select the folder we came out of"
+            // behaviour are identical however the gesture was made.
+            ItemViewerAction::NavigateUp => {
+                explorer.handle_tabbar_action(
+                    Some(ItemViewerNavBarAction {
+                        nav: Some(ItemViewerNavAction::Up),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
             ItemViewerAction::MoveItems {
                 sources,
                 target_dir,

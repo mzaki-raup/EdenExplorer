@@ -7,7 +7,9 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
-use crate::gui::windows::containers::itemviewer_helper::handle_editing_file_name;
+use crate::gui::windows::containers::itemviewer_helper::{
+    BLOCKING_MODAL_MEMORY_ID, handle_editing_file_name,
+};
 use crate::gui::windows::containers::structs::{ExplorerState, FindInPreviewState, RenameState};
 use chrono::{DateTime, Local};
 use eframe::egui;
@@ -37,17 +39,41 @@ pub fn draw_preview_view(
     palette: &ThemePalette,
     rename_state: &mut Option<RenameState>,
     is_loading: bool,
+    // `settings.double_click_navigates_up`, passed in rather than read from a
+    // `SettingsWindow` - the one piece of state this view, alone among the
+    // four layouts, doesn't already take.
+    double_click_navigates_up: bool,
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
 
     let mut action = None;
     let now = ui.input(|i| i.time);
+    let navigate_up_on_double_click = double_click_navigates_up
+        && !ui.ctx().memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new(BLOCKING_MODAL_MEMORY_ID))
+                .unwrap_or(false)
+        });
 
     StripBuilder::new(ui)
         .size(Size::remainder())
         .size(Size::exact(PREVIEW_PANE_WIDTH))
         .horizontal(|mut strip| {
             strip.cell(|ui| {
+                // Sensed before the list draws into the same space, so each
+                // row's own sense (registered after this one) still wins its
+                // own pixels - only a double-click on the list's empty space
+                // below the last row reaches this. Covers the empty-folder
+                // case for free, which has no rows at all.
+                let list_bg = ui.interact(
+                    ui.max_rect(),
+                    ui.id().with("preview_view_background"),
+                    egui::Sense::click(),
+                );
+                if navigate_up_on_double_click && list_bg.double_clicked() {
+                    action = Some(ItemViewerAction::NavigateUp);
+                }
+
                 egui::ScrollArea::vertical()
                     .id_salt("preview_view_list")
                     .auto_shrink([false, false])

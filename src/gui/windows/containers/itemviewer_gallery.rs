@@ -129,6 +129,16 @@ pub fn draw_gallery_view(
             action = Some(drop);
         }
 
+        // And the same for double-click-to-go-up, which Details offers from
+        // both its populated and its empty branch but this view offered from
+        // neither - there was no way at all to leave a folder by mouse here.
+        if !modal_input_blocked
+            && settings_window.current_settings.double_click_navigates_up
+            && empty_resp.double_clicked()
+        {
+            action = Some(ItemViewerAction::NavigateUp);
+        }
+
         if !modal_input_blocked {
             draw_empty_folder_context_menu(
                 i18n,
@@ -499,6 +509,16 @@ pub fn draw_gallery_view(
                 if !modal_input_blocked {
                     if bg_response.clicked() {
                         action = Some(ItemViewerAction::DeselectAll);
+                    }
+
+                    // The tiles' own senses are registered after this
+                    // background's, so they still win their own pixels -
+                    // only a double-click on the grid's empty space gets
+                    // here.
+                    if settings_window.current_settings.double_click_navigates_up
+                        && bg_response.double_clicked()
+                    {
+                        action = Some(ItemViewerAction::NavigateUp);
                     }
 
                     Popup::context_menu(&bg_response)

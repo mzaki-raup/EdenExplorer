@@ -66,6 +66,16 @@ pub enum ItemViewerAction {
     ReplaceSelection(PathBuf),
     /// Space: open (or close) Quick Look on the selection.
     ToggleQuickLook,
+    /// Double-clicking a view's empty background: go up a level, the same as
+    /// the toolbar's Up button.
+    ///
+    /// An action rather than each view working out a parent path itself -
+    /// `Navigation::go_up` knows about This PC, drive roots, remote roots,
+    /// tag and search views, and a view computing its own parent would get
+    /// one of those wrong. It also lets the views that have no
+    /// `ItemViewerNavBarAction` to write into (Gallery, Columns, Preview)
+    /// offer the gesture at all.
+    NavigateUp,
     MoveItems {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,

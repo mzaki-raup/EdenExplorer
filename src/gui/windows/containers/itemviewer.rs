@@ -391,6 +391,7 @@ pub fn draw_item_viewer(
             palette,
             rename_state,
             is_loading,
+            settings_window.current_settings.double_click_navigates_up,
         )
         .or(action);
     }

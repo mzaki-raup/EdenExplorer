@@ -8,7 +8,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
+    BLOCKING_MODAL_MEMORY_ID, draw_empty_folder_context_menu, handle_context_menu_actions,
+    handle_editing_file_name,
 };
 use crate::gui::windows::containers::itemviewer_preview::{PREVIEW_PANE_WIDTH, draw_preview_pane};
 use crate::gui::windows::containers::structs::{
@@ -195,7 +196,17 @@ fn draw_columns_core(
         columns_state.needs_reload = false;
     }
 
+    let modal_input_blocked = tags_state.picker.is_some()
+        || ui.ctx().memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new(BLOCKING_MODAL_MEMORY_ID))
+                .unwrap_or(false)
+        });
+    let double_click_navigates_up =
+        !modal_input_blocked && settings_window.current_settings.double_click_navigates_up;
+
     let mut action = None;
+    let mut navigate_up = false;
     let mut clicked_folder: Option<(usize, PathBuf)> = None;
     let mut selected_file: Option<PathBuf> = None;
     let mut opened_file: Option<PathBuf> = None;
@@ -217,6 +228,36 @@ fn draw_columns_core(
                 for (col_idx, column) in columns_state.columns.iter().enumerate() {
                     let column_width =
                         compute_column_width(ui, column, show_hidden_files_folders, &name_font_id);
+
+                    // Sensed *before* the column's own rows are laid out into
+                    // this same space: egui gives an overlapping click to
+                    // whichever sense was registered last, so the rows still
+                    // win their own pixels and only a double-click on a
+                    // column's empty space below them reaches this.
+                    //
+                    // The last column takes whatever width is left over too.
+                    // Unlike every other layout, this one usually doesn't fill
+                    // its pane - a single 180px column leaves most of the view
+                    // as dead space to the right, which is the first place
+                    // somebody reaches for when they want "the empty
+                    // background", and sensing only each column's own width
+                    // left that whole area inert.
+                    let background_width = if col_idx + 1 == column_count {
+                        ui.available_width().max(column_width)
+                    } else {
+                        column_width
+                    };
+                    let column_bg = ui.interact(
+                        egui::Rect::from_min_size(
+                            ui.cursor().min,
+                            egui::vec2(background_width, ui.available_height()),
+                        ),
+                        ui.id().with(("columns_view_background", col_idx)),
+                        egui::Sense::click(),
+                    );
+                    if double_click_navigates_up && column_bg.double_clicked() {
+                        navigate_up = true;
+                    }
 
                     ui.allocate_ui_with_layout(
                         egui::vec2(column_width, ui.available_height()),
@@ -478,6 +519,17 @@ fn draw_columns_core(
                                             hwnd,
                                             &mut context_menu_action,
                                         );
+
+                                        // This covers the rest of an empty
+                                        // column, and is registered after
+                                        // the column background above - so
+                                        // it, not that one, is what a
+                                        // double-click here actually hits.
+                                        if double_click_navigates_up
+                                            && empty_resp.double_clicked()
+                                        {
+                                            navigate_up = true;
+                                        }
                                     }
 
                                     // Bottom padding so the last item isn't
@@ -510,6 +562,12 @@ fn draw_columns_core(
 
     if context_menu_action.is_some() {
         action = context_menu_action;
+    }
+
+    // Last: a double-click on empty space can't also have been a click on an
+    // item, so there is nothing above it worth preserving.
+    if navigate_up {
+        action = Some(ItemViewerAction::NavigateUp);
     }
 
     action
