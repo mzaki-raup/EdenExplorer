@@ -120,6 +120,9 @@ pub fn draw_sqlite_view(
     state: &mut SqliteState,
     database: &Path,
     object: Option<&str>,
+    // Settings > Behavior's own navigate-up switch: the same gesture here as
+    // in an ordinary folder, so it answers to the same setting.
+    double_click_navigates_up: bool,
     tabbar_action: &mut Option<ItemViewerNavBarAction>,
 ) {
     // Switching objects starts at the top rather than keeping the previous
@@ -154,9 +157,36 @@ pub fn draw_sqlite_view(
     }
 
     match object {
-        None => draw_object_list(ui, i18n, palette, state, database, tabbar_action),
-        Some(object) => draw_rows(ui, i18n, palette, state, database, object),
+        None => draw_object_list(
+            ui,
+            i18n,
+            palette,
+            state,
+            database,
+            double_click_navigates_up,
+            tabbar_action,
+        ),
+        Some(object) => draw_rows(
+            ui,
+            i18n,
+            palette,
+            state,
+            database,
+            object,
+            double_click_navigates_up,
+            tabbar_action,
+        ),
     }
+}
+
+/// `ItemViewerNavAction::Up` rather than a computed parent path: a database
+/// path is an ordinary absolute path, so `Navigation::go_up` already walks it
+/// correctly (a table to its database, the database to its folder), and going
+/// through the same action keeps the history and selection handling that an
+/// ordinary folder's Up gets.
+fn go_up(tabbar_action: &mut Option<ItemViewerNavBarAction>) {
+    tabbar_action.get_or_insert_with(Default::default).nav =
+        Some(crate::gui::windows::containers::enums::ItemViewerNavAction::Up);
 }
 
 /// Whether `path` reaches into a SQLite database, and if so which one.
@@ -298,6 +328,7 @@ fn draw_object_list(
     palette: &ThemePalette,
     state: &mut SqliteState,
     database: &Path,
+    double_click_navigates_up: bool,
     tabbar_action: &mut Option<ItemViewerNavBarAction>,
 ) {
     if state.objects.is_empty() {
@@ -307,6 +338,12 @@ fn draw_object_list(
 
     let objects = state.objects.clone();
     let table_rect = inset(ui.available_rect_before_wrap());
+
+    let up = double_click_navigates_up
+        && background_double_click(ui, table_rect, "sqlite_objects_bg");
+    if up {
+        go_up(tabbar_action);
+    }
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
         ui.push_id(egui::Id::new(("sqlite_objects", database)), |ui| {
@@ -403,6 +440,8 @@ fn draw_rows(
     state: &mut SqliteState,
     database: &Path,
     object: &str,
+    double_click_navigates_up: bool,
+    tabbar_action: &mut Option<ItemViewerNavBarAction>,
 ) {
     if state.page.columns.is_empty() {
         // Defensive only: a loaded object always reports its columns, even
@@ -427,6 +466,12 @@ fn draw_rows(
         // egui only consults `Column::initial` the first time it sees a table
         // id, so a fresh fit needs a fresh id to be read at all.
         state.generation = state.generation.wrapping_add(1);
+    }
+
+    if double_click_navigates_up
+        && background_double_click(ui, grid_rect, "sqlite_rows_bg")
+    {
+        go_up(tabbar_action);
     }
 
     let page = state.page.clone();
@@ -608,6 +653,20 @@ fn needs_tooltip(cell: &Cell, text: &str) -> bool {
     /// cutting - below this a value is on screen already.
     const LONG: usize = 32;
     matches!(cell, Cell::Text { truncated: true, .. }) || text.chars().count() > LONG
+}
+
+/// Senses a double-click on a view's background, for "go up a level".
+///
+/// Registered *before* the table that sits on top of it, because egui gives
+/// an overlapping click to whichever sense was registered later - so a row
+/// that is itself clickable (an object in the table list) still wins its own
+/// pixels, and only genuinely empty space reaches this. Cells in a row grid
+/// are deliberately not clickable, so there the whole grid is background,
+/// which is what makes the gesture reachable at all when 500 rows fill the
+/// pane and leave no empty space to aim at.
+fn background_double_click(ui: &mut egui::Ui, rect: egui::Rect, salt: &str) -> bool {
+    ui.interact(rect, ui.id().with(salt), egui::Sense::click())
+        .double_clicked()
 }
 
 fn inset(rect: egui::Rect) -> egui::Rect {

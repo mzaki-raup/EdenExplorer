@@ -187,6 +187,7 @@ pub fn draw_tab_content(
                         &mut view.sqlite,
                         &database,
                         object.as_deref(),
+                        settings_window.current_settings.double_click_navigates_up,
                         &mut tabbar_action,
                     );
                 } else if let Some(group_id) = tag_view_group_id {
