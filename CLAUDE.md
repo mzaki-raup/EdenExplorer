@@ -1596,6 +1596,28 @@ PowerShell process) rather than the app's own code - if you're using the
   `[System.Management.Automation.Language.Parser]::ParseInput` before
   committing, per the technique recorded below; a published tag is never
   revisited, so v1.11.1 has to be fixed or deleted by hand.
+- **Follow-up to the entry above, and the more useful half of it: a 524 on an
+  asset upload is *routine* on this forge, not exceptional - and a
+  verification loop only protects what it actually checks.** The very next
+  release (v1.12.0) exercised the new try/catch and proved it: **both** the
+  35 MB zip and the 69 MB exe came back `524`, so without the catch the job
+  would have died on the first one and published a bare tag. The retry loop
+  recovered the exe on its second attempt - the upload had evidently
+  completed server-side despite the proxy giving up on it, which is what a
+  524 usually means. **But the zip stayed missing, because the loop only
+  compared against `$required` (the exe and `SHA256SUMS.txt`, the updater's
+  own contract) - so the catch turned a loud failure into a silent omission
+  for every asset outside that pair.** That is a regression introduced by the
+  fix, not by the original bug, and it is the generalisable part: *adding a
+  catch moves the decision to whatever runs afterwards, so the thing that
+  runs afterwards has to cover everything the catch now swallows.* Fixed by
+  retrying every **staged** file rather than just the required pair, keeping
+  the hard failure for the required pair alone (the zip is a convenience; a
+  release without it still installs) and emitting a `::warning::` for
+  anything else still missing. The retry pause also went 5s → 15s, since a
+  524 means the upload was slow rather than rejected and asking again
+  immediately just races the same request. v1.12.0's own zip has to be
+  attached by hand - a published tag is never revisited.
 - **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
   out most of what a "standard" GitHub Actions pipeline would reach for.** A
   release pipeline was designed around `semantic-release` + `actions/checkout` +
