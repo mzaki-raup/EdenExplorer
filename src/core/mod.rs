@@ -26,6 +26,7 @@ pub mod launch;
 pub mod filter;
 pub mod material_icons;
 pub mod spring_load;
+pub mod sqlite;
 pub mod sidebar_sections;
 pub mod ssh_shell;
 pub mod terminal;

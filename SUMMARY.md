@@ -22,6 +22,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - **`core/`** — non-UI logic:
   - `drives.rs` — drive enumeration/detection (including raw/unmounted drives)
   - `fs.rs` — filesystem operations, tag/search sentinel-path encoding
+  - `sqlite.rs` — read-only SQLite access (tables/views, paged rows) behind a path model like `archive_view`'s
   - `indexer.rs` — settings/tags/favorites/tab-groups/custom-themes persistence
   - `launch.rs` — launching files/programs, `shell:`/CLSID resolution
   - `portable.rs` — portable device support (iPhone, Android, etc.)
@@ -64,6 +65,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Gallery/thumbnail view (small to extra-large) for media
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
 - Drag-and-drop both within the app and to/from native Windows (Explorer, Desktop, other apps)
+- SQLite databases browsed like folders: tables and views with row counts, paged row grids, strictly read-only
 - Spring-loaded folders: resting on a folder mid-drag opens it, and releasing anywhere in what opened drops there - so one gesture can descend several levels, including into a folder that is empty
 - Paste/drag-and-drop name-collision handling: a themed Replace / Skip Existing / Rename dialog (both flows share the same conflict-check + robocopy pipeline), with safe auto-numbered renaming that never overwrites the original file mid-operation
 - Compress to zip: a context-menu entry that archives the selection in the background (named after the single item, or the shared parent folder for a multi-selection; never overwrites an existing zip of the same name)

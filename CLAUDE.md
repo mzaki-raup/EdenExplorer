@@ -2144,6 +2144,73 @@ PowerShell process) rather than the app's own code - if you're using the
   by **owning pid**, never by title - both processes are called
   `EdenExplorer.exe` and both windows are titled `EdenExplorer`.
 
+- **A read-only database connection is not enough to leave a folder alone, and
+  that is the thing to check before calling any viewer "read-only".** The
+  SQLite view opens every connection `SQLITE_OPEN_READ_ONLY` with
+  `query_only` set, and a test pins that a direct `INSERT`/`DELETE`/`DROP`
+  through it fails - all correct, and all beside the point: a database in WAL
+  mode needs a shared-memory index to be read at all, so SQLite *created*
+  `app.db-shm` and an empty `app.db-wal` next to the file. Merely looking at
+  someone's database wrote two files into their folder. Found by a test that
+  listed the directory before and after a read and compared, which is worth
+  writing for anything claiming to be read-only - the connection flag only
+  says what *this* code may do, not what the library does underneath it. The
+  fix is `immutable=1` in the open URI, which tells SQLite the file cannot
+  change and makes it read the main file directly, touching nothing. It is
+  only correct when nothing is pending, though: with a `-wal` present,
+  `immutable=1` silently shows stale content, so the open checks for
+  `-wal`/`-journal` first and falls back to the ordinary read-only open (where
+  the sidecars already exist anyway, because whatever wrote them made them).
+  Both halves need their own test, or a later change will quietly trade one
+  for the other.
+- **Reach for the real library over hand-rolling a format when the format has
+  a mode that hides data outside the file.** This codebase hand-rolls RESP2,
+  NBSTAT, mDNS and WS-Discovery rather than pulling in a client crate, and the
+  same instinct for SQLite would have been wrong: a reader built on the
+  (well-documented, stable) file format would be correct for a database at
+  rest and silently wrong for any database in WAL mode, which is most of the
+  ones a person actually meets - Firefox, Chrome, Electron apps. "Silently
+  shows some of the rows" is a worse failure than not having the feature. The
+  C dependency that decision implies cost nothing new here, which is worth
+  checking before arguing about it: `cc` and `ring` were already in the tree,
+  so the build already compiled C and assembly.
+- **`Context::fonts` hands out a shared `&Fonts`, which cannot lay anything
+  out - measuring text needs a `Painter`, and therefore a `Ui`.** Fitting the
+  SQLite grid's columns to their content wanted a measurement at the moment a
+  page of rows arrived, which happens in a channel-polling function that only
+  has a `Context`. `ctx.fonts(|fonts| fonts.layout_no_wrap(...))` does not
+  compile (`layout_no_wrap` takes `&mut self`), and neither does `layout`.
+  The shape that works is to have the load *invalidate* the widths and let the
+  next draw fit them, where `ui.painter().layout_no_wrap(...)` is available -
+  still once per load, since the fitted widths then match the column count and
+  the branch is skipped.
+- **The debug build's own console window is enough to break every synthetic
+  input test, and it looks exactly like the long-documented focus-stealing
+  gotcha.** A `--new-window` debug instance kept losing the foreground between
+  `focus` and the first click, including when both ran in one PowerShell
+  process (the fix already recorded for this symptom). The thief was the
+  console that debug builds keep attached: it belongs to a *different* process
+  (conhost), so a check that only compares the foreground window's pid against
+  the app's reports a stranger and aborts. Use a **release** build for any
+  live input test that doesn't need `eprintln!` output - `windows_subsystem =
+  "windows"` means no console and no thief. A related trap in the same
+  harness: an enumerator that picks "the first visible non-`#32770` window
+  owned by this pid, wider than 400px" picks a *tooltip* once one is showing,
+  so match on the window text as well.
+- **An unrecognised double-click target can leave a modal "Open With" dialog
+  sitting in the foreground, which then blocks every later test and looks like
+  the app stopped responding.** Live-testing the SQLite view meant
+  double-clicking `.db` files, and the deliberately-planted decoy (a text file
+  named `notes.db`) correctly fell through to Windows - which answered with
+  its "How do you want to open this file?" picker. Two of those accumulated
+  before the cause was obvious, because the only symptom was
+  `GetForegroundWindow` returning an unfamiliar pid. `OpenWith.exe` performs
+  no action unless a program is chosen, so terminating that process is the
+  cancel-equivalent and is far safer than clicking inside it (see the entries
+  above about native dialogs and `{ESC}`). Worth knowing before testing any
+  "open this file type" behaviour: the failure path *is* an OS dialog, and it
+  is modal over everything.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

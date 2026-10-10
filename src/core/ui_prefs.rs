@@ -68,6 +68,11 @@ pub struct UiPrefs {
     /// While dragging, resting on a folder opens it after this long
     /// (0 = spring-loaded folders off).
     pub spring_load_ms: u32,
+    /// Double-clicking a SQLite database shows its tables instead of
+    /// opening it in whatever program owns the extension (see
+    /// `core::sqlite`). The struct's own container-level `#[serde(default)]`
+    /// is what fills this in for a settings file written before it existed.
+    pub browse_databases: bool,
     /// Git branch in the status bar and status badges on files.
     pub git_status: bool,
     /// Also store tags with the files themselves (see `core::portable_tags`).
@@ -213,6 +218,7 @@ impl Default for UiPrefs {
             folder_tree: true,
             folder_tree_expanded: true,
             spring_load_ms: 800,
+            browse_databases: true,
             git_status: true,
             portable_tags: false,
             remote_connections: Vec::new(),

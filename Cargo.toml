@@ -110,3 +110,4 @@ ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 hmac = "0.12"
 gix = { version = "0.88", default-features = false, features = ["status", "sha1", "max-performance-safe"] }
 everything-ipc = "0.1.4"
+rusqlite = { version = "0.40.2", features = ["bundled", "limits"] }

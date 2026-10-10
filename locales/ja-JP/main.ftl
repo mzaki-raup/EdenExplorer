@@ -1259,3 +1259,14 @@ update_incomplete = 新しいリリースが公開されていますが、プロ
 network_location_key_prefix = 開始するキー接頭辞
 network_location_database = データベース
 network_location_redis_read_only = 読み取り専用：キーは「:」でフォルダーに分割されます。ここからデータベースを変更することはできません。
+
+# SQLite database view
+sqlite_rows = 行
+sqlite_kind_table = テーブル
+sqlite_kind_view = ビュー
+sqlite_no_tables = このデータベースにはテーブルがありません。
+sqlite_previous = 前へ
+sqlite_next = 次へ
+sqlite_read_only = 読み取り専用
+settings_browse_databases = データベースをフォルダーのように開く
+tooltip_settings_browse_databases = SQLite データベースをダブルクリックすると、他のプログラムで開かずにテーブルを表示します

@@ -123,6 +123,9 @@ pub struct TabView {
     pub item_viewer_filter_state: FilterState,
     /// Spring-loaded folders: how long a folder has been hovered mid-drag.
     pub spring: crate::core::spring_load::SpringLoad,
+    /// Tables and rows, when this tab is pointed at a SQLite
+    /// database (see `core::sqlite`). Empty for every other place.
+    pub sqlite: crate::gui::windows::containers::sqlite_ui::SqliteState,
     /// Flat view: the folder whose files (in all subfolders) are listed as
     /// one list. Only applies while `nav.current` is this folder.
     pub flat: Option<PathBuf>,
@@ -226,6 +229,7 @@ impl TabView {
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
             spring: Default::default(),
+            sqlite: Default::default(),
             flat: None,
             flat_truncated: Default::default(),
             git_repo: None,

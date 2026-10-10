@@ -1258,3 +1258,14 @@ update_incomplete = Rilis yang lebih baru telah diterbitkan, tetapi berkas progr
 network_location_key_prefix = Mulai Di Awalan Kunci
 network_location_database = Basis Data
 network_location_redis_read_only = Hanya-baca: kunci dipisah pada ":" menjadi folder. Tidak ada di sini yang dapat mengubah basis data.
+
+# SQLite database view
+sqlite_rows = Baris
+sqlite_kind_table = Tabel
+sqlite_kind_view = Tampilan
+sqlite_no_tables = Basis data ini tidak memiliki tabel.
+sqlite_previous = Sebelumnya
+sqlite_next = Berikutnya
+sqlite_read_only = Hanya baca
+settings_browse_databases = Buka Basis Data Seperti Folder
+tooltip_settings_browse_databases = Klik ganda pada basis data SQLite akan menampilkan tabelnya, bukan membukanya di program lain

@@ -73,6 +73,16 @@ pub fn draw_tab_content(
     let is_recycle_bin_view = view.nav.is_recycle_bin();
     let is_settings_view = view.nav.current.to_string_lossy() == SETTINGS_PATH;
     let tag_view_group_id = crate::core::fs::parse_tag_view_path(&view.nav.current);
+    // A database, or one table/view inside it, is drawn from the file
+    // rather than from a directory listing - see `sqlite_ui`.
+    let database_view = crate::gui::windows::containers::sqlite_ui::resolve(
+        &mut view.sqlite,
+        &view.nav.current.clone(),
+    );
+    if database_view.is_none() {
+        // A tab that moved on shouldn't keep a page of rows in memory.
+        crate::gui::windows::containers::sqlite_ui::release(&mut view.sqlite);
+    }
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     let mut pending_action: Option<ItemViewerAction> = None;
@@ -169,6 +179,16 @@ pub fn draw_tab_content(
                     if tags_item_action.is_some() {
                         pending_action = tags_item_action;
                     }
+                } else if let Some((database, object)) = database_view.clone() {
+                    crate::gui::windows::containers::sqlite_ui::draw_sqlite_view(
+                        ui,
+                        i18n,
+                        palette,
+                        &mut view.sqlite,
+                        &database,
+                        object.as_deref(),
+                        &mut tabbar_action,
+                    );
                 } else if let Some(group_id) = tag_view_group_id {
                     pending_action = crate::gui::windows::containers::tags::draw_tag_view(
                         ui,

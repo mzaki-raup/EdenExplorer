@@ -1259,3 +1259,14 @@ update_incomplete = 已發佈更新的版本，但缺少程式檔案，因此無
 network_location_key_prefix = 起始鍵前綴
 network_location_database = 資料庫
 network_location_redis_read_only = 唯讀：鍵按「:」拆分為文件夾。此處的操作不會修改資料庫。
+
+# SQLite database view
+sqlite_rows = 列數
+sqlite_kind_table = 資料表
+sqlite_kind_view = 檢視
+sqlite_no_tables = 此資料庫沒有資料表。
+sqlite_previous = 上一頁
+sqlite_next = 下一頁
+sqlite_read_only = 唯讀
+settings_browse_databases = 像資料夾一樣開啟資料庫
+tooltip_settings_browse_databases = 按兩下 SQLite 資料庫時顯示其中的資料表，而非以其他程式開啟

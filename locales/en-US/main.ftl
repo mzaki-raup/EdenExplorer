@@ -1255,3 +1255,14 @@ update_incomplete = A newer release is published, but its program file is missin
 network_location_key_prefix = Start At Key Prefix
 network_location_database = Database
 network_location_redis_read_only = Read-only: keys are split on ":" into folders. Nothing here can change the database.
+
+# SQLite database view
+sqlite_rows = Rows
+sqlite_kind_table = Table
+sqlite_kind_view = View
+sqlite_no_tables = This database has no tables.
+sqlite_previous = Previous
+sqlite_next = Next
+sqlite_read_only = Read-only
+settings_browse_databases = Open Databases Like Folders
+tooltip_settings_browse_databases = Double-clicking a SQLite database shows its tables instead of opening it in another program

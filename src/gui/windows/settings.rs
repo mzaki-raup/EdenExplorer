@@ -1172,6 +1172,16 @@ fn draw_behavior_section(
             ui,
             i18n,
             palette,
+            &mut prefs.browse_databases,
+            "settings_browse_databases",
+            "tooltip_settings_browse_databases",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
             &mut prefs.queue_transfers,
             "settings_queue_transfers",
             "tooltip_settings_queue_transfers",

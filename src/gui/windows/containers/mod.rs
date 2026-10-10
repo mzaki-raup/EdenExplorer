@@ -11,6 +11,7 @@ pub mod itemviewer_preview;
 pub mod notifications;
 pub mod sidebar;
 pub mod structs;
+pub mod sqlite_ui;
 pub mod tabs;
 pub mod tags;
 pub mod topbar;

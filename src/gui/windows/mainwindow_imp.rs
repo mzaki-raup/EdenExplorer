@@ -1410,6 +1410,13 @@ impl MainWindow {
             return;
         }
 
+        // A database, or one object inside it: it has no file listing at
+        // all - `sqlite_ui` draws its tables (or a table's rows) straight
+        // from the file, the way the Settings tab draws itself.
+        if crate::core::sqlite::split(&current_path).is_some() {
+            return;
+        }
+
         // A folder inside an archive (see `core::archive_view`): listed from
         // the archive, read once and kept.
         if crate::core::archive_view::split(&current_path).is_some() {
@@ -6437,6 +6444,18 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 for path in paths {
                     explorer.open_from_archive(path);
                 }
+            }
+            // Double-clicking a .db/.sqlite shows its tables instead of
+            // handing it to whatever program owns the extension. The file's
+            // own header is checked too, so a `.db` that is really something
+            // else still opens normally.
+            ItemViewerAction::OpenWithDefault(paths)
+                if paths.len() == 1
+                    && explorer.settings_window.current_settings.ui_prefs.browse_databases
+                    && crate::core::sqlite::is_browsable_database(&paths[0]) =>
+            {
+                let path = paths.into_iter().next().unwrap_or_default();
+                handle_pending_actions(Some(ItemViewerAction::Open(path)), explorer);
             }
             // Double-clicking a zip/7z/tar opens it like a folder
             // (Settings > Behavior > Open Archives Like Folders).
