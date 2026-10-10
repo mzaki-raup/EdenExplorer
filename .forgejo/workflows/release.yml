@@ -218,10 +218,15 @@ jobs:
           # came out empty; the assets were still fire-and-forget, which is
           # the other half of that same lesson and the reason this went
           # unnoticed for two releases.
+          # Every staged file, not just $required: a 524 on the zip is just
+          # as likely as one on the exe (v1.12.0 got both), and checking only
+          # the required pair meant the zip's failure was swallowed in
+          # silence - worse than the loud failure it replaced.
+          $wantedAssets = @($staged | ForEach-Object { $_.Name })
           foreach ($attempt in 1..5) {
             $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
             $have = @($check.assets | ForEach-Object { $_.name })
-            $missing = @($required | Where-Object { $have -notcontains $_ })
+            $missing = @($wantedAssets | Where-Object { $have -notcontains $_ })
             if ($missing.Count -eq 0) {
               Write-Host "Confirmed on the release: $($have -join ', ')"
               break
@@ -238,13 +243,20 @@ jobs:
                 Write-Host "Re-upload of $name reported '$($_.Exception.Message)'."
               }
             }
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 15
           }
           $check = Invoke-RestMethod -Method Get -Uri "$api/releases/$($release.id)" -Headers $headers
           $have = @($check.assets | ForEach-Object { $_.name })
+          # Only the updater's own two are fatal - it is what the app needs to
+          # install at all. The zip is a convenience, so a missing one is
+          # shouted about rather than failing a release that otherwise works.
           $missing = @($required | Where-Object { $have -notcontains $_ })
           if ($missing.Count -gt 0) {
             throw "the release is missing $($missing -join ', ') after re-uploading - users could never install it."
+          }
+          $alsoMissing = @($wantedAssets | Where-Object { $have -notcontains $_ })
+          if ($alsoMissing.Count -gt 0) {
+            Write-Host "::warning::published without $($alsoMissing -join ', ') - attach by hand."
           }
 
           # Now make the title and notes stick, re-checking after a pause so a
