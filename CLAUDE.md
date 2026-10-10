@@ -1555,6 +1555,47 @@ PowerShell process) rather than the app's own code - if you're using the
 - **Every `rfd::FileDialog::new()` call in this app opened its native dialog *ownerless* (no parent HWND), and that's not just a `focus.ps1` inconvenience - it's a real visual bug users can see.** Reported directly with a screenshot: opening Export Settings made the main window's own top-right corner render a bare native Close box and a stray context-help "?" glyph, replacing this app's own themed title bar/controls for as long as the dialog stayed open. Root cause: this app strips `WS_CAPTION` and paints 100% of its own window chrome by hand every frame (see `apply_window_override`) - there's no real native non-client area for Windows to fall back on. A dialog opened via `rfd::FileDialog::new().save_file()`/`.pick_file()`/`.pick_folder()` with no `.set_parent(...)` call blocks the main window's message loop without Windows ever being told "this window is this dialog's owned/disabled parent" - so if the OS needs to redraw the frozen main window for any reason while the dialog is up (focus change, a monitor/DPI event, the classic "unresponsive window" ghosting Windows does for a blocked message queue), it falls back to a minimal *native* frame instead of trusting the app to keep painting its own (which it can't, since it's blocked). Fixed generally across all 13 call sites in the app (Export/Import Settings, several folder pickers, custom icon/command pickers), not just the one reported: added `windowsoverrides::dialog()` as a drop-in replacement for `rfd::FileDialog::new()` that calls `.set_parent(&Win32DialogOwner(hwnd))` - a small wrapper implementing `raw_window_handle`'s `HasWindowHandle`/`HasDisplayHandle` (both are required by `set_parent`'s bound, not just the former) around the app's real HWND - and a `MAIN_HWND` global stash (mirroring the existing `EGUI_CTX`/`set_egui_ctx` pattern in the same file) so the many call sites living in `*_ui.rs` files, which only ever see an `&mut egui::Ui` and never the real HWND, can still reach it without a new parameter threaded through every settings page. **If a future native dialog call is added anywhere in this app, use `windowsoverrides::dialog()` instead of `rfd::FileDialog::new()` directly** - a raw `rfd::FileDialog::new()` call is exactly this same bug waiting to reproduce.
 - **A synthetic cross-pane drag-and-drop (`WM_LBUTTONDOWN` at the source row, several `WM_MOUSEMOVE`s with the button held, `WM_LBUTTONUP` over the destination pane, all via `PostMessage`) could not be made to register as a real drag in this app, across multiple retries with progressively finer-grained movement (5 steps at 40ms up to 25 steps at 30ms with extra settle time before release).** Every attempt just re-selected the source row (visible as a highlighted row after the "drag") with no drop occurring - the destination pane stayed empty and its own focus/content never changed. This is a distinct failure mode from the already-documented "real double-clicks and modifier-held clicks can't be reliably synthesized with `PostMessage`" gotcha (`click.ps1`'s own doc comment) - that one is about click timing, this is about `PostMessage`-injected mouse-move-with-button-held events not being recognized by egui's own drag-threshold/hover-target tracking as a continuous drag session, at least not across the two different item-viewer widgets a cross-pane drop requires crossing. If a future change needs live verification specifically of drag-and-drop *between two panes* (as opposed to reordering within one list, which `drag.ps1` already handles fine for text-selection-style drags), treat that as unverifiable via this skill's current scripts and fall back to careful code-path tracing instead of spending more time on synthetic drag variations - this was tried at reasonable length before giving up.
 
+- **Writing a protocol client from memory of its API is a bad bet, and a
+  twenty-line probe script settles it - every one of three stores
+  contradicted an assumption that would have shipped.** Before writing
+  `meilisearch`, `qdrant` and `solr`, each server was started in Docker and a
+  script printed the real shape of every endpoint the viewer would use,
+  including the failure cases. All three disagreed with what the code would
+  otherwise have assumed: Meilisearch reports a `total` on a document page
+  (so the walk can stop on knowing rather than probing for an empty page) and
+  a per-index `updatedAt` (a real Modified date, which would simply have been
+  left blank); Qdrant's `next_page_offset` **is not a number** - it comes back
+  as whatever type the collection's ids are, so parsing it as an integer
+  works against every integer-keyed collection and fails against every
+  UUID-keyed one, a bug that only ever appears on somebody else's data; and
+  Qdrant answers a missing API key in **plain text**, not JSON, so any error
+  path assuming a JSON body would have turned the one error users actually
+  hit into something cryptic. Solr's cursor rule is the sharpest of the three:
+  a walk is finished when the returned `nextCursorMark` **equals the one just
+  sent**, and the final page arrives *full* rather than empty - so "page until
+  a batch comes back empty", which is correct for every other store here,
+  loops for ever on a core whose size is an exact multiple of the page. **Cost
+  of the probes: a few minutes each. Cost of not doing it: three defects, two
+  of them invisible against your own test data.** Start a server and print
+  what it actually says before writing the client, and include the failure
+  cases in the probe - the error body's shape is part of the API.
+- **A `try`/`catch` around a step that a verification loop already exists to
+  recover from is not optional once `$ErrorActionPreference = "Stop"` is set.**
+  v1.11.1 published with only its zip attached. The release workflow has had a
+  verify-the-assets-and-re-upload loop ever since v1.5.0 went out with no
+  program (see that entry) - but the *first* upload loop above it called
+  `Invoke-RestMethod` bare, the 69 MB `EdenExplorer.exe` came back HTTP 524 (a
+  proxy timeout, and quite possibly having uploaded anyway), and under `Stop`
+  that threw and ended the script before the recovery loop ever ran. The
+  pre-flight guard passed too, because it checks what is **staged** on disk,
+  not what landed on the release. **The lesson generalises past this
+  workflow: adding a recovery path does nothing if the failure it recovers
+  from is fatal before it is reached - check what happens to the error, not
+  just that a retry exists.** Both loops now catch and report, letting the
+  verification decide what actually landed. The fix was parsed with
+  `[System.Management.Automation.Language.Parser]::ParseInput` before
+  committing, per the technique recorded below; a published tag is never
+  revisited, so v1.11.1 has to be fixed or deleted by hand.
 - **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
   out most of what a "standard" GitHub Actions pipeline would reach for.** A
   release pipeline was designed around `semantic-release` + `actions/checkout` +
