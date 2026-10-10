@@ -210,6 +210,9 @@ pub fn remote_glyph(kind: crate::core::remote::RemoteKind) -> &'static str {
         RemoteKind::CouchDb => regular::FILES,
         RemoteKind::MongoDb => regular::TREE_STRUCTURE,
         RemoteKind::Elasticsearch => regular::MAGNIFYING_GLASS,
+        RemoteKind::Meilisearch => regular::LIGHTNING,
+        RemoteKind::Qdrant => regular::VECTOR_THREE,
+        RemoteKind::Solr => regular::SUN,
     }
 }
 

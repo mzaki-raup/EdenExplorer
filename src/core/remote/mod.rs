@@ -10,10 +10,14 @@ pub mod couchdb;
 pub mod credentials;
 pub mod elasticsearch;
 pub mod ftp;
+pub mod http_json;
+pub mod meilisearch;
 pub mod mongodb;
+pub mod qdrant;
 pub mod redis;
 pub mod s3;
 pub mod sftp;
+pub mod solr;
 pub mod webdav;
 
 use serde::{Deserialize, Serialize};
@@ -45,10 +49,16 @@ pub enum RemoteKind {
     /// Browsed read-only: indices are folders, documents are files. Covers
     /// OpenSearch too - the read API this uses is the same.
     Elasticsearch,
+    /// Browsed read-only: indexes are folders, documents are files.
+    Meilisearch,
+    /// Browsed read-only: collections are folders, points are files.
+    Qdrant,
+    /// Browsed read-only: cores are folders, documents are files.
+    Solr,
 }
 
 impl RemoteKind {
-    pub const ALL: [RemoteKind; 9] = [
+    pub const ALL: [RemoteKind; 12] = [
         RemoteKind::Sftp,
         RemoteKind::Ftp,
         RemoteKind::Ftps,
@@ -58,6 +68,9 @@ impl RemoteKind {
         RemoteKind::CouchDb,
         RemoteKind::MongoDb,
         RemoteKind::Elasticsearch,
+        RemoteKind::Meilisearch,
+        RemoteKind::Qdrant,
+        RemoteKind::Solr,
     ];
 
     pub fn label(self) -> &'static str {
@@ -71,6 +84,9 @@ impl RemoteKind {
             RemoteKind::CouchDb => "CouchDB",
             RemoteKind::MongoDb => "MongoDB",
             RemoteKind::Elasticsearch => "Elasticsearch",
+            RemoteKind::Meilisearch => "Meilisearch",
+            RemoteKind::Qdrant => "Qdrant",
+            RemoteKind::Solr => "Solr",
         }
     }
 
@@ -81,6 +97,9 @@ impl RemoteKind {
             RemoteKind::Redis => 6379,
             RemoteKind::MongoDb => 27017,
             RemoteKind::Elasticsearch => 9200,
+            RemoteKind::Meilisearch => 7700,
+            RemoteKind::Qdrant => 6333,
+            RemoteKind::Solr => 8983,
             // CouchDB's own defaults, which differ from plain HTTP's.
             RemoteKind::CouchDb => {
                 if https {
@@ -187,7 +206,10 @@ impl RemoteConnection {
             // a place to browse - so it always opens at the root.
             RemoteKind::MongoDb => Vec::new(),
             // A saved index to open straight into, like CouchDB's database.
-            RemoteKind::Elasticsearch => segments_of(&self.path),
+            RemoteKind::Elasticsearch
+            | RemoteKind::Meilisearch
+            | RemoteKind::Qdrant
+            | RemoteKind::Solr => segments_of(&self.path),
             RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => segments_of(&self.path),
             // WebDAV's path is the root itself; S3 starts at the bucket.
             RemoteKind::WebDav | RemoteKind::S3 => Vec::new(),
@@ -251,6 +273,9 @@ pub fn connect_with_secret(
         RemoteKind::Elasticsearch => {
             Ok(Box::new(elasticsearch::ElasticFs::new(conn, &secret)?))
         }
+        RemoteKind::Meilisearch => Ok(Box::new(meilisearch::MeiliFs::new(conn, &secret)?)),
+        RemoteKind::Qdrant => Ok(Box::new(qdrant::QdrantFs::new(conn, &secret)?)),
+        RemoteKind::Solr => Ok(Box::new(solr::SolrFs::new(conn, &secret)?)),
     }
 }
 
@@ -297,7 +322,11 @@ pub fn url_for(path: &Path) -> Option<String> {
     let (id, segments) = split(path)?;
     let conn = connection(id)?;
     let encoded = webdav::encode_path(&remote_path(&segments));
-    let user = if conn.username.is_empty() || conn.kind == RemoteKind::S3 {
+    let user = if conn.username.is_empty()
+        || conn.kind == RemoteKind::S3
+        || conn.kind == RemoteKind::Meilisearch
+        || conn.kind == RemoteKind::Qdrant
+    {
         String::new()
     } else {
         format!("{}@", conn.username)
@@ -314,8 +343,12 @@ pub fn url_for(path: &Path) -> Option<String> {
         ),
         // Plain HTTP, and its own URLs are `scheme://host:port/index/_doc/id`
         // - close enough that showing the real address is more use than an
-        // invented scheme.
-        RemoteKind::Elasticsearch => {
+        // invented scheme. Meilisearch's are
+        // `scheme://host:port/indexes/<index>/documents/<id>`, same argument.
+        RemoteKind::Elasticsearch
+        | RemoteKind::Meilisearch
+        | RemoteKind::Qdrant
+        | RemoteKind::Solr => {
             let scheme = if conn.https { "https" } else { "http" };
             format!("{scheme}://{user}{}:{}{encoded}", conn.host, conn.port)
         }

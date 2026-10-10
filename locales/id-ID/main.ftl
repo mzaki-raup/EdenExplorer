@@ -1278,3 +1278,5 @@ network_location_move_down = Turunkan dalam Grup Ini
 network_location_database_name = Basis Data
 network_location_auth_database = Basis Data Autentikasi
 network_location_index_name = Indeks
+network_location_collection_name = Koleksi
+network_location_core_name = Core

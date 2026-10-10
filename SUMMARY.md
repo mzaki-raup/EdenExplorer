@@ -27,6 +27,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
   - `launch.rs` — launching files/programs, `shell:`/CLSID resolution
   - `portable.rs` — portable device support (iPhone, Android, etc.)
   - `network.rs` / `network_mdns.rs` / `network_wsd.rs` — SMB share browsing, mDNS and WS-Discovery device discovery
+  - `remote/http_json.rs` — the authenticated-request, status-mapping and document-as-file plumbing shared by CouchDB, Elasticsearch, Meilisearch, Qdrant and Solr
   - `everything.rs` — voidtools Everything + built-in filesystem search engines
   - `preview.rs` / `video.rs` / `audio.rs` / `mermaid.rs` / `syntax_highlight.rs` — preview-pane content rendering
   - `checksum.rs` / `compress.rs` / `robocopy.rs` — checksums, zip compression, paste/move copy engine
@@ -65,6 +66,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Gallery/thumbnail view (small to extra-large) for media
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
 - Drag-and-drop both within the app and to/from native Windows (Explorer, Desktop, other apps)
+- Meilisearch, Qdrant and Apache Solr browsed like folders: indexes/collections/cores are folders, documents are JSON files, read-only - sharing one `core::remote::http_json` layer with CouchDB and Elasticsearch
 - Elasticsearch/OpenSearch browsed like folders: indices are folders, documents are JSON files, scroll-paged, read-only
 - MongoDB browsed like folders: database, collection, document - hand-rolled OP_MSG/BSON with SCRAM-SHA-256, read-only
 - CouchDB browsed like folders: databases are folders, documents are JSON files, read-only

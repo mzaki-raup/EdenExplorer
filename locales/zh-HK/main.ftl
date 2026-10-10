@@ -1279,3 +1279,5 @@ network_location_move_down = 在此群組內下移
 network_location_database_name = 資料庫
 network_location_auth_database = 驗證資料庫
 network_location_index_name = 索引
+network_location_collection_name = 集合
+network_location_core_name = 核心

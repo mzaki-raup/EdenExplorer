@@ -25,11 +25,11 @@
 //!   `mongodb`: a file manager's reflexes are fast and destructive, and a
 //!   live cluster has no Recycle Bin.
 
-use super::webdav::{agent, base64_padded, encode_path, status_error};
+use super::http_json::{Auth, JsonHttp, file_name_for, id_from_file_name};
+use super::webdav::encode_path;
 use super::{RemoteConnection, RemoteEntry, RemoteFs};
 use serde_json::Value;
 use std::io::{Read, Write};
-use ureq::http::Request;
 
 /// Hits asked for in one scroll batch.
 const BATCH: usize = 1_000;
@@ -40,13 +40,8 @@ const MAX_DOCS: usize = 20_000;
 /// How long the cluster should keep a scroll alive between batches.
 const SCROLL_KEEPALIVE: &str = "2m";
 
-const MAX_BODY: u64 = 64 * 1024 * 1024;
-
 pub struct ElasticFs {
-    agent: ureq::Agent,
-    /// `scheme://host:port`, no trailing slash.
-    base: String,
-    auth: Option<String>,
+    http: JsonHttp,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -55,44 +50,6 @@ fn err(e: impl std::fmt::Display) -> String {
 
 fn read_only() -> String {
     "This Elasticsearch location is read-only.".to_string()
-}
-
-/// A document id as a file name. Only the three characters that would break
-/// the path model (or the escaping itself) are encoded, so ordinary ids stay
-/// readable.
-fn file_name_for(id: &str) -> String {
-    let mut out = String::with_capacity(id.len() + 5);
-    for ch in id.chars() {
-        match ch {
-            '%' => out.push_str("%25"),
-            '/' => out.push_str("%2F"),
-            '\\' => out.push_str("%5C"),
-            other => out.push(other),
-        }
-    }
-    out.push_str(".json");
-    out
-}
-
-/// The inverse: strip the extension this module added, then undo the escapes.
-fn id_from_file_name(name: &str) -> String {
-    let body = name.strip_suffix(".json").unwrap_or(name);
-    let bytes = body.as_bytes();
-    let mut out = String::with_capacity(body.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let Ok(byte) = u8::from_str_radix(&body[i + 1..i + 3], 16)
-        {
-            out.push(byte as char);
-            i += 3;
-        } else {
-            out.push(bytes[i] as char);
-            i += 1;
-        }
-    }
-    out
 }
 
 /// `/logs/abc.json` → the index and the document it names.
@@ -127,29 +84,31 @@ fn timestamp_of(source: &Value) -> Option<i64> {
         .map(|t| t.timestamp())
 }
 
+/// The cluster explains itself well; prefer its own reason over a bare
+/// status whenever it gives one.
+fn detail(value: &Value) -> Option<String> {
+    Some(value.get("error")?.get("reason")?.as_str()?.to_string())
+}
+
 impl ElasticFs {
     pub fn new(conn: &RemoteConnection, secret: &str) -> Result<Self, String> {
-        if conn.host.trim().is_empty() {
-            return Err("No server name".into());
-        }
-        let scheme = if conn.https { "https" } else { "http" };
-        let base = format!("{scheme}://{}:{}", conn.host.trim(), conn.port);
-        let auth = (!conn.username.is_empty()).then(|| {
-            format!(
-                "Basic {}",
-                base64_padded(format!("{}:{secret}", conn.username).as_bytes())
-            )
-        });
         let fs = ElasticFs {
-            agent: agent(),
-            base,
-            auth,
+            http: JsonHttp::new(
+                &conn.host,
+                conn.port,
+                conn.https,
+                Auth::Basic {
+                    user: conn.username.clone(),
+                    secret: secret.to_string(),
+                },
+            )?
+            .with_detail(detail),
         };
 
         // The root document names the product, so a server that answers but
         // isn't Elasticsearch is reported as such rather than failing later
         // with something cryptic.
-        let root = fs.get("/", "the server")?;
+        let root = fs.http.get("/", "the server")?;
         let parsed: Value = serde_json::from_str(&root).unwrap_or(Value::Null);
         if parsed.get("cluster_name").is_none() && parsed.get("version").is_none() {
             return Err("That server answered, but it isn't Elasticsearch or OpenSearch.".into());
@@ -157,58 +116,10 @@ impl ElasticFs {
         Ok(fs)
     }
 
-    fn send(
-        &self,
-        method: &str,
-        path_and_query: &str,
-        body: Option<String>,
-        what: &str,
-    ) -> Result<String, String> {
-        let url = format!("{}{path_and_query}", self.base);
-        let mut builder = Request::builder().method(method).uri(url);
-        if let Some(auth) = &self.auth {
-            builder = builder.header("Authorization", auth);
-        }
-        if body.is_some() {
-            builder = builder.header("Content-Type", "application/json");
-        }
-        let request = builder.body(body.unwrap_or_default()).map_err(err)?;
-        let response = self.agent.run(request).map_err(err)?;
-        let status = response.status().as_u16();
-        let text = response
-            .into_body()
-            .with_config()
-            .limit(MAX_BODY)
-            .read_to_string()
-            .map_err(err)?;
-        if status >= 400 {
-            // The cluster explains itself well; prefer its reason over a
-            // bare status when it gives one.
-            let reason = serde_json::from_str::<Value>(&text)
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("error")?
-                        .get("reason")?
-                        .as_str()
-                        .map(str::to_string)
-                });
-            return Err(match reason {
-                Some(reason) => format!("{} ({reason})", status_error(status, what)),
-                None => status_error(status, what),
-            });
-        }
-        Ok(text)
-    }
-
-    fn get(&self, path_and_query: &str, what: &str) -> Result<String, String> {
-        self.send("GET", path_and_query, None, what)
-    }
-
     /// Every index, from `_cat`. Hidden and system indices are left out,
     /// which is `_cat`'s own default.
     fn indices(&self) -> Result<Vec<String>, String> {
-        let body = self.get("/_cat/indices?format=json&h=index", "the index list")?;
+        let body = self.http.get("/_cat/indices?format=json&h=index", "the index list")?;
         let parsed: Vec<Value> = serde_json::from_str(&body)
             .map_err(|e| format!("The index list could not be read ({e})."))?;
         let mut names: Vec<String> = parsed
@@ -222,7 +133,7 @@ impl ElasticFs {
     /// Every document in an index, up to `MAX_DOCS`, following the scroll
     /// until it runs out.
     fn documents(&self, index: &str) -> Result<Vec<Value>, String> {
-        let first = self.send(
+        let first = self.http.send(
             "POST",
             &format!("/{}/_search?scroll={SCROLL_KEEPALIVE}", encode_path(index)),
             Some(format!("{{\"size\":{BATCH},\"sort\":[\"_doc\"]}}")),
@@ -237,7 +148,7 @@ impl ElasticFs {
         while out.len() < MAX_DOCS {
             let Some(id) = scroll.clone() else { break };
             let body = serde_json::json!({"scroll": SCROLL_KEEPALIVE, "scroll_id": id});
-            let next = self.send(
+            let next = self.http.send(
                 "POST",
                 "/_search/scroll",
                 Some(body.to_string()),
@@ -257,7 +168,7 @@ impl ElasticFs {
         // this is read-only but not inconsiderate.
         if let Some(id) = scroll {
             let body = serde_json::json!({ "scroll_id": [id] });
-            let _ = self.send("DELETE", "/_search/scroll", Some(body.to_string()), "the scroll");
+            let _ = self.http.send("DELETE", "/_search/scroll", Some(body.to_string()), "the scroll");
         }
 
         out.truncate(MAX_DOCS);
@@ -322,7 +233,7 @@ impl RemoteFs for ElasticFs {
         let (Some(index), Some(id)) = split(file) else {
             return Err("Not a document.".into());
         };
-        let body = self.get(
+        let body = self.http.get(
             &format!("/{}/_doc/{}", encode_path(&index), encode_path(&id)),
             "the document",
         )?;

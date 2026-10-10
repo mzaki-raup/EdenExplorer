@@ -1275,3 +1275,5 @@ network_location_move_down = Move Down In This Group
 network_location_database_name = Database
 network_location_auth_database = Authentication Database
 network_location_index_name = Index
+network_location_collection_name = Collection
+network_location_core_name = Core

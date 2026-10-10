@@ -25,10 +25,10 @@
 //!   memory - and a live database has no Recycle Bin and no undo. Every
 //!   mutating method returns an error saying so.
 
-use super::webdav::{agent, base64_padded, encode_path, status_error};
+use super::http_json::{Auth, JsonHttp};
+use super::webdav::encode_path;
 use super::{RemoteConnection, RemoteEntry, RemoteFs};
 use std::io::{Read, Write};
-use ureq::http::Request;
 
 /// Documents asked for in one request. CouchDB pages by key, not offset, so
 /// this is a round-trip size rather than a limit on what can be reached.
@@ -38,18 +38,11 @@ const PAGE: usize = 1_000;
 /// millions, and a file list that never finishes is worse than a capped one.
 const MAX_DOCS: usize = 20_000;
 
-/// Largest response read. A document is usually small; this is a guard
-/// against one that isn't, not a feature.
-const MAX_BODY: u64 = 32 * 1024 * 1024;
-
 /// The ids CouchDB allows a `/` in. Shown as folders.
 const PREFIX_FOLDERS: [&str; 2] = ["_design", "_local"];
 
 pub struct CouchFs {
-    agent: ureq::Agent,
-    /// `scheme://host:port`, no trailing slash.
-    base: String,
-    auth: Option<String>,
+    http: JsonHttp,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -156,56 +149,31 @@ fn entries_for(ids: &[String], inside: Option<&str>) -> Vec<RemoteEntry> {
 
 impl CouchFs {
     pub fn new(conn: &RemoteConnection, secret: &str) -> Result<Self, String> {
-        if conn.host.trim().is_empty() {
-            return Err("No server name".into());
-        }
-        let scheme = if conn.https { "https" } else { "http" };
-        let base = format!("{scheme}://{}:{}", conn.host.trim(), conn.port);
-        let auth = (!conn.username.is_empty()).then(|| {
-            format!(
-                "Basic {}",
-                base64_padded(format!("{}:{secret}", conn.username).as_bytes())
-            )
-        });
         let fs = CouchFs {
-            agent: agent(),
-            base,
-            auth,
+            http: JsonHttp::new(
+                &conn.host,
+                conn.port,
+                conn.https,
+                Auth::Basic {
+                    user: conn.username.clone(),
+                    secret: secret.to_string(),
+                },
+            )?,
         };
 
         // Two checks, because they fail for different reasons and a user can
         // act on each: the welcome document says this is reachable and really
         // is CouchDB, and listing the databases says the sign-in worked.
-        let welcome = fs.get_text("/", "the server")?;
+        let welcome = fs.http.get("/", "the server")?;
         if !welcome.contains("\"couchdb\"") {
             return Err("That server answered, but it isn't CouchDB.".into());
         }
-        fs.get_text("/_all_dbs", "the database list")?;
+        fs.http.get("/_all_dbs", "the database list")?;
         Ok(fs)
     }
 
-    fn get_text(&self, path_and_query: &str, what: &str) -> Result<String, String> {
-        let url = format!("{}{path_and_query}", self.base);
-        let mut builder = Request::builder().method("GET").uri(url);
-        if let Some(auth) = &self.auth {
-            builder = builder.header("Authorization", auth);
-        }
-        let request = builder.body(()).map_err(err)?;
-        let response = self.agent.run(request).map_err(err)?;
-        let status = response.status().as_u16();
-        if status >= 400 {
-            return Err(status_error(status, what));
-        }
-        response
-            .into_body()
-            .with_config()
-            .limit(MAX_BODY)
-            .read_to_string()
-            .map_err(err)
-    }
-
     fn databases(&self) -> Result<Vec<String>, String> {
-        let body = self.get_text("/_all_dbs", "the database list")?;
+        let body = self.http.get("/_all_dbs", "the database list")?;
         serde_json::from_str::<Vec<String>>(&body)
             .map_err(|e| format!("The database list could not be read ({e})."))
     }
@@ -228,7 +196,7 @@ impl CouchFs {
             query.push_str(&format!("&startkey={}", encode_query(&as_json)));
         }
         let path = format!("/{}/_all_docs?{query}", encode_path(database));
-        let body = self.get_text(&path, "the document list")?;
+        let body = self.http.get(&path, "the document list")?;
 
         let parsed: serde_json::Value = serde_json::from_str(&body)
             .map_err(|e| format!("The document list could not be read ({e})."))?;
@@ -301,7 +269,7 @@ impl RemoteFs for CouchFs {
             return Err("Not a document.".into());
         };
         let path = format!("/{}/{}", encode_path(&database), encode_path(&id));
-        let body = self.get_text(&path, "the document")?;
+        let body = self.http.get(&path, "the document")?;
 
         // Pretty-printed: a stored document is usually one long line, and
         // reading it is the whole point of opening it here.
