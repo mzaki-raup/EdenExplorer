@@ -650,6 +650,7 @@ fn draw_location_form(
                 }
                 RemoteKind::Redis => Some("network_location_key_prefix"),
                 RemoteKind::CouchDb => Some("network_location_database_name"),
+                RemoteKind::MongoDb => Some("network_location_auth_database"),
                 RemoteKind::S3 => None,
             };
             if let Some(label) = path_label {
@@ -657,6 +658,7 @@ fn draw_location_form(
                     RemoteKind::WebDav => "/remote.php/dav/files/me",
                     RemoteKind::Redis => "user:1000",
                     RemoteKind::CouchDb => "mydb",
+                    RemoteKind::MongoDb => "admin",
                     _ => "/home/me",
                 };
                 row(ui, &i18n.tr(label), &mut |ui| {

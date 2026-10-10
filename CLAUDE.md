@@ -2296,6 +2296,39 @@ PowerShell process) rather than the app's own code - if you're using the
   test double: the parts of the protocol it ignores are the parts it cannot
   test.
 
+- **Whether to hand-roll a protocol or take the library turns on one
+  question: can the data live somewhere the naive reader won't look?** This
+  codebase hand-rolls RESP2, NBSTAT, mDNS, WS-Discovery and now MongoDB's
+  OP_MSG, but deliberately took bundled SQLite. The difference is not size or
+  difficulty - it is that a SQLite database in WAL mode keeps recent rows in a
+  *separate file*, so a hand-written reader is silently wrong for most real
+  databases, while MongoDB's server simply reports what it has and the things
+  that can go wrong (framing, auth) fail loudly and immediately. Apply that
+  test rather than a general preference next time: silent wrongness buys the
+  dependency, loud failure does not.
+- **An authentication protocol is only testable against its own published
+  vectors.** SCRAM-SHA-256 has four places to be subtly wrong - the PBKDF2
+  block, the two key derivations, the exact transcript string, and the XOR -
+  and every one of them produces a self-consistent implementation that no
+  amount of round-tripping against itself would catch. RFC 7677's worked
+  example (user `user`, password `pencil`, a fixed nonce) pins the
+  client-first message, the client proof and the server signature
+  byte-for-byte, and it found nothing only because it was written first. Do
+  the same for any crypto-adjacent protocol here; a stand-in server that
+  reuses the client's own code proves nothing on its own.
+- **Verify the server's half of a challenge-response too.** SCRAM ends with
+  the server proving *it* knew the password, and skipping that check is easy
+  because everything works without it - a server that never knew the password
+  would still be accepted. The test that matters is the one that signs with
+  the right password and connects with the wrong one, asserting the client
+  refuses.
+- **A test double that reuses the code under test can only test the parts it
+  doesn't reuse.** The MongoDB stand-in builds its own OP_MSG headers by hand
+  rather than calling the client's framing, so a mistake there can't cancel
+  itself out; it does use the BSON codec, which is acceptable only because
+  that codec is separately pinned against hand-built bytes and known vectors.
+  Decide per layer which half of the pair is allowed to be shared.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

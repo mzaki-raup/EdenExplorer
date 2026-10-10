@@ -9,6 +9,7 @@
 pub mod couchdb;
 pub mod credentials;
 pub mod ftp;
+pub mod mongodb;
 pub mod redis;
 pub mod s3;
 pub mod sftp;
@@ -38,10 +39,12 @@ pub enum RemoteKind {
     Redis,
     /// Browsed read-only: databases are folders and documents are files.
     CouchDb,
+    /// Browsed read-only: database, collection, document.
+    MongoDb,
 }
 
 impl RemoteKind {
-    pub const ALL: [RemoteKind; 7] = [
+    pub const ALL: [RemoteKind; 8] = [
         RemoteKind::Sftp,
         RemoteKind::Ftp,
         RemoteKind::Ftps,
@@ -49,6 +52,7 @@ impl RemoteKind {
         RemoteKind::S3,
         RemoteKind::Redis,
         RemoteKind::CouchDb,
+        RemoteKind::MongoDb,
     ];
 
     pub fn label(self) -> &'static str {
@@ -60,6 +64,7 @@ impl RemoteKind {
             RemoteKind::S3 => "S3",
             RemoteKind::Redis => "Redis",
             RemoteKind::CouchDb => "CouchDB",
+            RemoteKind::MongoDb => "MongoDB",
         }
     }
 
@@ -68,6 +73,7 @@ impl RemoteKind {
             RemoteKind::Sftp => 22,
             RemoteKind::Ftp | RemoteKind::Ftps => 21,
             RemoteKind::Redis => 6379,
+            RemoteKind::MongoDb => 27017,
             // CouchDB's own defaults, which differ from plain HTTP's.
             RemoteKind::CouchDb => {
                 if https {
@@ -170,6 +176,9 @@ impl RemoteConnection {
             // CouchDB's root lists every database, so a saved path is a
             // database to open straight into.
             RemoteKind::CouchDb => segments_of(&self.path),
+            // MongoDB's `path` names the database credentials live in, not
+            // a place to browse - so it always opens at the root.
+            RemoteKind::MongoDb => Vec::new(),
             RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => segments_of(&self.path),
             // WebDAV's path is the root itself; S3 starts at the bucket.
             RemoteKind::WebDav | RemoteKind::S3 => Vec::new(),
@@ -229,6 +238,7 @@ pub fn connect_with_secret(
         RemoteKind::S3 => Ok(Box::new(s3::S3Fs::new(conn, &secret)?)),
         RemoteKind::Redis => Ok(Box::new(redis::RedisFs::connect(conn, &secret)?)),
         RemoteKind::CouchDb => Ok(Box::new(couchdb::CouchFs::new(conn, &secret)?)),
+        RemoteKind::MongoDb => Ok(Box::new(mongodb::MongoFs::connect(conn, &secret)?)),
     }
 }
 
@@ -290,6 +300,11 @@ pub fn url_for(path: &Path) -> Option<String> {
             "redis://{user}{}:{}/{}{encoded}",
             conn.host, conn.port, conn.database
         ),
+        // Its own connection-string scheme, which is what anyone using
+        // MongoDB will recognise.
+        RemoteKind::MongoDb => {
+            format!("mongodb://{user}{}:{}{encoded}", conn.host, conn.port)
+        }
         // CouchDB is plain HTTP, and its own URLs are exactly
         // `scheme://host:port/db/doc` - so the address bar can show the real
         // thing rather than an invented scheme.

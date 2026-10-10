@@ -27,7 +27,7 @@ pub enum NetworkGroup {
 }
 
 impl NetworkGroup {
-    pub const ALL: [NetworkGroup; 8] = [
+    pub const ALL: [NetworkGroup; 9] = [
         NetworkGroup::Windows,
         NetworkGroup::Remote(RemoteKind::Sftp),
         NetworkGroup::Remote(RemoteKind::Ftp),
@@ -36,6 +36,7 @@ impl NetworkGroup {
         NetworkGroup::Remote(RemoteKind::S3),
         NetworkGroup::Remote(RemoteKind::Redis),
         NetworkGroup::Remote(RemoteKind::CouchDb),
+        NetworkGroup::Remote(RemoteKind::MongoDb),
     ];
 
     /// The id saved to disk. Stable on purpose: renaming a variant must not
@@ -50,6 +51,7 @@ impl NetworkGroup {
             NetworkGroup::Remote(RemoteKind::S3) => "s3",
             NetworkGroup::Remote(RemoteKind::Redis) => "redis",
             NetworkGroup::Remote(RemoteKind::CouchDb) => "couchdb",
+            NetworkGroup::Remote(RemoteKind::MongoDb) => "mongodb",
         }
     }
 

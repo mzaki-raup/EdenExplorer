@@ -65,6 +65,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Gallery/thumbnail view (small to extra-large) for media
 - Context menu operations (cut/copy/paste/rename/delete), optional native Windows shell context menu integration
 - Drag-and-drop both within the app and to/from native Windows (Explorer, Desktop, other apps)
+- MongoDB browsed like folders: database, collection, document - hand-rolled OP_MSG/BSON with SCRAM-SHA-256, read-only
 - CouchDB browsed like folders: databases are folders, documents are JSON files, read-only
 - SQLite databases browsed like folders: tables and views with row counts, paged row grids, strictly read-only
 - Spring-loaded folders: resting on a folder mid-drag opens it, and releasing anywhere in what opened drops there - so one gesture can descend several levels, including into a folder that is empty
