@@ -1638,6 +1638,22 @@ PowerShell process) rather than the app's own code - if you're using the
   requirement rather than an accident
   (`both_lf_and_crlf_checksum_files_are_read`), because every release
   published before this still carries CRLF and must keep verifying for ever.
+- **`cargo build`'s "never used" means "the binary never uses it", not "nothing
+  uses it" - deleting on that basis breaks the tests.** `bson.rs`'s `document`
+  and `array_raw` were the only warning left in the tree and were reported as
+  dead code for days; the obvious move, and the one this file's own
+  no-speculative-abstraction rule seems to call for, is to delete them. They
+  are used four times - all inside `#[cfg(test)]` modules, by the stand-in
+  MongoDB server that turns arbitrary JSON into BSON and therefore nests
+  documents that no command this client actually sends does. The tell is
+  cheap and worth making a habit: **`cargo test --no-run` emits no such
+  warning**, because that build genuinely does use them, so comparing the two
+  builds' warnings separates "unused everywhere" from "unused by the binary".
+  A plain `grep` for the method name also finds the call sites immediately -
+  the only reason this nearly went wrong is that the warning is phrased as an
+  absolute. Fixed with `#[cfg(test)]` rather than deletion, which states the
+  real situation and keeps the methods for the first command that needs a
+  nested document.
 - **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
   out most of what a "standard" GitHub Actions pipeline would reach for.** A
   release pipeline was designed around `semantic-release` + `actions/checkout` +

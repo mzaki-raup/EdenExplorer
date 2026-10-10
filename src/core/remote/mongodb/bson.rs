@@ -85,6 +85,12 @@ impl Builder {
         self
     }
 
+    /// Only the tests need this: the stand-in server builds BSON from
+    /// arbitrary JSON, so it nests documents, while no command this client
+    /// actually sends does. `#[cfg(test)]` rather than deletion because the
+    /// moment a command needs a nested document - a `find` filter, a sort -
+    /// this is what it reaches for.
+    #[cfg(test)]
     pub fn document(mut self, name: &str, value: Builder) -> Self {
         self.key(0x03, name);
         self.body.extend_from_slice(&value.finish());
@@ -104,6 +110,10 @@ impl Builder {
 
     /// An array whose elements have already been built as a document with
     /// "0", "1", ... as its keys.
+    ///
+    /// Test-only for the same reason as `document` above - the commands sent
+    /// here only ever need `array_of_int64`.
+    #[cfg(test)]
     pub fn array_raw(mut self, name: &str, value: Builder) -> Self {
         self.key(0x04, name);
         self.body.extend_from_slice(&value.finish());
