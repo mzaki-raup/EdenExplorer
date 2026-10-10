@@ -252,6 +252,13 @@ pub struct SettingsWindow {
     /// Result of the last Portable Mode switch (Settings > Advanced):
     /// `(succeeded, message)`, shown under the checkbox.
     pub portable_mode_status: Option<(bool, String)>,
+    /// Settings > Advanced > carried passwords: what has been typed into the
+    /// passphrase boxes, and the result of the last action. Kept here rather
+    /// than in the vault module so nothing holds a passphrase for longer than
+    /// the page is open - leaving the page clears both.
+    pub vault_passphrase: String,
+    pub vault_passphrase_confirm: String,
+    pub vault_status: Option<(bool, String)>,
     /// Settings > Shortcuts: the action waiting for a new key combination,
     /// the last message shown there, and the frame the page was last drawn
     /// (to cancel recording when the user leaves the page).

@@ -1907,6 +1907,136 @@ fn draw_advanced_section(
         }
     });
 
+
+    // Carried passwords. Only meaningful for a portable copy - Credential
+    // Manager already follows an installed one - so the section explains
+    // itself rather than appearing as a bare toggle.
+    settings_section(ui, palette, |ui| {
+        use crate::core::portable_secrets as vault;
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(i18n.tr("settings_carry_passwords"))
+                    .color(palette.text_normal)
+                    .strong(),
+            );
+            info_icon(ui, &i18n.tr("tooltip_settings_carry_passwords"), palette);
+        });
+        ui.add_space(SETTINGS_FIELD_GAP);
+
+        let carried = vault::carried_ids().len();
+        let exists = vault::exists();
+        let unlocked = vault::is_unlocked();
+
+        let note = |ui: &mut egui::Ui, text: String| {
+            ui.label(
+                RichText::new(text)
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        };
+
+        if !exists {
+            note(ui, i18n.tr("settings_carry_passwords_off"));
+            ui.add_space(4.0);
+            // Said before the passphrase is chosen, not after: there is no
+            // recovery path and that has to be a decision, not a surprise.
+            ui.label(
+                RichText::new(i18n.tr("settings_carry_passwords_warning"))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.notification_status_warning),
+            );
+            ui.add_space(SETTINGS_FIELD_GAP);
+            ui.add(
+                egui::TextEdit::singleline(&mut settings.vault_passphrase)
+                    .hint_text(i18n.tr("settings_carry_passwords_passphrase"))
+                    .password(true)
+                    .desired_width(260.0),
+            );
+            ui.add_space(4.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut settings.vault_passphrase_confirm)
+                    .hint_text(i18n.tr("settings_carry_passwords_confirm"))
+                    .password(true)
+                    .desired_width(260.0),
+            );
+            ui.add_space(SETTINGS_FIELD_GAP);
+            if eden_button(ui, palette, &i18n.tr("settings_carry_passwords_start")).clicked() {
+                settings.vault_status = if settings.vault_passphrase
+                    != settings.vault_passphrase_confirm
+                {
+                    Some((false, i18n.tr("settings_carry_passwords_mismatch")))
+                } else {
+                    match vault::enable(&settings.vault_passphrase) {
+                        Ok(()) => Some((true, i18n.tr("settings_carry_passwords_started"))),
+                        Err(error) => Some((false, error)),
+                    }
+                };
+                if settings.vault_status.as_ref().is_some_and(|(ok, _)| *ok) {
+                    settings.vault_passphrase.clear();
+                    settings.vault_passphrase_confirm.clear();
+                }
+            }
+        } else if !unlocked {
+            note(ui, i18n.tr("settings_carry_passwords_locked"));
+            ui.add_space(SETTINGS_FIELD_GAP);
+            ui.add(
+                egui::TextEdit::singleline(&mut settings.vault_passphrase)
+                    .hint_text(i18n.tr("settings_carry_passwords_passphrase"))
+                    .password(true)
+                    .desired_width(260.0),
+            );
+            ui.add_space(SETTINGS_FIELD_GAP);
+            ui.horizontal(|ui| {
+                if eden_button(ui, palette, &i18n.tr("settings_carry_passwords_unlock")).clicked() {
+                    settings.vault_status = match vault::unlock(&settings.vault_passphrase) {
+                        Ok(()) => {
+                            settings.vault_passphrase.clear();
+                            Some((true, i18n.tr("settings_carry_passwords_unlocked")))
+                        }
+                        Err(error) => Some((false, error)),
+                    };
+                }
+                if eden_button(ui, palette, &i18n.tr("settings_carry_passwords_stop")).clicked() {
+                    settings.vault_status = match vault::disable() {
+                        Ok(()) => Some((true, i18n.tr("settings_carry_passwords_stopped"))),
+                        Err(error) => Some((false, error)),
+                    };
+                }
+            });
+        } else {
+            note(ui, i18n.tr("settings_carry_passwords_unlocked"));
+            ui.add_space(4.0);
+            note(
+                ui,
+                format!("{} {carried}", i18n.tr("settings_carry_passwords_count")),
+            );
+            ui.add_space(SETTINGS_FIELD_GAP);
+            ui.horizontal(|ui| {
+                if eden_button(ui, palette, &i18n.tr("settings_carry_passwords_lock")).clicked() {
+                    vault::lock();
+                    settings.vault_status = Some((true, i18n.tr("settings_carry_passwords_relocked")));
+                }
+                if eden_button(ui, palette, &i18n.tr("settings_carry_passwords_stop")).clicked() {
+                    settings.vault_status = match vault::disable() {
+                        Ok(()) => Some((true, i18n.tr("settings_carry_passwords_stopped"))),
+                        Err(error) => Some((false, error)),
+                    };
+                }
+            });
+        }
+
+        if let Some((ok, message)) = &settings.vault_status {
+            ui.add_space(4.0);
+            let color = if *ok {
+                palette.notification_status_success
+            } else {
+                palette.notification_status_error
+            };
+            ui.label(RichText::new(message).size(palette.text_size - 1.0).color(color));
+        }
+    });
+
     settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if setting_checkbox(

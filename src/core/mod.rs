@@ -42,6 +42,7 @@ pub mod pattern;
 pub mod places;
 pub mod perf;
 pub mod portable;
+pub mod portable_secrets;
 pub mod portable_tags;
 pub mod preview;
 pub mod release;

@@ -26,6 +26,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
   - `indexer.rs` — settings/tags/favorites/tab-groups/custom-themes persistence
   - `launch.rs` — launching files/programs, `shell:`/CLSID resolution
   - `portable.rs` — portable device support (iPhone, Android, etc.)
+  - `portable_secrets.rs` — network-location passwords carried with a portable copy, sealed with AES-256-GCM under an Argon2id key derived from a user passphrase
   - `network.rs` / `network_mdns.rs` / `network_wsd.rs` — SMB share browsing, mDNS and WS-Discovery device discovery
   - `remote/http_json.rs` — the authenticated-request, status-mapping and document-as-file plumbing shared by CouchDB, Elasticsearch, Meilisearch, Qdrant and Solr
   - `everything.rs` — voidtools Everything + built-in filesystem search engines

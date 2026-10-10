@@ -108,6 +108,13 @@ russh-sftp = "3.0"
 tokio = { version = "1", features = ["rt", "net", "time", "io-util"] }
 ureq = { version = "3.4", default-features = false, features = ["native-tls"] }
 hmac = "0.12"
+# Portable secrets (core::portable_secrets): Argon2id for a human-chosen
+# passphrase, AES-256-GCM to seal each secret, zeroize to wipe the derived
+# key. All three were already in the tree through russh; these pin them as
+# direct dependencies because this module relies on them directly.
+argon2 = "0.6"
+aes-gcm = "0.11"
+zeroize = "1.9"
 gix = { version = "0.88", default-features = false, features = ["status", "sha1", "max-performance-safe"] }
 everything-ipc = "0.1.4"
 rusqlite = { version = "0.40.2", features = ["bundled", "limits"] }
