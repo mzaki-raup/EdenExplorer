@@ -3,6 +3,13 @@
 //! `EdenExplorer/remote/<id>` - never in EdenExplorer's own settings. They
 //! show in Control Panel > Credential Manager > Windows Credentials. SSH host
 //! keys trusted on first connect are kept in `remote_host_keys.json`.
+//!
+//! A **portable** copy can also carry its secrets with it, encrypted under a
+//! passphrase (`core::portable_secrets`) - Credential Manager is per Windows
+//! user and per machine, so a stick moved to another computer would otherwise
+//! arrive with its connections and none of their passwords. Credential
+//! Manager stays the primary store here and is tried first, so an installed
+//! copy behaves exactly as it always has.
 
 use std::collections::HashMap;
 use std::os::windows::ffi::OsStrExt;
@@ -40,11 +47,25 @@ pub fn store(id: u64, secret: &str) -> Result<(), String> {
     };
     let result = unsafe { CredWriteW(&credential, 0) }.map_err(|e| e.message());
     blob.iter_mut().for_each(|b| *b = 0);
+    // Mirrored into the carried vault when one is open, so a password typed
+    // on this machine travels with the stick. A no-op otherwise.
+    let _ = crate::core::portable_secrets::store(id, secret);
     result
 }
 
 /// The secret stored for connection `id`.
+///
+/// Credential Manager first; the carried vault only when it has nothing and
+/// the vault is unlocked. A secret found in the vault is **not** written back
+/// into Credential Manager - doing that would leave the password on every
+/// machine the stick is ever plugged into, which is the opposite of what a
+/// portable copy is for. Settings offers that as an explicit per-machine
+/// action instead.
 pub fn load(id: u64) -> Option<String> {
+    from_credential_manager(id).or_else(|| crate::core::portable_secrets::load(id))
+}
+
+fn from_credential_manager(id: u64) -> Option<String> {
     let name = target(id);
     let mut found: *mut CREDENTIALW = std::ptr::null_mut();
     unsafe {
@@ -65,6 +86,8 @@ pub fn remove(id: u64) {
     unsafe {
         let _ = CredDeleteW(PCWSTR(name.as_ptr()), CRED_TYPE_GENERIC, None);
     }
+    // Removing a location must not leave its password behind on the stick.
+    crate::core::portable_secrets::remove(id);
 }
 
 // --- SSH host keys (trust on first use) -------------------------------------
