@@ -11,8 +11,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
-    handle_keyboard_navigation, handle_row_click,
+    draw_empty_folder_context_menu, handle_context_menu_actions, handle_drop_on_empty_view,
+    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -118,14 +118,18 @@ pub fn draw_gallery_view(
             ui.label(i18n.tr("folder_is_empty"));
         });
 
-        // See the matching comment in itemviewer.rs's own empty-folder
-        // handling - the populated-folder background context menu below
-        // never reaches an empty folder, since it's wired through a
-        // background `Response` only computed once there's an actual grid
-        // of tiles to lay out.
+        // Both of these hang off this response because the populated-folder
+        // versions hang off the tile grid's own background `Response`, which
+        // only exists once there are tiles to lay out - so neither the
+        // context menu nor (see `handle_drop_on_empty_view`) the end of a
+        // drag ever reached an empty folder.
+        let empty_resp =
+            ui.interact(empty_rect, ui.id().with("empty_gallery_bg"), egui::Sense::click());
+        if let Some(drop) = handle_drop_on_empty_view(ui, drag_state, &empty_resp, &current_dir) {
+            action = Some(drop);
+        }
+
         if !modal_input_blocked {
-            let empty_resp =
-                ui.interact(empty_rect, ui.id().with("empty_gallery_bg"), egui::Sense::click());
             draw_empty_folder_context_menu(
                 i18n,
                 palette,
@@ -467,9 +471,13 @@ pub fn draw_gallery_view(
                 }
 
                 if drag_state.active && pointer_released {
+                    // See the matching comment in itemviewer.rs: `hovered` is
+                    // false for the background whenever a tile is under the
+                    // pointer, so a release over a file tile resolved to no
+                    // target at all instead of the folder on screen.
                     let target_dir = current_hovered_drop_target
                         .clone()
-                        .or_else(|| bg_response.hovered().then(|| current_dir.clone()));
+                        .or_else(|| bg_response.contains_pointer().then(|| current_dir.clone()));
 
                     if let Some(target_dir) = target_dir {
                         action = Some(ItemViewerAction::MoveItems {

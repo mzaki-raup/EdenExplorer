@@ -3503,6 +3503,42 @@ fn resolve_size_text(
     "—".to_string()
 }
 
+/// Ends a drag released over a view that has no rows in it, moving whatever
+/// was being dragged into the folder on screen.
+///
+/// Every view's real drop handling lives inside its "there are items to draw"
+/// branch, wired through the table/grid's own background `Response` - so a
+/// folder with nothing in it never saw the release at all. Spring-loaded
+/// folders made that reachable by accident: resting on a folder mid-drag
+/// opens it, and if what opens is empty (or is still loading, which it always
+/// is for the first frames after it opens) the release landed in this branch,
+/// so the files stayed put *and* `drag_state` was never cleared - leaving the
+/// drag ghost stuck to the pointer with no way to get rid of it but Escape.
+///
+/// The drag therefore ends here whether or not there is a target, exactly as
+/// the populated-folder handlers do.
+pub fn handle_drop_on_empty_view(
+    ui: &egui::Ui,
+    drag_state: &mut DragState,
+    empty_response: &egui::Response,
+    current_dir: &std::path::Path,
+) -> Option<ItemViewerAction> {
+    if !drag_state.active || !ui.ctx().input(|i| i.pointer.primary_released()) {
+        return None;
+    }
+    let sources = std::mem::take(&mut drag_state.source_items);
+    drag_state.active = false;
+    drag_state.start_pos = None;
+
+    if sources.is_empty() || !empty_response.contains_pointer() {
+        return None;
+    }
+    Some(ItemViewerAction::MoveItems {
+        sources,
+        target_dir: current_dir.to_path_buf(),
+    })
+}
+
 pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
     let mut rect = ui.available_rect_before_wrap();
 

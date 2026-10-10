@@ -1884,6 +1884,23 @@ impl eframe::App for MainWindow {
             }
         }
 
+        // Letting go of the button ends the drag, whatever else happened to
+        // the release. Each drop handler already clears its own view's state,
+        // but only the ones that actually ran: a release the pane never saw -
+        // over a view with no file list, or during the frames a spring-opened
+        // folder is still loading - used to leave `active` set, and the ghost
+        // then followed the pointer for ever (Escape was the only way out).
+        // Every handler that reads this runs earlier in the same frame, so
+        // nothing is taken away from them here.
+        if ui.ctx().input(|i| i.pointer.primary_released()) {
+            let tab = &mut self.tabs[self.active_tab];
+            for view in std::iter::once(&mut tab.primary_view).chain(tab.split_view.as_mut()) {
+                view.drag_state.active = false;
+                view.drag_state.start_pos = None;
+                view.drag_state.source_items.clear();
+            }
+        }
+
         if pending_action.is_none() {
             if let Some(command) = self
                 .dragdrop

@@ -259,6 +259,10 @@ pub fn draw_item_viewer(
         let empty_resp =
             ui.interact(empty_rect, ui.id().with("empty_folder_bg"), egui::Sense::click());
 
+        if let Some(drop) = handle_drop_on_empty_view(ui, drag_state, &empty_resp, &current_dir) {
+            action = Some(drop);
+        }
+
         // The populated-folder double-click-to-go-up handler below lives
         // inside the `!visible_items_empty` table-drawing branch (it's
         // wired through `table_background_response`, which only makes
@@ -453,6 +457,12 @@ pub fn draw_item_viewer(
                 ui.id().with("empty_folder_bg_detail_preview"),
                 egui::Sense::click(),
             );
+
+            if let Some(drop) =
+                handle_drop_on_empty_view(ui, drag_state, &empty_resp, &current_dir)
+            {
+                action = Some(drop);
+            }
 
             // See the matching comment on the plain-Details empty case
             // above - the populated-folder handler lives inside the
@@ -1130,9 +1140,18 @@ pub fn draw_item_viewer(
                 *external_drag_to_internal_hover = native_drag_active || external_file_hover;
                 // Fill remaining space so empty area is interactable
                 if drag_state.active && pointer_released {
+                    // `contains_pointer`, not `hovered`: egui reports the
+                    // top-most widget under the pointer as the hovered one, so
+                    // the background reads as un-hovered whenever the release
+                    // lands on any row - and a row that isn't a folder sets no
+                    // target of its own. Dropping onto a file therefore
+                    // resolved to nothing at all and silently did nothing,
+                    // which is exactly where the pointer ends up after a
+                    // spring-loaded folder opens under it. Explorer drops into
+                    // the folder being shown in that case, and so does this.
                     let target_dir = current_hovered_drop_target
                         .clone()
-                        .or_else(|| bg_response.hovered().then(|| current_dir.clone()));
+                        .or_else(|| bg_response.contains_pointer().then(|| current_dir.clone()));
 
                     if let Some(target_dir) = target_dir {
                         action = Some(ItemViewerAction::MoveItems {

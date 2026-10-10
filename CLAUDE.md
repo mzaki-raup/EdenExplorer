@@ -2076,6 +2076,74 @@ PowerShell process) rather than the app's own code - if you're using the
   does not currently have (`view.files` has no generation counter), so
   inventing one would mean touching every site that mutates it.
 
+- **`Response::hovered()` is false for every widget under the pointer except
+  the top-most one, so using it as a drop-target fallback silently loses the
+  drop whenever the release lands on a row.** Reported against spring-loaded
+  folders: "when I select multiple files, and then drag on a folder, the
+  folder opens, and then when I release the mouse, the files are not moving
+  into the folder and the mouse cursor stuck on drag cursor icon." The file
+  list's drop handler resolves its target as "the folder row under the
+  pointer, or else the folder being shown", and that second half was written
+  as `bg_response.hovered().then(|| current_dir.clone())`. egui's own
+  `InteractionSnapshot` builds `hovered` from `hits.click`/`hits.drag` only -
+  the single top-most interactive widget - and documents it as "while dragging
+  or clicking something, nothing else is hovered". The background therefore
+  reads as un-hovered whenever *any* row is under the pointer, and a row that
+  isn't a folder sets no target of its own, so the drop resolved to `None` and
+  did nothing at all. Ordinary drags mostly hide this (people aim at the
+  folder, or at empty space below the list); a spring-open exposes it every
+  time, because the pointer is left sitting at the screen position the folder
+  row occupied, which in the folder that just opened is usually a file.
+  **`contains_pointer()` is the one that means "the pointer is inside this
+  rect"** - use it for drop zones (egui's own doc comment on `contains_pointer`
+  says exactly that), and keep `hovered()` for highlight/tooltip decisions.
+- **The same bug's other half: every view's drop handling lives inside its
+  "there are rows to draw" branch, so an empty folder swallows the release -
+  and that is worse than losing the drop, because it also never ends the
+  drag.** This is the third time this file has recorded the same shape of
+  gap (the double-click-to-go-up handler, then the empty-folder context
+  menu), and the cost is higher here: `drag_state` is what the ghost label
+  is drawn from, so a release the view never saw leaves it following the
+  pointer for ever with Escape the only way out. A spring-opened folder is
+  *always* in this branch for the first frames after it opens (the scan is
+  async and `files` is cleared on navigation), so it is reachable even for a
+  folder that has content. Fixed with a shared
+  `handle_drop_on_empty_view` used by all three empty branches, **and** with
+  a frame-level reset in `MainWindow::ui` - if the primary button was
+  released this frame, the drag is over, whichever branch happened to draw.
+  Prefer that belt-and-braces shape for any "this gesture has ended" state:
+  per-handler clearing is what makes the gesture *do* something, a single
+  end-of-frame reset is what guarantees it stops.
+- **Synthetic drag-and-drop *is* testable here after all - with `SendInput`,
+  not `PostMessage`.** This file already records that a `PostMessage`-built
+  drag could not be made to register, and concluded drag-and-drop was
+  "unverifiable via this skill's current scripts". That conclusion was about
+  `PostMessage` specifically: `SendInput` with
+  `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` injects at the OS input
+  layer, so winit and egui see an ordinary mouse, and a multi-level
+  spring-loaded drag (press, glide, dwell 1.4s, dwell again, dwell again,
+  release - three folders deep without letting go) drove the real app
+  perfectly. Three things it needs: (1) **PowerShell cannot assign to a
+  nested struct field** - `$i.u.mi.dx = 5` silently does nothing because
+  `$i.u` hands back a copy, so build `MOUSEINPUT`, then `UNION`, then
+  `INPUT` and assign each whole; (2) call `SetProcessDpiAwareness(2)` first
+  or every coordinate is virtualized; (3) check `SendInput`'s return value -
+  a struct-size mismatch fails silently otherwise. The harness
+  (`win.ps1`/`input.ps1` in that session's scratchpad) re-checks
+  `GetForegroundWindow`'s owning **pid** before every single event and aborts
+  if it isn't the target, which is what kept real input from landing in the
+  owner's own window when they came back to the keyboard mid-test.
+- **A debug build can be driven safely alongside the owner's own running
+  copy**, which is what made the above testable at all without closing
+  theirs: launch it with `--new-window` (`main.rs` skips the single-instance
+  mutex entirely for that flag, so it neither forwards to nor fights the
+  running instance) and create `target/debug/EdenExplorerData` first, which
+  puts it in portable mode against its own settings folder rather than the
+  real `%LOCALAPPDATA%\ExplorerEden`. Redirect its stderr to a file and a
+  debug build's `eprintln!`s are readable without a console. Find its window
+  by **owning pid**, never by title - both processes are called
+  `EdenExplorer.exe` and both windows are titled `EdenExplorer`.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
