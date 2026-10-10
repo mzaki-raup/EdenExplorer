@@ -712,4 +712,52 @@ mod tests {
         assert_eq!(json["id"], "1526919030474-55");
         assert_eq!(json["fields"]["temperature"], "36");
     }
+
+    /// Against a **real** server, not the stand-in above.
+    ///
+    /// `#[ignore]`d because it needs one running - the same shape as
+    /// `webdav`'s TLS-handshake test. Run it with:
+    ///
+    /// ```text
+    /// EDEN_TEST_REDIS=127.0.0.1:6379 cargo test -- --ignored real_redis
+    /// ```
+    ///
+    /// This is how the "Valkey, KeyDB and Dragonfly work too" claim is checked:
+    /// they all speak RESP2, so point this at one of them and it proves the
+    /// claim rather than asserting it. Verified against Redis 8.6.3 and
+    /// Valkey 7.2.13.
+    #[test]
+    #[ignore]
+    fn a_real_redis_compatible_server_lists_its_keyspace() {
+        let Ok(endpoint) = std::env::var("EDEN_TEST_REDIS") else {
+            panic!("set EDEN_TEST_REDIS=host:port");
+        };
+        let (host, port) = endpoint.rsplit_once(':').expect("host:port");
+        let conn = RemoteConnection {
+            id: 900_001,
+            kind: crate::core::remote::RemoteKind::Redis,
+            host: host.to_string(),
+            port: port.parse().expect("a port"),
+            ..Default::default()
+        };
+
+        let mut fs = RedisFs::connect(&conn, "").expect("connect");
+        let top = fs.list("/").expect("list the root");
+        assert!(!top.is_empty(), "the keyspace looked empty");
+        assert!(
+            top.iter().any(|entry| entry.is_dir),
+            "keys sharing a `:` prefix should have become folders: {:?}",
+            top.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+
+        // And one level down, a folder's own contents.
+        let folder = top.iter().find(|e| e.is_dir).expect("a folder");
+        let inside = fs
+            .list(&format!("/{}", folder.name))
+            .expect("list inside a folder");
+        assert!(!inside.is_empty(), "{} looked empty", folder.name);
+
+        // Read-only, against the real thing as well as the fake.
+        assert!(fs.remove_file("/definitely/not/a/key").is_err());
+    }
 }

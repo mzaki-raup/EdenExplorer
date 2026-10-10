@@ -533,4 +533,62 @@ mod tests {
         assert_eq!(prefix_of("/"), "");
         assert_eq!(prefix_of("/docs"), "docs/");
     }
+
+    /// Against a **real** S3-compatible server, not a mock.
+    ///
+    /// `#[ignore]`d because it needs one running:
+    ///
+    /// ```text
+    /// EDEN_TEST_S3=127.0.0.1:8334 EDEN_TEST_S3_BUCKET=eden-test \
+    /// EDEN_TEST_S3_KEY=... EDEN_TEST_S3_SECRET=... \
+    /// cargo test -- --ignored real_s3
+    /// ```
+    ///
+    /// This is how the "MinIO, Ceph, SeaweedFS and Garage work too" claim is
+    /// checked: they implement the same API and signing, so pointing this at one
+    /// proves it. Verified against SeaweedFS 4.48.
+    #[test]
+    #[ignore]
+    fn a_real_s3_compatible_server_lists_a_bucket() {
+        let Ok(endpoint) = std::env::var("EDEN_TEST_S3") else {
+            panic!("set EDEN_TEST_S3=host:port");
+        };
+        let (host, port) = endpoint.rsplit_once(':').expect("host:port");
+        let conn = RemoteConnection {
+            id: 900_002,
+            kind: crate::core::remote::RemoteKind::S3,
+            host: host.to_string(),
+            port: port.parse().expect("a port"),
+            username: std::env::var("EDEN_TEST_S3_KEY").unwrap_or_default(),
+            bucket: std::env::var("EDEN_TEST_S3_BUCKET").unwrap_or_else(|_| "eden-test".into()),
+            region: "us-east-1".into(),
+            https: false,
+            ..Default::default()
+        };
+        let secret = std::env::var("EDEN_TEST_S3_SECRET").unwrap_or_default();
+
+        let mut fs = S3Fs::new(&conn, &secret).expect("connect");
+        let top = fs.list("/").expect("list the bucket");
+        assert!(!top.is_empty(), "the bucket looked empty");
+
+        // A prefix should have become a folder, and its contents listable - the
+        // part a signing or path-style mistake would break.
+        if let Some(folder) = top.iter().find(|e| e.is_dir) {
+            let inside = fs
+                .list(&format!("/{}", folder.name))
+                .expect("list inside a prefix");
+            assert!(!inside.is_empty(), "{} looked empty", folder.name);
+        }
+
+        // And an object actually downloads.
+        let file = top
+            .iter()
+            .find(|e| !e.is_dir)
+            .map(|e| format!("/{}", e.name));
+        if let Some(file) = file {
+            let mut out = Vec::new();
+            fs.download(&file, &mut out, &mut |_| {}).expect("download");
+            assert!(!out.is_empty(), "{file} came back empty");
+        }
+    }
 }
