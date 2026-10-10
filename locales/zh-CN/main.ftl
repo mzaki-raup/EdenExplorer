@@ -1270,3 +1270,9 @@ sqlite_next = 下一页
 sqlite_read_only = 只读
 settings_browse_databases = 像文件夹一样打开数据库
 tooltip_settings_browse_databases = 双击 SQLite 数据库时显示其中的表，而不是用其他程序打开
+
+# Network group and location ordering
+network_group_move_up = 上移此分组
+network_group_move_down = 下移此分组
+network_location_move_up = 在此分组内上移
+network_location_move_down = 在此分组内下移

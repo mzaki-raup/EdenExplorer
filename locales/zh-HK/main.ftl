@@ -1270,3 +1270,9 @@ sqlite_next = 下一頁
 sqlite_read_only = 唯讀
 settings_browse_databases = 像資料夾一樣開啟資料庫
 tooltip_settings_browse_databases = 按兩下 SQLite 資料庫時顯示其中的資料表，而非以其他程式開啟
+
+# Network group and location ordering
+network_group_move_up = 上移此群組
+network_group_move_down = 下移此群組
+network_location_move_up = 在此群組內上移
+network_location_move_down = 在此群組內下移

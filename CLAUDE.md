@@ -2234,6 +2234,34 @@ PowerShell process) rather than the app's own code - if you're using the
   than markdown - a convention worth following rather than rediscovering.
   Caught by rendering the file and looking at it, not by reading it.
 
+- **A list that is drawn grouped but stored flat needs its "move up" to mean
+  "past the previous item of my own group", not "past my neighbour".** The
+  network locations live in one `Vec<RemoteConnection>` that the sidebar
+  filters per protocol, so an SFTP connection can sit next to an FTP one in
+  the list while appearing three rows apart on screen. Swapping with the
+  immediate neighbour would reorder the storage and change nothing visible -
+  the classic version of this bug, and the reason `move_connection` searches
+  for the nearest entry of the same `kind` in the chosen direction instead.
+  Worth checking for whenever reorder arrows are added to anything whose
+  display order is a *filtered view* of its storage order.
+- **Reorder arrows that act on a filtered view must write back into the
+  unfiltered one.** Settings > Network only draws a protocol group that has
+  locations in it, so the arrows move a group among the *shown* groups - but
+  the saved order contains every group, including empty ones. Moving the
+  shown list and then writing it back over only the shown positions keeps an
+  empty group where it was; naively saving the shown order would silently
+  drop every empty group to the end. Verified by moving Redis above S3 and
+  checking that the empty `ftps` group had not moved in `ui_prefs.json`.
+- **`MOUSEINPUT.mouseData` is an unsigned field carrying a signed value, so a
+  scroll-down delta has to be reinterpreted rather than cast.** Adding wheel
+  support to the ui-test harness, `[uint32](-960)` throws
+  "Value was either too large or too small for a UInt32" in PowerShell;
+  `[BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$delta), 0)` is the
+  conversion that actually means "the same bits". Wheel input is worth having
+  in that harness: scrolling a pane into view with a coordinate-guessed drag
+  is the single most frequently recorded way a session in this repo has
+  clicked something real by accident.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

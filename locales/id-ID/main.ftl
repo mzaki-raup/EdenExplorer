@@ -1269,3 +1269,9 @@ sqlite_next = Berikutnya
 sqlite_read_only = Hanya baca
 settings_browse_databases = Buka Basis Data Seperti Folder
 tooltip_settings_browse_databases = Klik ganda pada basis data SQLite akan menampilkan tabelnya, bukan membukanya di program lain
+
+# Network group and location ordering
+network_group_move_up = Pindahkan Grup Ini ke Atas
+network_group_move_down = Pindahkan Grup Ini ke Bawah
+network_location_move_up = Naikkan dalam Grup Ini
+network_location_move_down = Turunkan dalam Grup Ini

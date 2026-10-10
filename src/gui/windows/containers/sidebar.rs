@@ -125,6 +125,8 @@ pub struct SidebarPlaces<'a> {
     pub linux_expanded: Option<&'a mut bool>,
     pub connections: &'a [crate::core::remote::RemoteConnection],
     pub network_places: &'a [crate::core::ui_prefs::NetworkPlace],
+    /// Saved order of the Network section's groups, as ids.
+    pub group_order: &'a [String],
     /// Which network groups are expanded, keyed as in
     /// `UiPrefs::sidebar_network_groups`. Absent means expanded.
     pub network_groups: &'a mut std::collections::BTreeMap<String, bool>,
@@ -1147,10 +1149,17 @@ pub fn draw_sidebar(
                             }
                         }
 
-                        // One group per protocol, and only for protocols that
-                        // actually have a location saved - an empty group header
-                        // would be pure chrome.
-                        for kind in crate::core::remote::RemoteKind::ALL {
+                        // One group per protocol, in the order set in
+                        // Settings > Network, and only for protocols that
+                        // actually have a location saved - an empty group
+                        // header would be pure chrome.
+                        for group in crate::core::network_groups::ordered(places.group_order) {
+                            let crate::core::network_groups::NetworkGroup::Remote(kind) = group
+                            else {
+                                // Windows shares are drawn above, by the block
+                                // that also lists discovered computers.
+                                continue;
+                            };
                             if !connections.iter().any(|conn| conn.kind == kind) {
                                 continue;
                             }

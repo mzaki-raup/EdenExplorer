@@ -1270,3 +1270,9 @@ sqlite_next = 次へ
 sqlite_read_only = 読み取り専用
 settings_browse_databases = データベースをフォルダーのように開く
 tooltip_settings_browse_databases = SQLite データベースをダブルクリックすると、他のプログラムで開かずにテーブルを表示します
+
+# Network group and location ordering
+network_group_move_up = このグループを上へ移動
+network_group_move_down = このグループを下へ移動
+network_location_move_up = このグループ内で上へ移動
+network_location_move_down = このグループ内で下へ移動

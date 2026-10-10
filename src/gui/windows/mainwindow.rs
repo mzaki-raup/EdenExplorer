@@ -1054,6 +1054,7 @@ impl eframe::App for MainWindow {
                                                     linux_expanded: prefs.sidebar_linux.then_some(&mut prefs.sidebar_linux_expanded),
                                                     connections: &prefs.remote_connections,
                                                     network_places: &prefs.network_places,
+                                                    group_order: &prefs.network_group_order,
                                                     network_groups: &mut prefs.sidebar_network_groups,
                                                     current: &tree_current,
                                                 };

@@ -77,6 +77,11 @@ pub struct UiPrefs {
     pub git_status: bool,
     /// Also store tags with the files themselves (see `core::portable_tags`).
     pub portable_tags: bool,
+    /// The order the Network section's groups are drawn in, as ids (see
+    /// `core::network_groups`). Empty means the built-in order; an id
+    /// that is no longer a real group is ignored on load, and a group
+    /// this doesn't mention is appended rather than slotted in.
+    pub network_group_order: Vec<String>,
     /// Saved remote locations (SFTP, FTP, WebDAV, S3); secrets are in
     /// Windows Credential Manager.
     pub remote_connections: Vec<crate::core::remote::RemoteConnection>,
@@ -221,6 +226,7 @@ impl Default for UiPrefs {
             browse_databases: true,
             git_status: true,
             portable_tags: false,
+            network_group_order: Vec::new(),
             remote_connections: Vec::new(),
             network_places: Vec::new(),
             sidebar_cloud: true,

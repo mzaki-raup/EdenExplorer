@@ -264,6 +264,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Network discovery** | Automatically finds computers advertising shares via NetBIOS, mDNS and WS-Discovery |
 | **Remote protocols** | **SFTP**, **FTP**, **FTPS**, **WebDAV**, **S3**-compatible object storage and **Redis**, added from the sidebar or the Network settings page and browsed like ordinary folders |
 | **Credentials** | Passwords and keys go to Windows Credential Manager, never into a settings file |
+| **Your own order** | Settings > Network arranges both levels: move a whole protocol group (Windows shares, SFTP, FTP, FTPS, WebDAV, S3, Redis) up or down, and move individual locations within their group. The sidebar follows immediately, and a protocol added in a later release appears at the end rather than disturbing the arrangement you already have |
 | **SSH shell** | Tick *Open an SSH shell beside the files* on an SFTP location and the view splits in two: files on the left, a real shell on that server on the right, which follows you as you browse |
 
 ### Terminal and Developer Tools

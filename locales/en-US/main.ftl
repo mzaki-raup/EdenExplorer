@@ -1266,3 +1266,9 @@ sqlite_next = Next
 sqlite_read_only = Read-only
 settings_browse_databases = Open Databases Like Folders
 tooltip_settings_browse_databases = Double-clicking a SQLite database shows its tables instead of opening it in another program
+
+# Network group and location ordering
+network_group_move_up = Move This Group Up
+network_group_move_down = Move This Group Down
+network_location_move_up = Move Up In This Group
+network_location_move_down = Move Down In This Group

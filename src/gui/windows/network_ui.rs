@@ -15,6 +15,8 @@ use crate::core::utils::widgets::{eden_button, primary_dialog_button};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::enums::SettingsAction;
+use crate::core::network_groups::{self, NetworkGroup};
+use crate::core::remote::RemoteConnection;
 use crate::gui::windows::network_location::{LocationType, NetworkLocationForm, NetworkSelection};
 use crate::gui::windows::settings::{
     empty_state_hint, master_detail_column_size, no_selection_hint, setting_label,
@@ -235,65 +237,149 @@ fn draw_location_list(
         return None;
     }
 
-    if !places.is_empty() {
-        subsection_header(ui, palette, &i18n.tr("sidebar_network_group_windows"));
-        for (index, place) in places.iter().enumerate() {
-            let selected = settings.selected_network == Some(NetworkSelection::Share(index));
-            let mut remove = false;
-            let row = list_row(ui, palette, selected, |ui| {
-                row_contents(
-                    ui,
-                    palette,
-                    i18n,
-                    regular::SHARE_NETWORK,
-                    &place.name,
-                    &place.path.display().to_string(),
-                    &mut remove,
-                );
-            });
-            if remove {
-                action = Some(SettingsAction::RemoveNetworkPlace(index));
-                settings.selected_network = None;
-                settings.network_editor = None;
-            } else if row.clicked() {
-                reselect = Some(NetworkSelection::Share(index));
+    // Groups are drawn in the order the user put them in, and only when they
+    // hold something - an empty group header would be pure chrome.
+    let mut order = network_groups::ordered(&settings.current_settings.ui_prefs.network_group_order);
+    let shown: Vec<NetworkGroup> = order
+        .iter()
+        .copied()
+        .filter(|group| match group {
+            NetworkGroup::Windows => !places.is_empty(),
+            NetworkGroup::Remote(kind) => connections.iter().any(|conn| conn.kind == *kind),
+        })
+        .collect();
+
+    // What a move does - applied after the loop, so nothing is mutated while
+    // the list that produced it is still being drawn.
+    let mut move_group: Option<(NetworkGroup, bool)> = None;
+    let mut move_conn: Option<(u64, bool)> = None;
+    let mut move_share: Option<(usize, bool)> = None;
+
+    for (position, group) in shown.iter().copied().enumerate() {
+        let label = match group {
+            NetworkGroup::Windows => i18n.tr("sidebar_network_group_windows"),
+            NetworkGroup::Remote(kind) => kind.label().to_string(),
+        };
+        // Up/down against the *shown* groups rather than all of them, so the
+        // arrows never appear to do nothing by moving a group past one that
+        // has no locations in it and isn't drawn.
+        if let Some(up) = group_header(ui, palette, i18n, &label, position, shown.len()) {
+            move_group = Some((group, up));
+        }
+
+        match group {
+            NetworkGroup::Windows => {
+                let count = places.len();
+                for (index, place) in places.iter().enumerate() {
+                    let selected =
+                        settings.selected_network == Some(NetworkSelection::Share(index));
+                    let mut remove = false;
+                    let mut move_up: Option<bool> = None;
+                    let row = list_row(ui, palette, selected, |ui| {
+                        row_contents(
+                            ui,
+                            palette,
+                            i18n,
+                            regular::SHARE_NETWORK,
+                            &place.name,
+                            &place.path.display().to_string(),
+                            index,
+                            count,
+                            &mut remove,
+                            &mut move_up,
+                        );
+                    });
+                    if remove {
+                        action = Some(SettingsAction::RemoveNetworkPlace(index));
+                        settings.selected_network = None;
+                        settings.network_editor = None;
+                    } else if let Some(up) = move_up {
+                        move_share = Some((index, up));
+                    } else if row.clicked() {
+                        reselect = Some(NetworkSelection::Share(index));
+                    }
+                }
+            }
+            NetworkGroup::Remote(kind) => {
+                let in_group: Vec<&RemoteConnection> =
+                    connections.iter().filter(|conn| conn.kind == kind).collect();
+                let count = in_group.len();
+                for (index, conn) in in_group.into_iter().enumerate() {
+                    let selected =
+                        settings.selected_network == Some(NetworkSelection::Remote(conn.id));
+                    let mut remove = false;
+                    let mut move_up: Option<bool> = None;
+                    let detail = if kind == RemoteKind::S3 {
+                        conn.bucket.clone()
+                    } else {
+                        conn.host.clone()
+                    };
+                    let row = list_row(ui, palette, selected, |ui| {
+                        row_contents(
+                            ui,
+                            palette,
+                            i18n,
+                            crate::gui::windows::containers::sidebar::remote_glyph(kind),
+                            &conn.display_name(),
+                            &detail,
+                            index,
+                            count,
+                            &mut remove,
+                            &mut move_up,
+                        );
+                    });
+                    if remove {
+                        action = Some(SettingsAction::RemoveRemoteConnection(conn.id));
+                        settings.selected_network = None;
+                        settings.network_editor = None;
+                    } else if let Some(up) = move_up {
+                        move_conn = Some((conn.id, up));
+                    } else if row.clicked() {
+                        reselect = Some(NetworkSelection::Remote(conn.id));
+                    }
+                }
             }
         }
     }
 
-    // One group per protocol, and only for protocols that actually have a
-    // location saved - an empty group header would be pure chrome.
-    for kind in RemoteKind::ALL {
-        if !connections.iter().any(|conn| conn.kind == kind) {
-            continue;
-        }
-        subsection_header(ui, palette, kind.label());
-        for conn in connections.iter().filter(|conn| conn.kind == kind) {
-            let selected = settings.selected_network == Some(NetworkSelection::Remote(conn.id));
-            let mut remove = false;
-            let detail = if kind == RemoteKind::S3 {
-                conn.bucket.clone()
-            } else {
-                conn.host.clone()
-            };
-            let row = list_row(ui, palette, selected, |ui| {
-                row_contents(
-                    ui,
-                    palette,
-                    i18n,
-                    crate::gui::windows::containers::sidebar::remote_glyph(kind),
-                    &conn.display_name(),
-                    &detail,
-                    &mut remove,
-                );
-            });
-            if remove {
-                action = Some(SettingsAction::RemoveRemoteConnection(conn.id));
-                settings.selected_network = None;
-                settings.network_editor = None;
-            } else if row.clicked() {
-                reselect = Some(NetworkSelection::Remote(conn.id));
+    if let Some((group, up)) = move_group {
+        // Moved within the shown groups, then written back into the full
+        // order: swapping two entries of `shown` means swapping the same two
+        // groups wherever they sit among the hidden ones.
+        let mut visible = shown.clone();
+        if network_groups::move_group(&mut visible, group, up) {
+            let moved: Vec<NetworkGroup> = visible;
+            let mut next = Vec::with_capacity(order.len());
+            let mut taken = moved.iter();
+            for existing in order.drain(..) {
+                if shown.contains(&existing) {
+                    next.push(*taken.next().unwrap_or(&existing));
+                } else {
+                    next.push(existing);
+                }
             }
+            settings.current_settings.ui_prefs.network_group_order = network_groups::ids(&next);
+            action = Some(SettingsAction::ApplySettings);
+        }
+    } else if let Some((id, up)) = move_conn {
+        if network_groups::move_connection(
+            &mut settings.current_settings.ui_prefs.remote_connections,
+            id,
+            up,
+        ) {
+            action = Some(SettingsAction::ApplySettings);
+        }
+    } else if let Some((index, up)) = move_share {
+        if let Some(moved) = network_groups::move_place(
+            &mut settings.current_settings.ui_prefs.network_places,
+            index,
+            up,
+        ) {
+            // The selection tracks a share by index, so it has to follow.
+            if settings.selected_network == Some(NetworkSelection::Share(index)) {
+                settings.selected_network = Some(NetworkSelection::Share(moved));
+            }
+            action = Some(SettingsAction::ApplySettings);
         }
     }
 
@@ -304,8 +390,53 @@ fn draw_location_list(
     action
 }
 
+/// A group heading with its own up/down arrows. Returns `Some(up)` when one
+/// was clicked.
+fn group_header(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    i18n: &I18n,
+    label: &str,
+    position: usize,
+    total: usize,
+) -> Option<bool> {
+    let mut moved = None;
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(label)
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_header_section.gamma_multiply(0.7)),
+            )
+            .selectable(false),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_enabled_ui(position + 1 < total, |ui| {
+                if eden_button(ui, palette, regular::CARET_DOWN)
+                    .on_hover_text(i18n.tr("network_group_move_down"))
+                    .clicked()
+                {
+                    moved = Some(false);
+                }
+            });
+            ui.add_enabled_ui(position > 0, |ui| {
+                if eden_button(ui, palette, regular::CARET_UP)
+                    .on_hover_text(i18n.tr("network_group_move_up"))
+                    .clicked()
+                {
+                    moved = Some(true);
+                }
+            });
+        });
+    });
+    ui.add_space(4.0);
+    moved
+}
+
 /// Icon, name, where it points, and a remove button. A plain `ui.label` here
 /// would be selectable text and would steal the row's own clicks.
+#[allow(clippy::too_many_arguments)]
 fn row_contents(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
@@ -313,7 +444,10 @@ fn row_contents(
     glyph: &str,
     name: &str,
     detail: &str,
+    index: usize,
+    total: usize,
     remove: &mut bool,
+    move_up: &mut Option<bool>,
 ) {
     ui.add(egui::Label::new(glyph).selectable(false));
     ui.add(egui::Label::new(egui::RichText::new(name).strong()).selectable(false));
@@ -324,6 +458,24 @@ fn row_contents(
         {
             *remove = true;
         }
+        // Within this group only - `index`/`total` count the group's own
+        // locations, not the whole list.
+        ui.add_enabled_ui(index + 1 < total, |ui| {
+            if eden_button(ui, palette, regular::CARET_DOWN)
+                .on_hover_text(i18n.tr("network_location_move_down"))
+                .clicked()
+            {
+                *move_up = Some(false);
+            }
+        });
+        ui.add_enabled_ui(index > 0, |ui| {
+            if eden_button(ui, palette, regular::CARET_UP)
+                .on_hover_text(i18n.tr("network_location_move_up"))
+                .clicked()
+            {
+                *move_up = Some(true);
+            }
+        });
         if !detail.is_empty() {
             ui.add(
                 egui::Label::new(
@@ -334,20 +486,6 @@ fn row_contents(
             );
         }
     });
-}
-
-/// A muted group heading, matching the sidebar's own network subsections.
-fn subsection_header(ui: &mut egui::Ui, palette: &ThemePalette, label: &str) {
-    ui.add_space(6.0);
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(label)
-                .size(palette.text_size - 1.0)
-                .color(palette.text_header_section.gamma_multiply(0.7)),
-        )
-        .selectable(false),
-    );
-    ui.add_space(4.0);
 }
 
 /// The add/edit form, moved here verbatim from the dialog this page replaced.

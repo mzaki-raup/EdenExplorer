@@ -34,6 +34,7 @@ pub mod terminal_shells;
 pub mod mft_helper;
 pub mod mermaid;
 pub mod network;
+pub mod network_groups;
 pub mod network_mdns;
 pub mod network_wsd;
 pub mod ntfs_mft;
