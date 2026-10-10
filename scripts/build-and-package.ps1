@@ -49,10 +49,21 @@ Remove-Item $staging -Recurse -Force
 
 # `sha256sum` layout - two spaces between hash and name - so the file is both
 # machine-readable by the app and usable with `sha256sum -c`.
-Get-ChildItem $dist -File | ForEach-Object {
+#
+# Written with **LF**, deliberately not via Set-Content: that writes CRLF on
+# Windows, and GNU `sha256sum -c` then treats the trailing carriage return as
+# part of the file name and reports "No such file or directory" for every
+# line - so the file verifies nothing at all, which is the opposite of what
+# it is for. The app's own reader (`core::release::sha256_of`) is agnostic,
+# so releases published before this carry CRLF and still check out.
+$sumLines = Get-ChildItem $dist -File | ForEach-Object {
   $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
   "$hash  $($_.Name)"
-} | Set-Content "$dist/SHA256SUMS.txt" -Encoding ascii
+}
+[System.IO.File]::WriteAllText(
+  (Join-Path (Resolve-Path $dist).Path "SHA256SUMS.txt"),
+  (($sumLines -join "`n") + "`n"),
+  [System.Text.ASCIIEncoding]::new())
 
 Write-Host "Packaged release $Version"
 Get-ChildItem $dist -File | ForEach-Object { Write-Host ("  {0,-46} {1,12:N0} bytes" -f $_.Name, $_.Length) }

@@ -1618,6 +1618,26 @@ PowerShell process) rather than the app's own code - if you're using the
   524 means the upload was slow rather than rejected and asking again
   immediately just races the same request. v1.12.0's own zip has to be
   attached by hand - a published tag is never revisited.
+- **`Set-Content` writes CRLF on Windows, and that silently made every
+  published `SHA256SUMS.txt` useless to the tool it exists for.** GNU
+  `sha256sum -c` reads the trailing carriage return as part of the file name,
+  so it reports `'EdenExplorer.exe'$'\r': No such file or directory` for every
+  line and verifies **nothing** - while still exiting 0, which is how this
+  went unnoticed across a dozen releases. The script's own docstring promised
+  the file was "usable with `sha256sum -c`", so this was a real defect rather
+  than a cosmetic one; it only surfaced because the file was actually run
+  through `sha256sum -c` for the first time while repairing v1.12.0's assets
+  by hand. Fixed by writing the file with `[System.IO.File]::WriteAllText`
+  and an explicit `` `n `` join instead of `Set-Content` - **there is no
+  line-ending switch on `Set-Content`**, so a pipeline into it always gets the
+  platform's own terminator. **The thing worth generalising: a format whose
+  only consumer is an external tool has to be fed to that tool at least once,
+  because nothing else can tell you it is wrong** - the app's own reader was
+  perfectly happy (`str::lines()` strips `\r` and the name is trimmed), which
+  is exactly why the defect survived. That tolerance is now a pinned
+  requirement rather than an accident
+  (`both_lf_and_crlf_checksum_files_are_read`), because every release
+  published before this still carries CRLF and must keep verifying for ever.
 - **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
   out most of what a "standard" GitHub Actions pipeline would reach for.** A
   release pipeline was designed around `semantic-release` + `actions/checkout` +

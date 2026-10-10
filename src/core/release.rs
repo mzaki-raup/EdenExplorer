@@ -336,6 +336,18 @@ mod tests {
         assert_eq!(sha256_of(sums, "nothing.exe"), None);
     }
 
+    /// Every release published before the packaging script switched to LF
+    /// carries CRLF, and the updater has to keep verifying those for ever -
+    /// so this tolerance is a compatibility requirement, not an accident.
+    #[test]
+    fn both_lf_and_crlf_checksum_files_are_read() {
+        let hash = "565ae7e15a7fc7a0c3e713a7c39493e37224e5fc727b5fe02f21700708f3bee9";
+        let lf = format!("{hash}  EdenExplorer.exe\n");
+        let crlf = format!("{hash}  EdenExplorer.exe\r\n");
+        assert_eq!(sha256_of(&lf, "EdenExplorer.exe").as_deref(), Some(hash));
+        assert_eq!(sha256_of(&crlf, "EdenExplorer.exe").as_deref(), Some(hash));
+    }
+
     #[test]
     fn a_binary_mode_marker_and_upper_case_hash_still_read() {
         let sums = "565AE7E15A7FC7A0C3E713A7C39493E37224E5FC727B5FE02F21700708F3BEE9 *EdenExplorer.exe";
