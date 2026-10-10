@@ -148,18 +148,18 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 
 | Core | Content | System |
 |---|---|---|
-| [Browsing & Navigation](#browsing--navigation) | [Preview & Quick Look](#preview--quick-look) | [Network & Remote](#network--remote-locations) |
-| [Views & Layout](#views--layout) | [Archives](#archives) | [Terminal & Developer](#terminal--developer-tools) |
-| [File Operations](#file-operations) | [Databases](#databases) | [Disk Usage & Cleanup](#disk-usage--cleanup) |
-| [Search & Filtering](#search--filtering) | [Organization](#organization) | [Appearance & Theming](#appearance--theming) |
+| [Browsing & Navigation](#browsing-and-navigation) | [Preview & Quick Look](#preview-and-quick-look) | [Network & Remote](#network-and-remote-locations) |
+| [Views & Layout](#views-and-layout) | [Archives](#archives) | [Terminal & Developer](#terminal-and-developer-tools) |
+| [File Operations](#file-operations) | [Databases](#databases) | [Disk Usage & Cleanup](#disk-usage-and-cleanup) |
+| [Search & Filtering](#search-and-filtering) | [Organization](#organization) | [Appearance & Theming](#appearance-and-theming) |
 | | | [Customization](#customization) |
 | | | [Platform Integration](#windows-platform-integration) |
 | | | [Performance](#performance) |
-| | | [Data, Privacy & Updates](#data-privacy--updates) |
+| | | [Data, Privacy & Updates](#data-privacy-and-updates) |
 
 ---
 
-### Browsing & Navigation
+### Browsing and Navigation
 
 | Feature | Description |
 |---|---|
@@ -174,7 +174,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Command palette** | `Ctrl+Shift+P` — every command with its icon and current shortcut, plus Settings pages, favorites and recent folders |
 | **Single-instance CLI** | `EdenExplorer.exe <folder>` opens a tab in the running window instead of a second one; accepts `::MY_PC::`, `::RECYCLE_BIN::` and `shell:` monikers |
 
-### Views & Layout
+### Views and Layout
 
 | Feature | Description |
 |---|---|
@@ -204,7 +204,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Checksums** | CRC32, MD5, SHA-1 and SHA-256 in one background pass, with per-hash copy and a Compare field that tells you which algorithm a pasted checksum matched |
 | **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove |
 
-### Search & Filtering
+### Search and Filtering
 
 | Feature | Description |
 |---|---|
@@ -214,7 +214,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Type-to-filter** | Start typing in any folder to filter it; `Ctrl+Shift+F` opens the bar empty |
 | **Filter bar options** | Plain text, wildcards (`*.jpg; *.png`) or a regular expression, Hide Matches to invert, and kind chips for Folders, Images, Documents, Video, Audio, Archives and Code |
 
-### Preview & Quick Look
+### Preview and Quick Look
 
 | Feature | Description |
 |---|---|
@@ -256,7 +256,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Sidebar** | Ten sections — Places, Storage, Cloud, Linux, Folders, Favorites, Tags, Saved Searches, Recent and Network — each of which can be hidden or rearranged |
 | **Cloud & Linux** | Automatic entries for OneDrive (personal and work), Dropbox, Google Drive, iCloud Drive and Box, plus every installed WSL distribution |
 
-### Network & Remote Locations
+### Network and Remote Locations
 
 | Feature | Description |
 |---|---|
@@ -266,7 +266,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Credentials** | Passwords and keys go to Windows Credential Manager, never into a settings file |
 | **SSH shell** | Tick *Open an SSH shell beside the files* on an SFTP location and the view splits in two: files on the left, a real shell on that server on the right, which follows you as you browse |
 
-### Terminal & Developer Tools
+### Terminal and Developer Tools
 
 | Feature | Description |
 |---|---|
@@ -274,7 +274,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **WSL layout** | Inside a WSL distribution the files and that distribution's shell sit side by side automatically |
 | **Git status** | The branch (or commit, when detached) and change count in the status bar, plus per-file status badges in the list |
 
-### Disk Usage & Cleanup
+### Disk Usage and Cleanup
 
 | Feature | Description |
 |---|---|
@@ -287,7 +287,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Clean up** | Storage Sense-style measuring and clearing of temporary files, the Windows Update cache, thumbnails, Recycle Bin and more, with right-click cleanup actions in every view |
 | **Snapshots & export** | Save a scan and compare it against a later one; export as CSV, JSON or a self-contained HTML report |
 
-### Appearance & Theming
+### Appearance and Theming
 
 | Feature | Description |
 |---|---|
@@ -331,7 +331,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Performance panel** | `Ctrl+K` shows live folder-load time and items/sec, folder-size scan time, frame time, FPS and memory use |
 | **Benchmarks** | **Benchmark This Folder** compares the app's own enumeration against `std::fs::read_dir` with and without `metadata()`, over 3/5/10 runs with min/avg/max; **Benchmark This Drive** measures sequential and random throughput |
 
-### Data, Privacy & Updates
+### Data, Privacy and Updates
 
 | Feature | Description |
 |---|---|
