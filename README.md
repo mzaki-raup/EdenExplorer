@@ -139,43 +139,215 @@ See the [Screenshots folder](Screenshots/README.md) for all 103 feature screensh
  </picture>
 </a>
 
-## Keyboard Shortcuts
-The full list, including mouse shortcuts, is also available in the app under **Settings > Shortcuts**, where most of them can be changed (add, remove, or reset key combinations). The defaults are:
+## Features
 
-- F1 - Toggle fullscreen
-- Ctrl+Shift+C - Copy selected path
-- Ctrl+W - Close current Tab
-- Ctrl+T - New Tab
-- Ctrl+Tab - Next Tab
-- Ctrl+Shift+Tab - Previous Tab
-- Ctrl+Shift+N - Create new folder in current directory
-- Ctrl+R (F5) - Refresh current directory
-- Alt+D - Select the address bar / current directory path
-- F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
-- Del - Delete the selected items (to the Recycle Bin)
-- Shift+Del - Permanently delete the selected items (skips the Recycle Bin, with a confirmation)
-- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
-- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
-- Alt + Left Arrow (Backspace, Mouse Button 4) - Navigate backwards
-- Alt + Right Arrow (Mouse Button 5) - Navigate forwards
-- Alt + Up Arrow - Navigate upwards
-- Enter - If a file is selected, runs the default program
-- Ctrl+F - Open the search box in the current pane
-- Ctrl+Z - Undo the last rename/move/copy
-- Ctrl+Y (Ctrl+Shift+Z) - Redo
-- Ctrl+K - Show/hide the Performance panel
-- Ctrl+I - Invert selection
-- Ctrl+Shift+S - Select by pattern (wildcards such as `*.jpg; *.png`)
-- Ctrl+Shift+F - Filter bar: type to filter (text, wildcards, or regex), hide matches, or show only one kind of item
-- Ctrl+Shift+L - Flat view: every file in all subfolders of the current folder as one list (press again to go back)
-- Ctrl+Shift+P - Command palette: run any command, open a Settings page, or jump to a favorite or recent folder
-- Ctrl+` - Show/hide the terminal pane (while it has focus, every other key goes to the shell)
-- Space - Quick Look: a large preview of the selected item (Space or Esc closes it)
+EdenExplorer aims to be a complete replacement for Windows File Explorer rather
+than a lightweight viewer. Everything below is implemented and shipping; the
+full development history is in the collapsed changelog further down, and
+anything still planned is in [ROADMAP.md](ROADMAP.md).
+
+| Core | Content | System |
+|---|---|---|
+| [Browsing & Navigation](#browsing--navigation) | [Preview & Quick Look](#preview--quick-look) | [Network & Remote](#network--remote-locations) |
+| [Views & Layout](#views--layout) | [Archives](#archives) | [Terminal & Developer](#terminal--developer-tools) |
+| [File Operations](#file-operations) | [Databases](#databases) | [Disk Usage & Cleanup](#disk-usage--cleanup) |
+| [Search & Filtering](#search--filtering) | [Organization](#organization) | [Appearance & Theming](#appearance--theming) |
+| | | [Customization](#customization) |
+| | | [Platform Integration](#windows-platform-integration) |
+| | | [Performance](#performance) |
+| | | [Data, Privacy & Updates](#data-privacy--updates) |
+
+---
+
+### Browsing & Navigation
+
+| Feature | Description |
+|---|---|
+| **Tabs** | Open, close, reorder and pin tabs; pinned tabs restore on startup. A multi-row tab strip wraps when there are too many to fit comfortably. Right-click a tab for Close Others / To The Left / To The Right, Pin, Add To Favorites, Save As Tab Group, and Duplicate |
+| **Split panes** | Split any tab into two independent panes, each with its own folder, view mode, sort and history |
+| **Address bar** | Breadcrumb navigation with inline editing, `>` dropdown menus listing each segment's subfolders, Windows environment-variable expansion (`%APPDATA%`), and `shell:` URI / `::{GUID}` resolution — filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers) open natively |
+| **History** | Back / Forward / Up with full history saved and restored across sessions, including per-folder selection memory |
+| **Folders tree** | An expandable drive-and-folder tree in the sidebar, like Explorer's, with lazy loading |
+| **Recent locations** | The 20 most recently visited real folders, skipping anything already in Favorites |
+| **Flat view** | `Ctrl+Shift+L` — every file in every subfolder as one list, with a Folder column |
+| **Spring-loaded folders** | Rest on a folder mid-drag and it opens, so a single drag can descend several levels; a progress bar fills while you wait |
+| **Command palette** | `Ctrl+Shift+P` — every command with its icon and current shortcut, plus Settings pages, favorites and recent folders |
+| **Single-instance CLI** | `EdenExplorer.exe <folder>` opens a tab in the running window instead of a second one; accepts `::MY_PC::`, `::RECYCLE_BIN::` and `shell:` monikers |
+
+### Views & Layout
+
+| Feature | Description |
+|---|---|
+| **Six view layouts** | **Details** (table), **Gallery** (thumbnail grid, four sizes), **Columns** (macOS Finder-style browser), **Column + Preview**, **Preview** (list beside content), and **Details + Preview** |
+| **Columns** | Sort, resize, reorder, show/hide, size-to-fit (one or all); multi-column sorting with `Shift+Click` to add and `Ctrl+Click` to remove; layout persists per folder and across sessions |
+| **Per-folder memory** | Each folder remembers its own view mode, sort and columns, compared against *your* defaults rather than the built-in ones |
+| **Status bar** | File, folder and total item counts, total size (including scanned subfolders), free space on the drive, the active filter with its match count, and Git branch and change count inside a repository |
+| **Row density** | Compact / Comfortable / Spacious presets, plus configurable sidebar width, tab gap, tab corner radius and minimum tab width |
+| **Hover previews** | Hovering an image or video in Details shows a thumbnail tooltip |
+| **Checkbox selection** | An optional selection-checkbox column for multi-select without holding a modifier |
+
+### File Operations
+
+| Feature | Description |
+|---|---|
+| **Copy / move engine** | Pasting runs through Windows' own `robocopy` with multiple threads, live progress, pause/resume and cancel |
+| **Queued transfers** | Copies and moves sharing a disk run one after another instead of fighting over it; waiting ones show "Queued" |
+| **Conflict resolution** | A themed Replace / Skip / Rename dialog, with **Replace Only If Newer / Larger** for batches. Rename stages the copy in a fresh folder so the original is never opened for writing |
+| **Verify after copy** | Optionally compares every finished copy with its source — size first, then SHA-256 of both |
+| **Undo / redo** | `Ctrl+Z` / `Ctrl+Y` across rename, bulk rename, move and copy, including cut-paste, drag-and-drop and conflict-resolved operations. Replace is non-destructive: the existing item is recycled first, so undo always restores it |
+| **Delete** | Recycle Bin by default, `Shift+Del` for permanent with the native confirmation, plus full Recycle Bin browsing and restore |
+| **Rename** | Click-pause-click in place (base name preselected), `F2`, or **Bulk Rename** for a multi-selection: find/replace, regex with capture groups, case conversion, numbering, prefix/suffix, and a live preview |
+| **Drag & drop** | Within a pane, between panes, onto breadcrumbs, tabs and sidebar folders, and out to Explorer, the Desktop or any other app |
+| **Create** | New Folder, and New File from templates — Text, Markdown, Word and Excel files that are valid and ready to open — plus anything you drop in the templates folder |
+| **Create Shortcut** | Real `.lnk` shortcuts, next to the item or in the current folder |
+| **Send To** | Named groups of destination folders, each with its own icon and a Copy-or-Move setting, surfaced in the right-click menu |
+| **Checksums** | CRC32, MD5, SHA-1 and SHA-256 in one background pass, with per-hash copy and a Compare field that tells you which algorithm a pasted checksum matched |
+| **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove |
+
+### Search & Filtering
+
+| Feature | Description |
+|---|---|
+| **Global search** | `Ctrl+F` opens an inline query box with **This Folder** (recursive) or **Everywhere** scope. Powered by [Everything](https://www.voidtools.com/) when it's installed, with a built-in filesystem walk as a transparent fallback — both accept the same wildcard syntax |
+| **Search filters** | `ext:`, `size:`, `modified:` and `content:<word>` (folder-scoped, so it stays fast) |
+| **Saved searches** | Save a query and its scope, then reopen it from the sidebar |
+| **Type-to-filter** | Start typing in any folder to filter it; `Ctrl+Shift+F` opens the bar empty |
+| **Filter bar options** | Plain text, wildcards (`*.jpg; *.png`) or a regular expression, Hide Matches to invert, and kind chips for Folders, Images, Documents, Video, Audio, Archives and Code |
+
+### Preview & Quick Look
+
+| Feature | Description |
+|---|---|
+| **Preview pane** | A **Preview** tab and a **Details** tab (size, dimensions, dates) beside the file list |
+| **Quick Look** | `Space` for a large preview over the window, with the name, size, date and position in the folder ("3 / 42"), previous/next, and arrow keys to walk the list with the preview following |
+| **Images** | PNG, JPEG, BMP, WebP, TIFF, ICO, AVIF, and **SVG** (including gzip-compressed `.svgz`), rasterized rather than shown as an icon |
+| **Animated GIFs** | Full playback with a seek bar, Play/Pause, Stop and frame stepping |
+| **Video** | Plays in the pane through Windows Media Foundation — the same decoders Windows Media Player uses |
+| **Audio** | MP3, WAV, FLAC, AAC, M4A, WMA, OGG, OPUS, AIFF and ALAC with a decoded waveform and transport controls |
+| **Markdown** | Rendered headings, emphasis, lists, code blocks, quotes, rules, task lists and tables — plus **Mermaid** flowcharts and sequence diagrams drawn natively |
+| **Code** | Syntax highlighting for keywords, strings, numbers and comments via `syntect`, in files and in fenced Markdown blocks |
+| **Documents** | PDF (first page rendered, with a text fallback), Word/Excel/PowerPoint including legacy formats, and **EPUB** chapters in reading order |
+| **Fonts** | `.ttf`/`.otf`/`.ttc`/`.otc` show the family name and sample text at several sizes |
+| **Text** | Any plain-text file, detected by extension or by sniffing the content, with **Find in preview** and select-then-right-click to copy |
+
+### Archives
+
+| Feature | Description |
+|---|---|
+| **Browse like folders** | Double-click a zip, 7z or tar to open it read-only: breadcrumbs, every view mode, thumbnails, previews and Quick Look all work inside |
+| **Extract** | zip, 7z, tar, tar.gz/.tgz, tar.bz2, tar.xz, gz, bz2 and xz natively; rar, ISO and CAB through 7-Zip when installed. Extract Here, Extract To "name\", Extract Each To Its Own Folder, or Extract To… — in the background, with progress and cancel, never overwriting, and refusing entries that would escape the target |
+| **Compress** | Compress to zip next to the selection, named after the item or its shared parent, never overwriting |
+| **Archive previews** | The preview pane shows an archive's contents as a collapsible tree with VS Code's Material Icon Theme icons |
+
+### Databases
+
+| Feature | Description |
+|---|---|
+| **SQLite** | Double-click a `.db`/`.sqlite`/`.sqlite3` to list its tables and views with row counts, and open one to page through its rows in a fitted grid. Blobs show their size, `NULL` is distinct from an empty string, long values truncate with the full text on hover. **Strictly read-only** — and reading a database leaves its folder byte-identical, including WAL-mode databases that a plain read-only open would add `-shm`/`-wal` files to |
+| **Redis** | Add a Redis location and its keyspace appears as a folder tree, split on `:` the way Redis keys are conventionally named. Read-only, paged with `SCAN` rather than blocking the server with `KEYS` |
+
+### Organization
+
+| Feature | Description |
+|---|---|
+| **Favorites** | Pin folders to the sidebar, reorder by drag, and manage them on their own Settings page — rename, retarget, change icon, delete |
+| **Tags** | Colored tags with multi-tagging (an item can belong to several groups), a dedicated tab per tag listing every member, colored row tints in the file list, Filled or Outline icon styles, and optional **portable tags** stored with the file itself so they travel with it |
+| **Tab groups** | Save the open tabs (or hand-pick folders) as a named group and reopen the set at once; supports dual-pane entries and per-group icons |
+| **Sidebar** | Ten sections — Places, Storage, Cloud, Linux, Folders, Favorites, Tags, Saved Searches, Recent and Network — each of which can be hidden or rearranged |
+| **Cloud & Linux** | Automatic entries for OneDrive (personal and work), Dropbox, Google Drive, iCloud Drive and Box, plus every installed WSL distribution |
+
+### Network & Remote Locations
+
+| Feature | Description |
+|---|---|
+| **SMB shares** | Type `\\SERVER` or `\\SERVER\Share` in the address bar, or browse from the sidebar; unlistable servers say *why* rather than appearing empty |
+| **Network discovery** | Automatically finds computers advertising shares via NetBIOS, mDNS and WS-Discovery |
+| **Remote protocols** | **SFTP**, **FTP**, **FTPS**, **WebDAV**, **S3**-compatible object storage and **Redis**, added from the sidebar or the Network settings page and browsed like ordinary folders |
+| **Credentials** | Passwords and keys go to Windows Credential Manager, never into a settings file |
+| **SSH shell** | Tick *Open an SSH shell beside the files* on an SFTP location and the view splits in two: files on the left, a real shell on that server on the right, which follows you as you browse |
+
+### Terminal & Developer Tools
+
+| Feature | Description |
+|---|---|
+| **Terminal pane** | `` Ctrl+` `` docks a real terminal under (or beside) the file list — PowerShell 7, Windows PowerShell, Command Prompt, Git Bash or any WSL distribution — starting in the current folder and following it as you navigate |
+| **WSL layout** | Inside a WSL distribution the files and that distribution's shell sit side by side automatically |
+| **Git status** | The branch (or commit, when detached) and change count in the status bar, plus per-file status badges in the list |
+
+### Disk Usage & Cleanup
+
+| Feature | Description |
+|---|---|
+| **Analyze Disk Usage** | Right-click any folder, drive or favorite to open a full dashboard of what is using the space |
+| **Fast MFT scan** | Analyzing a whole NTFS drive reads the Master File Table directly, like WizTree — and falls back to an ordinary scan, without prompting, when not running elevated |
+| **Visualizations** | A WinDirStat-style cushion-shaded **treemap** and a DaisyDisk-style **sunburst** ring chart |
+| **Breakdowns** | Overview (used/free, file system, cluster size, slack), File Types by extension and category, Largest Files, Largest Folders, and a folder tree |
+| **Filters** | Limit every view to files over a size, of a type, or changed within a period |
+| **Duplicate finder** | Identical files found in three passes — same size, then matching first and last 64 KB, then a full hash |
+| **Clean up** | Storage Sense-style measuring and clearing of temporary files, the Windows Update cache, thumbnails, Recycle Bin and more, with right-click cleanup actions in every view |
+| **Snapshots & export** | Save a scan and compare it against a later one; export as CSV, JSON or a self-contained HTML report |
+
+### Appearance & Theming
+
+| Feature | Description |
+|---|---|
+| **Dark & light** | A full palette for each, switchable from the title bar |
+| **Accent-driven** | Pick a primary and secondary color and the whole UI retints coherently — sidebar, lists, tabs, buttons, badges, toolbar icons |
+| **Granular control** | Every themeable color is individually editable, grouped by surface, with hex, RGB and HSL input |
+| **Prebuilt themes** | Twelve named presets and 19 accent swatches to start from |
+| **Custom themes** | Save your entire palette as a named theme, update it in place, swap its colors, and have your last choice restored on restart |
+| **Live preview** | A mockup of every themed surface updates as you edit |
+| **Fonts** | Use any system-installed font, with adjustable text size |
+| **Import / export** | Themes travel as JSON, bundling your custom themes; importing merges by name |
+
+### Customization
+
+| Feature | Description |
+|---|---|
+| **Keyboard shortcuts** | Every shortcut is listed in Settings and most can be rebound — add a combination by pressing it, remove one, or reset a row |
+| **Custom context menu** | Add your own commands and submenus: pick a program and arguments (`%1`/`%V` quoted, `%L` raw), choose an icon, and have the view refresh automatically when the command finishes |
+| **Context menu order** | Rearrange the sections of the right-click menu |
+| **Toolbar** | Reorder, remove and add toolbar buttons and separators, with a live preview |
+| **Windows shell menu** | Optionally fold the real Windows context menu into the app's own |
+| **Settings** | Fifteen categories — General, Behavior, Startup & Window, Appearance, Sidebar, Toolbar, Favorites, Context Menu, Context Menu Order, Send To, Tab Groups, Tags, Network, Shortcuts and Advanced |
+
+### Windows Platform Integration
+
+| Feature | Description |
+|---|---|
+| **Native file operations** | Copy, move, delete, rename and Properties go through `IFileOperation`, so you get real Explorer progress and confirmations |
+| **Recycle Bin** | Browse it, restore items to their original location, and delete permanently |
+| **Drives** | Capacity and usage per drive, portable devices (iPhone, Android, cameras), and raw or unmounted disks — ISO sticks, Linux partitions — detected and labeled rather than hidden |
+| **Icons** | Real per-file shell icons, including distinct icons for individual `.exe`/`.dll`/`.ico`/`.lnk` files, and the genuine "This PC" shell icon |
+| **Window** | Hand-painted chrome with themed borders, position and size restored across sessions and across multiple monitors, DPI-aware resize borders, and fullscreen/half-screen/custom modes |
+
+### Performance
+
+| Feature | Description |
+|---|---|
+| **NT-level enumeration** | Directories are listed through `NtQueryDirectoryFile` rather than higher-level shell APIs |
+| **Asynchronous everything** | Listing, folder sizes, thumbnails, previews, search, remote transfers and archive extraction all stream in the background — the UI never blocks on I/O |
+| **Caching** | Drive info (30s), icons, desktop.ini lookups, formatted sizes and dates, and folder sizes persisted across sessions |
+| **Performance panel** | `Ctrl+K` shows live folder-load time and items/sec, folder-size scan time, frame time, FPS and memory use |
+| **Benchmarks** | **Benchmark This Folder** compares the app's own enumeration against `std::fs::read_dir` with and without `metadata()`, over 3/5/10 runs with min/avg/max; **Benchmark This Drive** measures sequential and random throughput |
+
+### Data, Privacy & Updates
+
+| Feature | Description |
+|---|---|
+| **No telemetry** | Nothing is collected and nothing is sent anywhere. The only network traffic is what you ask for — remote locations, network browsing, and the update check |
+| **Portable mode** | Keep all settings and data in an `EdenExplorerData` folder next to the executable, for a USB stick or a synced folder |
+| **Import / export** | Back up settings, favorites, tags and themes as one JSON file, or export just your custom commands, Tab Groups or Send To destinations |
+| **Reset data** | Clear Favorites, Custom Context Menu, Custom Themes, Send To, Tab Groups or Tags individually |
+| **Verified updates** | The update check downloads over HTTPS and refuses to install anything it cannot verify against the release's published SHA-256 |
+| **Languages** | English, Indonesian, Japanese, and Simplified, Hong Kong and Traditional Chinese |
 
 
-See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
+---
 
-### ✅ Implemented Features Changelog
+<details>
+<summary><h3>📜 Full development changelog (every feature and fix, in the order it shipped)</h3></summary>
+
 - [x] **Tabbed interface** with tab management, tab pinning (automatic restore on startup), and navigation
 - [x] **Search and filter engine** with real-time file indexing
 - [x] **Dark/Light theme switching** with toggle controls
@@ -391,6 +563,41 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Faster big folders, flat view, and search** - dates are now formatted with the local time zone looked up once per hour of timestamps instead of once per date (Windows was asked twice per file), so a flat view of 30,150 files loads in 0.25 s instead of 19.8 s, and big folders and search results list much faster too. Flat view and search no longer measure every row's text on every frame to size their columns (86 ms → 9 ms per frame with 30,000 files): only each column's longest texts are measured, and only when the list changes. Items arriving in a big listing are merged into the sorted list instead of re-sorting it all for every batch of 128, and sorting no longer makes lowercase copies of names; folder sizes only re-sort the list when it's sorted by size. Git status and portable tags also skip mapped network drives (not just `\\server` paths), the terminal pane checks its folder once instead of every frame (a network round trip on WSL and network folders), and the mounted-image check reads its cached list in place
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
+
+</details>
+
+## Keyboard Shortcuts
+The full list, including mouse shortcuts, is also available in the app under **Settings > Shortcuts**, where most of them can be changed (add, remove, or reset key combinations). The defaults are:
+
+- F1 - Toggle fullscreen
+- Ctrl+Shift+C - Copy selected path
+- Ctrl+W - Close current Tab
+- Ctrl+T - New Tab
+- Ctrl+Tab - Next Tab
+- Ctrl+Shift+Tab - Previous Tab
+- Ctrl+Shift+N - Create new folder in current directory
+- Ctrl+R (F5) - Refresh current directory
+- Alt+D - Select the address bar / current directory path
+- F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
+- Del - Delete the selected items (to the Recycle Bin)
+- Shift+Del - Permanently delete the selected items (skips the Recycle Bin, with a confirmation)
+- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
+- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
+- Alt + Left Arrow (Backspace, Mouse Button 4) - Navigate backwards
+- Alt + Right Arrow (Mouse Button 5) - Navigate forwards
+- Alt + Up Arrow - Navigate upwards
+- Enter - If a file is selected, runs the default program
+- Ctrl+F - Open the search box in the current pane
+- Ctrl+Z - Undo the last rename/move/copy
+- Ctrl+Y (Ctrl+Shift+Z) - Redo
+- Ctrl+K - Show/hide the Performance panel
+- Ctrl+I - Invert selection
+- Ctrl+Shift+S - Select by pattern (wildcards such as `*.jpg; *.png`)
+- Ctrl+Shift+F - Filter bar: type to filter (text, wildcards, or regex), hide matches, or show only one kind of item
+- Ctrl+Shift+L - Flat view: every file in all subfolders of the current folder as one list (press again to go back)
+- Ctrl+Shift+P - Command palette: run any command, open a Settings page, or jump to a favorite or recent folder
+- Ctrl+` - Show/hide the terminal pane (while it has focus, every other key goes to the shell)
+- Space - Quick Look: a large preview of the selected item (Space or Esc closes it)
 
 ## Bulk Rename Guide
 
