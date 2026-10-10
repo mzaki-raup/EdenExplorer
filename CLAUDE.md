@@ -2211,6 +2211,29 @@ PowerShell process) rather than the app's own code - if you're using the
   "open this file type" behaviour: the failure path *is* an OS dialog, and it
   is modal over everything.
 
+- **A heading containing `&` cannot have one anchor link that works on both
+  GitHub and Forgejo, and this repo is read on both.** The README's new
+  feature index linked to `#browsing--navigation` (GitHub's slug for
+  "Browsing & Navigation": the ampersand is dropped and *both* of its spaces
+  become hyphens). Forgejo slugs the same heading `browsing-navigation`,
+  collapsing it to a single hyphen - so every one of the sixteen index links
+  was dead on the instance that actually hosts the repo. Found by reading the
+  rendered heading ids back off the live page
+  (`[...md.querySelectorAll('h3')].map(h => h.id)`) rather than trusting the
+  slug rule, which is the only way to tell two renderers apart. Fixed by
+  spelling the headings "and" instead of "&", which both renderers slug
+  identically. **More generally: an in-page anchor is renderer-specific, so
+  verify one against the renderer that will actually serve the file** - and
+  prefer heading text that contains nothing but letters, digits and spaces,
+  which is the only input the two agree on.
+- **Markdown inside a raw HTML block is not rendered by GitHub or Forgejo.**
+  The same index started life as an HTML `<table>` with markdown links and
+  bold in its cells, which renders as the literal text `**Core**` and
+  `[Browsing & Navigation](#browsing--navigation)`. This is why every
+  centred block in this README is written in HTML (`<b>`, `<a href>`) rather
+  than markdown - a convention worth following rather than rediscovering.
+  Caught by rendering the file and looking at it, not by reading it.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
