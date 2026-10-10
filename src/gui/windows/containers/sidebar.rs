@@ -207,6 +207,7 @@ pub fn remote_glyph(kind: crate::core::remote::RemoteKind) -> &'static str {
         RemoteKind::WebDav => regular::GLOBE,
         RemoteKind::S3 => regular::CLOUD,
         RemoteKind::Redis => regular::DATABASE,
+        RemoteKind::CouchDb => regular::FILES,
     }
 }
 

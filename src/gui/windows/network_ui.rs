@@ -649,12 +649,14 @@ fn draw_location_form(
                     Some("network_location_start_folder")
                 }
                 RemoteKind::Redis => Some("network_location_key_prefix"),
+                RemoteKind::CouchDb => Some("network_location_database_name"),
                 RemoteKind::S3 => None,
             };
             if let Some(label) = path_label {
                 let hint = match kind {
                     RemoteKind::WebDav => "/remote.php/dav/files/me",
                     RemoteKind::Redis => "user:1000",
+                    RemoteKind::CouchDb => "mydb",
                     _ => "/home/me",
                 };
                 row(ui, &i18n.tr(label), &mut |ui| {

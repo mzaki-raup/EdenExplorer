@@ -2262,6 +2262,40 @@ PowerShell process) rather than the app's own code - if you're using the
   is the single most frequently recorded way a session in this repo has
   clicked something real by accident.
 
+- **A document store maps onto a folder tree far more naturally than a SQL
+  database does, and the win is that a document really is a file.** CouchDB's
+  databases become folders and its documents become `<id>.json` files, which
+  means the preview pane, Quick Look and syntax highlighting all work on them
+  with no new code - they dispatch on the extension, which is the whole reason
+  the extension is added rather than showing the bare id. The name has to
+  round-trip, though: `id_from_file_name` strips exactly *one* trailing
+  `.json`, so a document genuinely called `notes.json` lists as
+  `notes.json.json` and still resolves. If another document store is added,
+  copy that rule rather than inventing a second one.
+- **`_design/x` is one CouchDB id containing a `/`, and remote paths here are
+  split on `/` - so the prefix has to become a folder or the id is destroyed.**
+  Treating `_design` and `_local` as levels of their own is both forced by the
+  path model and what CouchDB's own interface does, and the real id is
+  reassembled (`_design/views`) when the document is fetched. Pinned by a test
+  asserting the request path, because a URL-encoded `%2F` would look right in
+  a listing and 404 on open.
+- **Page an HTTP listing by key, not by offset, whenever the server offers
+  it.** CouchDB's `skip` walks every row it skips, so offset paging gets
+  slower the deeper into a database it goes, while `startkey` is a seek into
+  the B-tree. The client asks for `limit = PAGE + 1` and treats the extra row
+  as the *next* page's first - which is exactly the place an off-by-one
+  duplicates one document per page, so the test asserts no name appears twice
+  rather than only checking the count.
+- **A stand-in server in the test must honour the request, or it tests
+  nothing.** The first version of the CouchDB fake returned a fixed number of
+  rows regardless of the `limit` asked for, so the client's "I got back as
+  many as I asked for, so there is more" rule never fired and the paging test
+  passed against a single page. Making the fake respect `limit` - and driving
+  the real `PAGE` constant with enough documents to need three round trips -
+  is what actually exercised the loop. Worth remembering for any hand-written
+  test double: the parts of the protocol it ignores are the parts it cannot
+  test.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

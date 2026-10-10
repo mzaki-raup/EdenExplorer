@@ -1276,3 +1276,4 @@ network_group_move_up = このグループを上へ移動
 network_group_move_down = このグループを下へ移動
 network_location_move_up = このグループ内で上へ移動
 network_location_move_down = このグループ内で下へ移動
+network_location_database_name = データベース

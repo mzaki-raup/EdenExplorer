@@ -6,6 +6,7 @@
 //! running jobs in order; passwords and keys' passphrases live in Windows
 //! Credential Manager (`credentials`), never in the settings file.
 
+pub mod couchdb;
 pub mod credentials;
 pub mod ftp;
 pub mod redis;
@@ -35,16 +36,19 @@ pub enum RemoteKind {
     /// Browsed read-only: keys split on `:` into a folder tree. See
     /// `redis` for why this is a mapping rather than a filesystem.
     Redis,
+    /// Browsed read-only: databases are folders and documents are files.
+    CouchDb,
 }
 
 impl RemoteKind {
-    pub const ALL: [RemoteKind; 6] = [
+    pub const ALL: [RemoteKind; 7] = [
         RemoteKind::Sftp,
         RemoteKind::Ftp,
         RemoteKind::Ftps,
         RemoteKind::WebDav,
         RemoteKind::S3,
         RemoteKind::Redis,
+        RemoteKind::CouchDb,
     ];
 
     pub fn label(self) -> &'static str {
@@ -55,6 +59,7 @@ impl RemoteKind {
             RemoteKind::WebDav => "WebDAV",
             RemoteKind::S3 => "S3",
             RemoteKind::Redis => "Redis",
+            RemoteKind::CouchDb => "CouchDB",
         }
     }
 
@@ -63,6 +68,14 @@ impl RemoteKind {
             RemoteKind::Sftp => 22,
             RemoteKind::Ftp | RemoteKind::Ftps => 21,
             RemoteKind::Redis => 6379,
+            // CouchDB's own defaults, which differ from plain HTTP's.
+            RemoteKind::CouchDb => {
+                if https {
+                    6984
+                } else {
+                    5984
+                }
+            }
             RemoteKind::WebDav | RemoteKind::S3 => {
                 if https {
                     443
@@ -154,6 +167,9 @@ impl RemoteConnection {
             // Redis has no real folders, but a saved prefix is still a
             // useful place to start in a big keyspace.
             RemoteKind::Redis => segments_of(&self.path),
+            // CouchDB's root lists every database, so a saved path is a
+            // database to open straight into.
+            RemoteKind::CouchDb => segments_of(&self.path),
             RemoteKind::Sftp | RemoteKind::Ftp | RemoteKind::Ftps => segments_of(&self.path),
             // WebDAV's path is the root itself; S3 starts at the bucket.
             RemoteKind::WebDav | RemoteKind::S3 => Vec::new(),
@@ -212,6 +228,7 @@ pub fn connect_with_secret(
         RemoteKind::WebDav => Ok(Box::new(webdav::WebDavFs::new(conn, &secret)?)),
         RemoteKind::S3 => Ok(Box::new(s3::S3Fs::new(conn, &secret)?)),
         RemoteKind::Redis => Ok(Box::new(redis::RedisFs::connect(conn, &secret)?)),
+        RemoteKind::CouchDb => Ok(Box::new(couchdb::CouchFs::new(conn, &secret)?)),
     }
 }
 
@@ -273,6 +290,13 @@ pub fn url_for(path: &Path) -> Option<String> {
             "redis://{user}{}:{}/{}{encoded}",
             conn.host, conn.port, conn.database
         ),
+        // CouchDB is plain HTTP, and its own URLs are exactly
+        // `scheme://host:port/db/doc` - so the address bar can show the real
+        // thing rather than an invented scheme.
+        RemoteKind::CouchDb => {
+            let scheme = if conn.https { "https" } else { "http" };
+            format!("{scheme}://{user}{}:{}{encoded}", conn.host, conn.port)
+        }
         RemoteKind::WebDav => {
             let base = webdav::encode_path(&format!("/{}", segments_of(&conn.path).join("/")));
             let scheme = if conn.https { "https" } else { "http" };

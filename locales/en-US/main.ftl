@@ -1272,3 +1272,4 @@ network_group_move_up = Move This Group Up
 network_group_move_down = Move This Group Down
 network_location_move_up = Move Up In This Group
 network_location_move_down = Move Down In This Group
+network_location_database_name = Database

@@ -1276,3 +1276,4 @@ network_group_move_up = 上移此分组
 network_group_move_down = 下移此分组
 network_location_move_up = 在此分组内上移
 network_location_move_down = 在此分组内下移
+network_location_database_name = 数据库
