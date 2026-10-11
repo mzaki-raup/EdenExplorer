@@ -2796,6 +2796,13 @@ pub fn handle_row_click(
     explorer_state.click_to_rename_arm = None;
 
     if modifiers.shift {
+        // Shift+click on something already selected takes it back out,
+        // rather than re-ranging from the anchor (which would keep it in).
+        // The anchor stays put so the next Shift+click still ranges from it.
+        if explorer_state.selected_paths.contains(&file.path) {
+            explorer_state.selection_focus = Some(row_idx);
+            return Some(ItemViewerAction::Deselect(file.path.clone()));
+        }
         if let Some(anchor_idx) = explorer_state.selection_anchor {
             let current_idx = row_idx;
 

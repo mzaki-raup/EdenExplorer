@@ -2522,6 +2522,18 @@ PowerShell process) rather than the app's own code - if you're using the
   repositories is not a substitute, and a README badge pointing at a repo is
   a strong hint it is real.
 
+- **This Windows-only app can be type-checked from a Linux container**, which
+  is the only check available when a session runs in the cloud: `rustup
+  target add x86_64-pc-windows-gnu`, install `gcc-mingw-w64-x86-64` (`ring`
+  compiles C), then `cargo check --target x86_64-pc-windows-gnu`. One
+  obstacle: `src/build.rs` opens with an unconditional `extern crate winres;`
+  while `winres` is a `cfg(windows)` *build*-dependency - and a build script
+  runs on the host, so on Linux the crate is absent and the build script
+  fails before anything is checked. Prefixing that line with `#[cfg(windows)]`
+  locally gets past it; revert it afterwards rather than committing an
+  unrelated change. Tests cannot run this way (they would be Windows
+  binaries), and none of it replaces live verification of a UI change.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
