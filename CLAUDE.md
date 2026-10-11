@@ -1654,6 +1654,19 @@ PowerShell process) rather than the app's own code - if you're using the
   absolute. Fixed with `#[cfg(test)]` rather than deletion, which states the
   real situation and keeps the methods for the first command that needs a
   nested document.
+- **Deleting a context menu deletes every feature whose only entry point it
+  was - check each entry for a keyboard equivalent before removing one.**
+  Replacing the terminal's right-click menu with direct copy/paste was the
+  whole request, and Copy and Paste were exactly what the right button would
+  now do. But that menu also carried **Select All** and **Clear**, and a grep
+  of the key handler showed neither had any shortcut: Ctrl+C, Ctrl+Shift+C,
+  Ctrl+Shift+V and Shift+PageUp/Down were the entire set. Removing the menu
+  as asked would have quietly removed two features rather than relocating
+  them - the kind of loss that is invisible in review because the diff only
+  shows a menu going away. They became Ctrl+Shift+A and Ctrl+Shift+K. The
+  cheap habit: for each entry in a menu being removed, grep the keyboard
+  handler for its action, and treat anything with no hit as a feature that
+  needs somewhere else to live before the menu goes.
 - **CI/CD here runs on a self-hosted Forgejo instance, not GitHub, and that rules
   out most of what a "standard" GitHub Actions pipeline would reach for.** A
   release pipeline was designed around `semantic-release` + `actions/checkout` +
