@@ -746,7 +746,7 @@ Actions. Three workflows, all running on a Windows runner:
 |---|---|---|
 | [`.forgejo/workflows/ci.yml`](.forgejo/workflows/ci.yml) | every branch except `main`, and pull requests | formatting (advisory), `cargo test`, `cargo clippy`, release build |
 | [`.forgejo/workflows/release.yml`](.forgejo/workflows/release.yml) | pushes to `main` | works out the next version, re-runs the checks, bumps, tags, builds, publishes the release, pushes `main` (and the tag) to GitHub |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | a `v*` tag arriving on GitHub | checks out that tag, builds a GitHub-flavoured binary, publishes the same release there |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | a `v*` tag being created on GitHub | checks out that tag, builds a GitHub-flavoured binary, publishes the same release there |
 
 ### Two forges
 

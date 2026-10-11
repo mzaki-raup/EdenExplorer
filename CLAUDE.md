@@ -2645,6 +2645,13 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   red run against a commit that is fine.
 - `scripts/next-release.ps1 -Tag vX.Y.Z` writes the notes for an existing tag;
   that is how GitHub's release page gets the same text as Forgejo's.
+- **GitHub's workflow triggers on `create`, not `push: tags`, and that is
+  load-bearing.** The first real release (v1.15.0) reached GitHub as a tag
+  and started nothing: the tag points at the `chore(release): ... [skip ci]`
+  commit, and GitHub applies `[skip ci]` to every push event, tag pushes
+  included. The `create` event is exempt. Don't "simplify" it back to
+  `push: tags`, and don't drop `[skip ci]` from the bump commit either - that
+  is what stops Forgejo re-releasing its own bump.
 
 ## Operational Instructions
 

@@ -14,9 +14,13 @@ name: Release (GitHub)
 #
 # What it publishes is the same contract as the Forgejo workflow's:
 #   EdenExplorer.exe, SHA256SUMS.txt, EdenExplorer-<version>-windows-x64.zip
+# `create`, not `push: tags`. The tag points at the version-bump commit, whose
+# message carries "[skip ci]" (so pushing it back to Forgejo's main does not
+# start a second release there) - and GitHub honours [skip ci] for push
+# events, tag pushes included, so a `push: tags` trigger never fired for a
+# single real release. The create event is exempt from that rule.
 on:
-  push:
-    tags: ['v*']
+  create:
   workflow_dispatch:
     inputs:
       tag:
@@ -33,8 +37,9 @@ defaults:
 jobs:
   release:
     # Forgejo reads .github/workflows too, and would try - and fail - to run
-    # this with its published actions (forgejo#2809). Only GitHub runs it.
-    if: github.server_url == 'https://github.com'
+    # this with its published actions (forgejo#2809). Only GitHub runs it, and
+    # only for a tag - `create` fires for new branches as well.
+    if: github.server_url == 'https://github.com' && (github.event_name != 'create' || github.ref_type == 'tag')
     runs-on: windows-latest
     env:
       EDEN_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
