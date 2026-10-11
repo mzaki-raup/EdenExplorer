@@ -93,10 +93,14 @@
 <h2 align="center">🚀 Getting Started</h2>
 <h3 align="center">Download</h3>
 <p align="center">
-  Grab the latest release from:<br>
+  Grab the latest release from either forge - the same version is published on both:<br>
   <a href="https://github.com/mzaki-raup/EdenExplorer/releases">
     https://github.com/mzaki-raup/EdenExplorer/releases
-  </a>
+  </a><br>
+  <a href="https://git.zacx.net/owner/eden-explorer/releases">
+    https://git.zacx.net/owner/eden-explorer/releases
+  </a><br>
+  <sub>A copy downloaded from GitHub updates itself from GitHub; one downloaded from git.zacx.net updates from there.</sub>
 </p>
 <p align="center">
   <sub>This is a fork of <a href="https://github.com/mtucciarone/EdenExplorer">mtucciarone/EdenExplorer</a> by Matthew Tucciarone.</sub>
@@ -695,7 +699,11 @@ rows are flagged.
 
 ## Updating
 
-EdenExplorer checks for its own updates against the forge it is published from.
+EdenExplorer checks for its own updates against the forge it was downloaded
+from: a copy from the GitHub releases page looks on GitHub, a copy from the
+git.zacx.net releases page looks there (each build is told its own home at build
+time - see **Two forges** below). **About** shows which repository a copy
+belongs to.
 
 - The version you are running is shown at the far left of the status bar, and in
   **About**.
@@ -731,13 +739,54 @@ A running `EdenExplorer.exe` locks its own file, so a release build fails with
 ## Releases & CI/CD
 
 Releases are produced automatically by [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/)
-on the instance that hosts this repository. Two workflows, both running on a
-Windows runner:
+on the instance that hosts this repository, and republished on GitHub by GitHub
+Actions. Three workflows, all running on a Windows runner:
 
 | Workflow | Runs on | What it does |
 |---|---|---|
 | [`.forgejo/workflows/ci.yml`](.forgejo/workflows/ci.yml) | every branch except `main`, and pull requests | formatting (advisory), `cargo test`, `cargo clippy`, release build |
-| [`.forgejo/workflows/release.yml`](.forgejo/workflows/release.yml) | pushes to `main` | works out the next version, re-runs the checks, bumps, tags, builds, publishes the release |
+| [`.forgejo/workflows/release.yml`](.forgejo/workflows/release.yml) | pushes to `main` | works out the next version, re-runs the checks, bumps, tags, builds, publishes the release, pushes `main` (and the tag) to GitHub |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | a `v*` tag arriving on GitHub | checks out that tag, builds a GitHub-flavoured binary, publishes the same release there |
+
+### Two forges
+
+The code lives on the Forgejo instance and is published on GitHub too. They are
+**one history pushed to two places**, not two repositories kept in sync by a
+tool - so there is nothing to drift, and a change made on either side is the
+same commit on both.
+
+- **Forgejo is the version authority.** Only its release workflow decides a
+  version, bumps `Cargo.toml`, commits and tags. GitHub's workflow never does
+  any of that; it only reacts to a tag, and refuses one whose `Cargo.toml`
+  disagrees with it.
+- **Each binary updates from where it came from.** `core::release` reads
+  `EDEN_RELEASES_API` and `EDEN_REPO_URL` at build time; the Forgejo build
+  leaves them unset (the defaults point at git.zacx.net), the GitHub workflow
+  sets them to GitHub's API. Both forges answer the releases API in the same
+  JSON shape, so nothing else differs. A local `cargo build` makes a
+  Forgejo-flavoured copy.
+- **Forgejo to GitHub is automatic** once the Forgejo repository has a
+  `GITHUB_MIRROR_TOKEN` secret (a GitHub fine-grained token with *Contents:
+  read and write* on the GitHub repository; `GITHUB_MIRROR_REPO` overrides
+  the default `mzaki-raup/EdenExplorer`): the release workflow's last step
+  pushes `main` and the new tag there with a plain, never forced, push. If
+  GitHub has a commit Forgejo doesn't, the push is refused and the job says
+  so, rather than overwriting it.
+- **GitHub to Forgejo is deliberate.** Commits made on GitHub (a merged pull
+  request, a web edit) come back with one command, which fast-forwards `main`
+  onto them and pushes to Forgejo - whose release workflow then cuts the
+  release and sends the tag back to GitHub:
+
+  ```bash
+  pwsh -File scripts/sync-from-github.ps1
+  ```
+
+  It stops rather than merging if both sides have moved. A Forgejo *pull
+  mirror* is not used because it makes the repository read-only, and a *push
+  mirror* is not used because it force-pushes over anything GitHub has.
+- The release notes come from the same script on both forges
+  (`scripts/next-release.ps1 -Tag v1.2.3` describes an existing tag), so the
+  two release pages read identically.
 
 ### How the version is chosen
 

@@ -1,0 +1,112 @@
+name: Release (GitHub)
+
+# The GitHub half of a two-forge release. The Forgejo instance that owns this
+# code is the version authority: its workflow (.forgejo/workflows/release.yml)
+# decides the version, bumps Cargo.toml, commits, tags, and - when it has a
+# GITHUB_MIRROR_TOKEN secret - pushes that commit and tag here. This workflow
+# only ever reacts to one of those tags. It never bumps, commits, or tags, so
+# the two forges cannot drift: same commit, same version, same notes.
+#
+# The binary it builds is told at build time to look for its updates *here*
+# (EDEN_RELEASES_API / EDEN_REPO_URL, read by core::release), so a copy
+# downloaded from GitHub updates from GitHub, and one downloaded from the
+# Forgejo instance updates from there.
+#
+# What it publishes is the same contract as the Forgejo workflow's:
+#   EdenExplorer.exe, SHA256SUMS.txt, EdenExplorer-<version>-windows-x64.zip
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing vMAJOR.MINOR.PATCH tag to (re)publish
+        required: true
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release:
+    # Forgejo reads .github/workflows too, and would try - and fail - to run
+    # this with its published actions (forgejo#2809). Only GitHub runs it.
+    if: github.server_url == 'https://github.com'
+    runs-on: windows-latest
+    env:
+      EDEN_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      EDEN_RELEASES_API: https://api.github.com/repos/${{ github.repository }}/releases?per_page=10
+    steps:
+      - name: Check out the tag, with the history and tags the notes need
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Read the version off the tag
+        id: tag
+        run: |
+          $tag = if ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { throw "'$tag' is not a vMAJOR.MINOR.PATCH tag - nothing to publish." }
+          $version = $Matches[1]
+          # The tag and the Cargo.toml at that tag must agree: the app compares
+          # a release's tag against the version it was built with, and a
+          # mismatch would offer the same update for ever.
+          $cargo = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ($cargo -ne $version) { throw "tag $tag but Cargo.toml says $cargo - this tag was not cut by the Forgejo release workflow." }
+          "tag=$tag"         | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Publishing $tag (Cargo.toml $cargo)"
+
+      - name: Use the latest stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustc --version
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Write the release notes for this tag
+        run: pwsh -NoProfile -File scripts/next-release.ps1 -Tag ${{ steps.tag.outputs.tag }}
+
+      - name: Build and package
+        run: pwsh -NoProfile -File scripts/build-and-package.ps1 -Version ${{ steps.tag.outputs.version }}
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ steps.tag.outputs.tag }}"
+          $title = "EdenExplorer ${{ steps.tag.outputs.version }}"
+          $dist = "release/dist"
+          foreach ($name in @("EdenExplorer.exe", "SHA256SUMS.txt")) {
+            if (-not (Test-Path "$dist/$name")) { throw "$name is not in $dist - refusing to publish a release the app cannot install." }
+          }
+          $files = @(Get-ChildItem $dist -File | ForEach-Object { $_.FullName })
+
+          gh release view $tag --json tagName 2>$null | Out-Null
+          $exists = ($LASTEXITCODE -eq 0)
+          if ($exists) {
+            Write-Host "GitHub already has a release for $tag - replacing its assets and notes."
+            gh release upload $tag @files --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload exited with $LASTEXITCODE" }
+            gh release edit $tag --title $title --notes-file notes.md --draft=false --prerelease=false
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit exited with $LASTEXITCODE" }
+          } else {
+            gh release create $tag @files --title $title --notes-file notes.md --verify-tag
+            if ($LASTEXITCODE -ne 0) { throw "gh release create exited with $LASTEXITCODE" }
+          }
+
+          # Uploading is not the same as having uploaded (see the Forgejo
+          # workflow's own history) - read it back.
+          $have = @((gh release view $tag --json assets | ConvertFrom-Json).assets.name)
+          $wanted = @(Get-ChildItem $dist -File | ForEach-Object { $_.Name })
+          $missing = @($wanted | Where-Object { $have -notcontains $_ })
+          if ($missing.Count -gt 0) { throw "the release is missing $($missing -join ', ')." }
+          Write-Host "Confirmed on the release: $($have -join ', ')"

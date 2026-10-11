@@ -8,10 +8,26 @@
 
 use serde::Deserialize;
 
+/// The repository this copy was built from, as a page a person can open. A copy
+/// built by the GitHub workflow is given its own address at build time
+/// (`EDEN_REPO_URL`); the default is the Forgejo instance that owns the code.
+pub const REPO_URL: &str = match option_env!("EDEN_REPO_URL") {
+    Some(url) => url,
+    None => "https://git.zacx.net/owner/eden-explorer",
+};
+
 /// Where this copy looks for its own releases. Anonymous read, so no token is
 /// needed - the repository is public.
-pub const RELEASES_API: &str =
-    "https://git.zacx.net/api/v1/repos/owner/eden-explorer/releases?limit=10";
+///
+/// Set at build time too (`EDEN_RELEASES_API`), so a copy downloaded from
+/// GitHub updates from GitHub and one downloaded from the Forgejo instance
+/// updates from there - the same source, two binaries, each phoning home to
+/// where it came from. Both forges answer in the same JSON shape (Gitea cloned
+/// GitHub's releases API deliberately), so nothing else differs.
+pub const RELEASES_API: &str = match option_env!("EDEN_RELEASES_API") {
+    Some(url) => url,
+    None => "https://git.zacx.net/api/v1/repos/owner/eden-explorer/releases?limit=10",
+};
 
 /// The program as published on a release, and the file of checksums beside it.
 /// These are the exact asset names the release workflow publishes - a release
@@ -178,6 +194,17 @@ pub fn sha256_of(sums: &str, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_forge_constants_are_https_and_the_repo_url_has_no_trailing_slash() {
+        // `core::update::releases_page` appends "/releases" to REPO_URL, and a
+        // GitHub-flavoured build passes both in from the workflow - so pin the
+        // shape rather than the value.
+        assert!(REPO_URL.starts_with("https://"), "{REPO_URL}");
+        assert!(!REPO_URL.ends_with('/'), "{REPO_URL}");
+        assert!(RELEASES_API.starts_with("https://"), "{RELEASES_API}");
+        assert!(RELEASES_API.contains("/releases"), "{RELEASES_API}");
+    }
 
     fn v(major: u32, minor: u32, patch: u32) -> Version {
         Version {

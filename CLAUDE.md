@@ -2598,6 +2598,34 @@ assume. `C:\Apps\gitea-runner\make-global.ps1` is what collapsed them.
   `EdenExplorer-<version>-windows-x64.zip`. Tags are plain `vMAJOR.MINOR.PATCH`;
   anything after the three numbers (`-rc1`) is not a version the updater parses.
 
+### The GitHub copy
+
+The same history is also published at `github.com/mzaki-raup/EdenExplorer`
+(README: **Two forges**). The rules that keep the two from drifting:
+
+- **Forgejo is the only thing that bumps, commits, or tags a version.**
+  `.github/workflows/release.yml` triggers on a `v*` tag only, and refuses a
+  tag whose `Cargo.toml` disagrees with it. Never add a version bump or a tag
+  push to the GitHub workflow - two bumpers means two divergent tag streams.
+- **A binary knows its own forge at build time**: `core::release::REPO_URL`
+  and `RELEASES_API` read `EDEN_REPO_URL`/`EDEN_RELEASES_API` through
+  `option_env!`; unset means Forgejo. Don't hardcode either host anywhere
+  else - derive from those two constants (as `core::update::releases_page`
+  does). `src/build.rs` declares `rerun-if-env-changed` for both.
+- **Forgejo pushes to GitHub, never the reverse automatically.** The Forgejo
+  release workflow's last step pushes `main` + the tag to GitHub with a plain
+  push when a `GITHUB_MIRROR_TOKEN` secret exists (warns, never forces, if
+  GitHub is ahead). Commits made on GitHub come back with
+  `pwsh -File scripts/sync-from-github.ps1` (fast-forward only). Do not set
+  up a Forgejo push mirror (it force-pushes) or pull mirror (it makes the
+  repository read-only) for this.
+- **Forgejo reads `.github/workflows/` too.** Every job in a GitHub workflow
+  must carry `if: github.server_url == 'https://github.com'`, or the Forgejo
+  runner tries it, fails on the first `uses:` (forgejo#2809), and reports a
+  red run against a commit that is fine.
+- `scripts/next-release.ps1 -Tag vX.Y.Z` writes the notes for an existing tag;
+  that is how GitHub's release page gets the same text as Forgejo's.
+
 ## Operational Instructions
 
 You must strictly adhere to these guidelines during every task execution. Prioritize system safety, meticulous tracking, and verification.

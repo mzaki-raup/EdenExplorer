@@ -3,6 +3,12 @@ extern crate winres;
 fn main() {
     // Tell Cargo to rerun build script if icon changes
     println!("cargo:rerun-if-changed=src/icon.ico");
+    // `core::release` reads these with option_env! to decide which forge a
+    // copy updates from. rustc records env! reads in its dep-info, but a
+    // runner that shares one target directory between a Forgejo-flavoured and
+    // a GitHub-flavoured build is exactly where "usually" is not enough.
+    println!("cargo:rerun-if-env-changed=EDEN_REPO_URL");
+    println!("cargo:rerun-if-env-changed=EDEN_RELEASES_API");
 
     #[cfg(target_os = "windows")]
     {
