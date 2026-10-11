@@ -2639,10 +2639,14 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   `pwsh -File scripts/sync-from-github.ps1` (fast-forward only). Do not set
   up a Forgejo push mirror (it force-pushes) or pull mirror (it makes the
   repository read-only) for this.
-- **Forgejo reads `.github/workflows/` too.** Every job in a GitHub workflow
-  must carry `if: github.server_url == 'https://github.com'`, or the Forgejo
-  runner tries it, fails on the first `uses:` (forgejo#2809), and reports a
-  red run against a commit that is fine.
+- **Forgejo reads only the first workflow directory it finds** -
+  `.forgejo/workflows`, then `.gitea/workflows`, then `.github/workflows`
+  (`modules/actions/workflows.go`, `ListWorkflows`) - so as long as
+  `.forgejo/workflows` exists, the GitHub workflow is never seen by Forgejo.
+  Every GitHub job still carries `if: github.server_url ==
+  'https://github.com'` as a safety net: if `.forgejo/workflows` were ever
+  removed, Forgejo would otherwise try it, fail on the first `uses:`
+  (forgejo#2809), and report a red run against a commit that is fine.
 - `scripts/next-release.ps1 -Tag vX.Y.Z` writes the notes for an existing tag;
   that is how GitHub's release page gets the same text as Forgejo's.
 - **GitHub's workflow triggers on `create`, not `push: tags`, and that is
