@@ -37,6 +37,8 @@ struct Panel {
     error: Option<String>,
     /// Wheel movement not yet turned into whole lines.
     scroll: f32,
+    /// Auto-scroll from a selection dragged past the edge, not yet whole lines.
+    drag_scroll: f32,
 }
 
 /// What the pane asks the main window to do.
@@ -650,7 +652,7 @@ impl TerminalPanels {
         }
 
         // Mouse: wheel scrolls back, drag selects, right-click menu.
-        handle_mouse(ui, &resp, session, &mut panel.scroll, inner, cell_w, cell_h);
+        handle_mouse(ui, &resp, session, &mut panel.scroll, &mut panel.drag_scroll, inner, cell_w, cell_h);
 
         let exited_text = session
             .exited
@@ -845,6 +847,7 @@ fn handle_mouse(
     resp: &egui::Response,
     session: &mut TerminalSession,
     scroll: &mut f32,
+    drag_scroll: &mut f32,
     inner: egui::Rect,
     cell_w: f32,
     cell_h: f32,
@@ -874,9 +877,13 @@ fn handle_mouse(
     }
 
     // Selection: drag for characters, double-click a word, triple-click a line.
+    // Shift moves the end of an existing selection to the pointer instead of
+    // starting a new one, so it can be grown or shrunk from either a click
+    // or a drag.
     let pointer = ui.input(|i| i.pointer.interact_pos());
     if let Some(pos) = pointer {
         let (point, side) = cell_at(pos, inner, cell_w, cell_h, session);
+        let shift = ui.input(|i| i.modifiers.shift);
         let clicks = ui.input(|i| {
             if i.pointer.button_triple_clicked(egui::PointerButton::Primary) {
                 3
@@ -890,18 +897,57 @@ fn handle_mouse(
             let ty = if clicks == 3 { SelectionType::Lines } else { SelectionType::Semantic };
             session.term.lock().selection = Some(Selection::new(ty, point, side));
         } else if resp.drag_started_by(egui::PointerButton::Primary) {
-            // From where the button went down, not where the drag was noticed.
-            let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
-            let (start, start_side) = cell_at(origin, inner, cell_w, cell_h, session);
-            let mut selection = Selection::new(SelectionType::Simple, start, start_side);
-            selection.update(point, side);
-            session.term.lock().selection = Some(selection);
+            *drag_scroll = 0.0;
+            let mut term = session.term.lock();
+            match term.selection.as_mut() {
+                Some(selection) if shift => selection.update(point, side),
+                _ => {
+                    drop(term);
+                    // From where the button went down, not where the drag was noticed.
+                    let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
+                    let (start, start_side) = cell_at(origin, inner, cell_w, cell_h, session);
+                    let mut selection = Selection::new(SelectionType::Simple, start, start_side);
+                    selection.update(point, side);
+                    session.term.lock().selection = Some(selection);
+                }
+            }
         } else if resp.dragged_by(egui::PointerButton::Primary) {
+            // Dragged past the top or bottom: scroll the history so the
+            // selection can keep going, faster the further out the pointer is.
+            let past = if pos.y < inner.top() {
+                inner.top() - pos.y
+            } else if pos.y > inner.bottom() {
+                inner.bottom() - pos.y
+            } else {
+                0.0
+            };
+            let (point, side) = if past != 0.0 {
+                let dt = ui.input(|i| i.stable_dt).min(0.1);
+                let lines_per_sec = 6.0 + past.abs() / cell_h * 10.0;
+                *drag_scroll += past.signum() * lines_per_sec * dt;
+                let lines = drag_scroll.trunc() as i32;
+                *drag_scroll -= lines as f32;
+                if lines != 0 {
+                    session.term.lock().scroll_display(Scroll::Delta(lines));
+                }
+                // Keep frames coming while the pointer is held still out there.
+                ui.ctx().request_repaint();
+                // The edge row now shows different text than when `point`
+                // was worked out.
+                cell_at(pos, inner, cell_w, cell_h, session)
+            } else {
+                *drag_scroll = 0.0;
+                (point, side)
+            };
             if let Some(selection) = session.term.lock().selection.as_mut() {
                 selection.update(point, side);
             }
         } else if resp.clicked() {
-            session.term.lock().selection = None;
+            let mut term = session.term.lock();
+            match term.selection.as_mut() {
+                Some(selection) if shift => selection.update(point, side),
+                _ => term.selection = None,
+            }
         }
     }
 

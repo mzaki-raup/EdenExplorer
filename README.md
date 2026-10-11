@@ -206,7 +206,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Create Shortcut** | Real `.lnk` shortcuts, next to the item or in the current folder |
 | **Send To** | Named groups of destination folders, each with its own icon and a Copy-or-Move setting, surfaced in the right-click menu |
 | **Checksums** | CRC32, MD5, SHA-1 and SHA-256 in one background pass, with per-hash copy and a Compare field that tells you which algorithm a pasted checksum matched |
-| **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove |
+| **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove; `Shift+Click` on an already-selected item deselects it |
 
 ### Search and Filtering
 
@@ -283,6 +283,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 |---|---|
 | **Terminal pane** | `` Ctrl+` `` docks a real terminal under (or beside) the file list — PowerShell 7, Windows PowerShell, Command Prompt, Git Bash or any WSL distribution — starting in the current folder and following it as you navigate |
 | **Right-click to copy and paste** | In the terminal and the SSH shell, right-clicking a selection copies it; right-clicking with nothing selected pastes - the PuTTY convention, with no menu in the way. Ctrl+Shift+C / Ctrl+Shift+V still work, as does Ctrl+C for copy-or-interrupt; Ctrl+Shift+A selects everything and Ctrl+Shift+K clears the screen and the scrollback |
+| **Drag-to-select scrolls** | In the terminal and the SSH shell, dragging a selection past the top or bottom edge scrolls the history so the selection keeps going, faster the further out the pointer is; Shift+click or Shift+drag moves the end of the current selection to grow or shrink it |
 | **WSL layout** | Inside a WSL distribution the files and that distribution's shell sit side by side automatically |
 | **Git status** | The branch (or commit, when detached) and change count in the status bar, plus per-file status badges in the list |
 
