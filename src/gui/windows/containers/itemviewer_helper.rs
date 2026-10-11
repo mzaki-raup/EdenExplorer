@@ -2831,14 +2831,16 @@ pub fn handle_row_click(
             Some(ItemViewerAction::Select(file.path.clone()))
         }
     } else if modifiers.ctrl {
-        if !explorer_state.selected_paths.contains(&file.path) {
-            explorer_state.selected_paths.insert(file.path.clone());
-        }
-
         explorer_state.selection_anchor = Some(row_idx);
         explorer_state.selection_focus = Some(row_idx);
 
-        Some(ItemViewerAction::Select(file.path.clone()))
+        // Ctrl+click toggles, as in Explorer.
+        if explorer_state.selected_paths.contains(&file.path) {
+            Some(ItemViewerAction::Deselect(file.path.clone()))
+        } else {
+            explorer_state.selected_paths.insert(file.path.clone());
+            Some(ItemViewerAction::Select(file.path.clone()))
+        }
     } else {
         let is_single_selected = explorer_state.selected_paths.len() == 1
             && explorer_state.selected_paths.contains(&file.path);
