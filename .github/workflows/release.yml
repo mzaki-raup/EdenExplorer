@@ -3,7 +3,7 @@ name: Release (GitHub)
 # The GitHub half of a two-forge release. The Forgejo instance that owns this
 # code is the version authority: its workflow (.forgejo/workflows/release.yml)
 # decides the version, bumps Cargo.toml, commits, tags, and - when it has a
-# GITHUB_MIRROR_TOKEN secret - pushes that commit and tag here. This workflow
+# MIRROR_GITHUB_TOKEN secret - pushes that commit and tag here. This workflow
 # only ever reacts to one of those tags. It never bumps, commits, or tags, so
 # the two forges cannot drift: same commit, same version, same notes.
 #

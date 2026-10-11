@@ -766,8 +766,8 @@ same commit on both.
   JSON shape, so nothing else differs. A local `cargo build` makes a
   Forgejo-flavoured copy.
 - **Forgejo to GitHub is automatic** once the Forgejo repository has a
-  `GITHUB_MIRROR_TOKEN` secret (a GitHub fine-grained token with *Contents:
-  read and write* on the GitHub repository; `GITHUB_MIRROR_REPO` overrides
+  `MIRROR_GITHUB_TOKEN` secret (a GitHub fine-grained token with *Contents:
+  read and write* on the GitHub repository; `MIRROR_GITHUB_REPO` overrides
   the default `mzaki-raup/EdenExplorer`): the release workflow's last step
   pushes `main` and the new tag there with a plain, never forced, push. If
   GitHub has a commit Forgejo doesn't, the push is refused and the job says

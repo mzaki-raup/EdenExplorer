@@ -108,7 +108,7 @@ Upcoming alpha features: multi-tag AND/OR filtering in the tag view. Detailed st
 Distributed as a standalone Windows executable (no install), published as a release on the
 self-hosted Forgejo instance that owns this repository and republished on GitHub. The two
 forges share one history; Forgejo's release workflow is the only thing that decides a version
-and cuts a tag, and (given a `GITHUB_MIRROR_TOKEN` secret) pushes that tag to GitHub, where
+and cuts a tag, and (given a `MIRROR_GITHUB_TOKEN` secret) pushes that tag to GitHub, where
 `.github/workflows/release.yml` builds and publishes the same version. Each binary is told at
 build time which forge to update from (`EDEN_RELEASES_API`/`EDEN_REPO_URL`, read by
 `core::release`), so a copy from GitHub updates from GitHub and one from Forgejo from Forgejo.
