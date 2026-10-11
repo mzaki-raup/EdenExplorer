@@ -206,7 +206,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | **Create Shortcut** | Real `.lnk` shortcuts, next to the item or in the current folder |
 | **Send To** | Named groups of destination folders, each with its own icon and a Copy-or-Move setting, surfaced in the right-click menu |
 | **Checksums** | CRC32, MD5, SHA-1 and SHA-256 in one background pass, with per-hash copy and a Compare field that tells you which algorithm a pasted checksum matched |
-| **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove; `Shift+Click` on an already-selected item deselects it |
+| **Selection tools** | Select All, Invert (`Ctrl+I`), and Select By Pattern (`Ctrl+Shift+S`) with wildcards, a live match count, and Select / Add / Remove; `Shift+Click` or `Ctrl+Click` on an already-selected item deselects it |
 
 ### Search and Filtering
 
