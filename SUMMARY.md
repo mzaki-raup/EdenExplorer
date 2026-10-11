@@ -6,7 +6,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - **License:** MIT
 - **Current version:** 0.28.0 (`Cargo.toml`) — bumped automatically by the release pipeline
 - **Status:** Public alpha, actively developed
-- **Repo owner:** mtucciarone/EdenExplorer
+- **Repo owner:** mtucciarone/EdenExplorer (upstream); this fork lives on a self-hosted Forgejo instance (`git.zacx.net/owner/eden-explorer`) and is published on GitHub as `mzaki-raup/EdenExplorer`
 
 ## Core technology
 - **Language:** Rust (edition 2024)
@@ -106,7 +106,13 @@ Upcoming alpha features: multi-tag AND/OR filtering in the tag view. Detailed st
 
 ## Distribution
 Distributed as a standalone Windows executable (no install), published as a release on the
-self-hosted Forgejo instance that owns this repository.
+self-hosted Forgejo instance that owns this repository and republished on GitHub. The two
+forges share one history; Forgejo's release workflow is the only thing that decides a version
+and cuts a tag, and (given a `GITHUB_MIRROR_TOKEN` secret) pushes that tag to GitHub, where
+`.github/workflows/release.yml` builds and publishes the same version. Each binary is told at
+build time which forge to update from (`EDEN_RELEASES_API`/`EDEN_REPO_URL`, read by
+`core::release`), so a copy from GitHub updates from GitHub and one from Forgejo from Forgejo.
+Commits made on GitHub are brought back with `scripts/sync-from-github.ps1` (fast-forward only).
 
 Releases are fully automated by Forgejo Actions (`.forgejo/workflows/`): pushing to `main`
 works out the next version from the commits since the last `v*` tag (`Add …` = minor,
@@ -126,6 +132,8 @@ the status bar in every view, and About has "Check for Updates" plus a "check au
 toggle (at most one automatic check a day, persisted in its own `update_state.bin`).
 
 Supporting scripts live in `scripts/`: `next-release.ps1` (decide the version and write the
-release notes), `update-version.ps1` (bump `Cargo.toml` + `Cargo.lock` together), and
-`build-and-package.ps1` (build and assemble the assets above). See **Releases & CI/CD** in
+release notes; `-Tag` writes the notes for an existing tag, which is what GitHub's workflow
+runs), `update-version.ps1` (bump `Cargo.toml` + `Cargo.lock` together), `build-and-package.ps1`
+(build and assemble the assets above), and `sync-from-github.ps1` (bring GitHub commits back to
+Forgejo). See **Releases & CI/CD** in
 `README.md` for the full rules.

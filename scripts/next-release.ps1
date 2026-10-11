@@ -18,11 +18,19 @@
     version   the version to release, or empty when nothing warrants one
     tag       v<version>
     previous  the tag it is measured from, or empty on a first release
+
+  With -Tag, nothing is decided: the version is the tag's own, and the notes
+  describe the commits between the previous v* tag and that tag. This is what
+  the GitHub workflow runs, which only ever builds a tag the Forgejo workflow
+  has already cut - so both forges publish the same version with the same
+  notes, from the same script.
 #>
 param(
   # Used when no v* tag exists yet, instead of bumping Cargo.toml's version.
   [string]$FirstVersion = "1.0.0",
-  [string]$NotesFile = "notes.md"
+  [string]$NotesFile = "notes.md",
+  # An existing v* tag to write the notes for, instead of planning a new one.
+  [string]$Tag = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,11 +47,19 @@ function Get-Verb([string]$subject) {
   return ""
 }
 
-$previous = (git tag --list "v*" --sort=-v:refname | Select-Object -First 1)
-if ($previous) {
-  $range = "$previous..HEAD"
+if ($Tag) {
+  if ($Tag -notmatch '^v\d+\.\d+\.\d+$') { throw "'$Tag' is not a vMAJOR.MINOR.PATCH tag." }
+  if (-not (git tag --list $Tag)) { throw "tag '$Tag' does not exist here - fetch the tags first." }
+  $wanted = [version]($Tag -replace '^v', '')
+  # The newest tag that is older than this one by version - not "the newest
+  # tag", which is this one.
+  $previous = (git tag --list "v*" --sort=-v:refname |
+    Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and [version]($_ -replace '^v', '') -lt $wanted } |
+    Select-Object -First 1)
+  $range = if ($previous) { "$previous..$Tag" } else { $Tag }
 } else {
-  $range = "HEAD"
+  $previous = (git tag --list "v*" --sort=-v:refname | Select-Object -First 1)
+  $range = if ($previous) { "$previous..HEAD" } else { "HEAD" }
 }
 
 # -z plus a record separator: subjects can contain anything, including quotes.
@@ -75,6 +91,14 @@ foreach ($record in $records) {
   $bump = [Math]::Max($bump, 1); $other += $line
 }
 
+if ($bump -eq 0 -and $Tag) {
+  # The tag exists, so it is being published regardless - say so rather than
+  # refuse. The Forgejo workflow never cuts a tag for nothing; this is only
+  # reachable for a tag made by hand.
+  $other += "- Release $Tag"
+  $bump = 1
+}
+
 if ($bump -eq 0) {
   Write-Host "No commits since $previous warrant a release."
   if ($env:GITHUB_OUTPUT) {
@@ -84,7 +108,9 @@ if ($bump -eq 0) {
   exit 0
 }
 
-if (-not $previous) {
+if ($Tag) {
+  $version = $Tag -replace '^v', ''
+} elseif (-not $previous) {
   $version = $FirstVersion
 } else {
   $base = $previous -replace '^v', ''
@@ -106,8 +132,12 @@ if ($other.Count)    { $sections += "### Other changes`n`n" + ($other -join "`n"
 
 $levels = @{ 1 = "patch"; 2 = "minor"; 3 = "major" }
 Write-Host "Previous tag : $(if ($previous) { $previous } else { '(none)' })"
-Write-Host "Bump         : $($levels[$bump])"
-Write-Host "Next version : $version"
+if ($Tag) {
+  Write-Host "Tag          : $Tag"
+} else {
+  Write-Host "Bump         : $($levels[$bump])"
+  Write-Host "Next version : $version"
+}
 
 if ($env:GITHUB_OUTPUT) {
   "version=$version"   | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8

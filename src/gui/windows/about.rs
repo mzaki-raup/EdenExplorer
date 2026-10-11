@@ -98,8 +98,9 @@ pub fn draw_about_window(
 
                 ui.label(
                     egui::RichText::new(format!(
-                        "{}: https://github.com/mtucciarone/EdenExplorer",
-                        &i18n.tr("about_repo")
+                        "{}: {}",
+                        &i18n.tr("about_repo"),
+                        crate::core::release::REPO_URL
                     ))
                     .font(font_id.clone())
                     .size(palette.text_size)

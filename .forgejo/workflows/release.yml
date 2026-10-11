@@ -115,6 +115,41 @@ jobs:
           git -c $auth push --quiet origin ${{ steps.plan.outputs.tag }}
           Write-Host "Pushed ${{ steps.plan.outputs.tag }} and the version commit to main."
 
+      # The GitHub copy of this repository releases the same tag through its
+      # own workflow (.github/workflows/release.yml), building a binary that
+      # updates from GitHub. It only ever reacts to a tag, so this is the one
+      # place a tag reaches it from. Optional: with no GITHUB_MIRROR_TOKEN
+      # secret (a GitHub fine-grained token with Contents: read and write on
+      # that repository), nothing is pushed and the release here is unaffected.
+      - name: Push the version commit and the tag to GitHub
+        if: steps.plan.outputs.version != ''
+        env:
+          MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+          MIRROR_REPO: ${{ secrets.GITHUB_MIRROR_REPO }}
+        run: |
+          if (-not $env:MIRROR_TOKEN) {
+            Write-Host "No GITHUB_MIRROR_TOKEN secret - not pushing to GitHub."
+            exit 0
+          }
+          $repo = if ($env:MIRROR_REPO) { $env:MIRROR_REPO } else { "mzaki-raup/EdenExplorer" }
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:MIRROR_TOKEN"))
+          $auth = "http.extraheader=Authorization: Basic $basic"
+          # A plain push, never forced: if GitHub has a commit this history
+          # does not (an edit made there and not yet brought over with
+          # scripts/sync-from-github.ps1), the push is refused and that is
+          # reported here - the release on this forge is already complete.
+          git -c $auth push --quiet "https://github.com/$repo.git" HEAD:main
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::GitHub refused main (it has commits this forge does not) - run scripts/sync-from-github.ps1, then push the tag by hand: git push github ${{ steps.plan.outputs.tag }}"
+            exit 0
+          }
+          git -c $auth push --quiet "https://github.com/$repo.git" ${{ steps.plan.outputs.tag }}
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::could not push ${{ steps.plan.outputs.tag }} to GitHub - push it by hand: git push github ${{ steps.plan.outputs.tag }}"
+            exit 0
+          }
+          Write-Host "Pushed ${{ steps.plan.outputs.tag }} and main to github.com/$repo - its release workflow takes it from here."
+
       - name: Publish the release
         if: steps.plan.outputs.version != ''
         env:

@@ -266,12 +266,8 @@ fn fetch(url: &str) -> Result<Found, String> {
 /// The page a release with no assets can still be opened at, so "go and look"
 /// is actionable.
 fn releases_page() -> String {
-    release::RELEASES_API
-        .split("/api/v1/repos/")
-        .nth(1)
-        .and_then(|rest| rest.split("/releases").next())
-        .map(|repo| format!("https://git.zacx.net/{repo}/releases"))
-        .unwrap_or_else(|| "https://git.zacx.net".to_string())
+    // Both forges list releases at the same path under the repository page.
+    format!("{}/releases", release::REPO_URL)
 }
 
 /// Downloads the program, checks it against the published checksum, and leaves
