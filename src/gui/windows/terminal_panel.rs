@@ -650,7 +650,7 @@ impl TerminalPanels {
         }
 
         // Mouse: wheel scrolls back, drag selects, right-click menu.
-        handle_mouse(ui, &resp, session, &mut panel.scroll, inner, cell_w, cell_h, i18n);
+        handle_mouse(ui, &resp, session, &mut panel.scroll, inner, cell_w, cell_h);
 
         let exited_text = session
             .exited
@@ -772,6 +772,28 @@ fn handle_keys(session: &mut TerminalSession, input: Vec<egui::Event>) {
                     }
                     continue;
                 }
+                // Select All and Clear Scrollback used to live in the right-
+                // click menu, which the right button now has better uses for.
+                // Without these they would have no way in at all.
+                if mods.ctrl && mods.shift && key == egui::Key::A {
+                    let mut term = session.term.lock();
+                    let top = Point::new(term.topmost_line(), Column(0));
+                    let bottom = Point::new(term.bottommost_line(), term.last_column());
+                    let mut selection = Selection::new(SelectionType::Simple, top, Side::Left);
+                    selection.update(bottom, Side::Right);
+                    term.selection = Some(selection);
+                    continue;
+                }
+                // Ctrl+L on its own clears the screen (the shell handles it);
+                // this also drops the scrollback, which nothing else does.
+                if mods.ctrl && mods.shift && key == egui::Key::K {
+                    let mut term = session.term.lock();
+                    term.grid_mut().clear_history();
+                    term.selection = None;
+                    drop(term);
+                    session.write(&b"\x0c"[..]);
+                    continue;
+                }
                 // Shift+PageUp/PageDown scroll the history.
                 if mods.shift && matches!(key, egui::Key::PageUp | egui::Key::PageDown) {
                     let lines = session.term.lock().screen_lines() as i32 - 1;
@@ -826,7 +848,6 @@ fn handle_mouse(
     inner: egui::Rect,
     cell_w: f32,
     cell_h: f32,
-    i18n: &I18n,
 ) {
     // Wheel: history, or arrow keys in full-screen programs that ask for it.
     if resp.hovered() {
@@ -884,37 +905,23 @@ fn handle_mouse(
         }
     }
 
-    resp.context_menu(|ui| {
-        let has_selection = session.term.lock().selection.is_some();
-        if ui.add_enabled(has_selection, egui::Button::new(i18n.tr("terminal_copy"))).clicked() {
-            copy_selection(session);
-            ui.close();
+    // Right-click copies a selection, and pastes when there is none - what
+    // PuTTY and most Windows terminals do, and the reason there is no
+    // context menu here: in a terminal the right button earns more as a
+    // one-press copy/paste than as a menu nobody reads twice.
+    //
+    // The selection survives to this point because every branch above only
+    // reacts to the *primary* button.
+    if resp.secondary_clicked() {
+        if copy_selection(session) {
+            // Dropping the highlight is the only sign the copy happened,
+            // and it leaves the very next right-click free to paste.
+            session.term.lock().selection = None;
+        } else if let Some(text) = crate::core::utils::clipboard::read_text_from_clipboard() {
+            session.term.lock().scroll_display(Scroll::Bottom);
+            session.paste(&text);
         }
-        if ui.button(i18n.tr("terminal_paste")).clicked() {
-            if let Some(text) = crate::core::utils::clipboard::read_text_from_clipboard() {
-                session.paste(&text);
-            }
-            ui.close();
-        }
-        if ui.button(i18n.tr("terminal_select_all")).clicked() {
-            let mut term = session.term.lock();
-            let top = Point::new(term.topmost_line(), Column(0));
-            let bottom = Point::new(term.bottommost_line(), term.last_column());
-            let mut selection = Selection::new(SelectionType::Simple, top, Side::Left);
-            selection.update(bottom, Side::Right);
-            term.selection = Some(selection);
-            ui.close();
-        }
-        if ui.button(i18n.tr("terminal_clear")).clicked() {
-            let mut term = session.term.lock();
-            term.grid_mut().clear_history();
-            term.selection = None;
-            drop(term);
-            // Ctrl+L redraws the prompt at the top (cmd ignores it).
-            session.write(&b"\x0c"[..]);
-            ui.close();
-        }
-    });
+    }
 }
 
 /// Paints the visible screen: backgrounds, text in runs of the same style,

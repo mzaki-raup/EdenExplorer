@@ -278,6 +278,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | Feature | Description |
 |---|---|
 | **Terminal pane** | `` Ctrl+` `` docks a real terminal under (or beside) the file list — PowerShell 7, Windows PowerShell, Command Prompt, Git Bash or any WSL distribution — starting in the current folder and following it as you navigate |
+| **Right-click to copy and paste** | In the terminal and the SSH shell, right-clicking a selection copies it; right-clicking with nothing selected pastes - the PuTTY convention, with no menu in the way. Ctrl+Shift+C / Ctrl+Shift+V still work, as does Ctrl+C for copy-or-interrupt; Ctrl+Shift+A selects everything and Ctrl+Shift+K clears the screen and the scrollback |
 | **WSL layout** | Inside a WSL distribution the files and that distribution's shell sit side by side automatically |
 | **Git status** | The branch (or commit, when detached) and change count in the status bar, plus per-file status badges in the list |
 
