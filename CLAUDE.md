@@ -2502,6 +2502,26 @@ PowerShell process) rather than the app's own code - if you're using the
   separately confirmed which side was wrong, and the constant is now derived
   once and reused across all three assertions.
 
+- **"The GitHub repo doesn't exist yet" was wrong, and one `git ls-remote`
+  would have shown it before any plan was written around it.** The whole
+  two-forge design was built on the owner's statement that the code was "on
+  Forgejo only, not yet created in GitHub" - and the README's own badges
+  already pointed at `mzaki-raup/EdenExplorer`, which turned out to be a
+  live fork of upstream with its own commits from three days earlier, its own
+  semantic-release workflows, and a history unrelated to Forgejo's (this repo
+  was restarted from a fresh "first commit" on 2026-09-08). The first push
+  there was refused, which is the only reason it surfaced before the Forgejo
+  workflow's own mirror push hit the same wall. Resolved by archiving the
+  fork's `main` as `fork-archive` on GitHub and then, with the owner's
+  explicit choice, force-pushing Forgejo's `main` over it once - after
+  confirming Forgejo's tree already contained every source file and the
+  fork's latest change line-for-line. **Before designing anything around a
+  remote's state, read the remote**: `git ls-remote <url>` and the forge's
+  repository API answer in seconds whether it exists, what branches and tags
+  it has, and whether it is a fork - a user's recollection of their own
+  repositories is not a substitute, and a README badge pointing at a repo is
+  a strong hint it is real.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
