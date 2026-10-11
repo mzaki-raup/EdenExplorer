@@ -2652,6 +2652,12 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   included. The `create` event is exempt. Don't "simplify" it back to
   `push: tags`, and don't drop `[skip ci]` from the bump commit either - that
   is what stops Forgejo re-releasing its own bump.
+- **Never write the literal skip-CI marker anywhere in a commit message,
+  body included.** The commit that fixed the entry above explained the cause
+  in its body, quoting the marker verbatim - and Forgejo scans the whole
+  message, so the push started no CI run at all and the branch sat there
+  looking unbuilt for fifteen minutes of polling. Say "the skip-ci marker"
+  in prose; put the bracketed form only in files.
 
 ## Operational Instructions
 
