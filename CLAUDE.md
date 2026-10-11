@@ -2634,7 +2634,7 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   does). `src/build.rs` declares `rerun-if-env-changed` for both.
 - **Forgejo pushes to GitHub, never the reverse automatically.** The Forgejo
   release workflow's last step pushes `main` + the tag to GitHub with a plain
-  push when a `GITHUB_MIRROR_TOKEN` secret exists (warns, never forces, if
+  push when a `MIRROR_GITHUB_TOKEN` secret exists (warns, never forces, if
   GitHub is ahead). Commits made on GitHub come back with
   `pwsh -File scripts/sync-from-github.ps1` (fast-forward only). Do not set
   up a Forgejo push mirror (it force-pushes) or pull mirror (it makes the
@@ -2647,6 +2647,12 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   'https://github.com'` as a safety net: if `.forgejo/workflows` were ever
   removed, Forgejo would otherwise try it, fail on the first `uses:`
   (forgejo#2809), and report a red run against a commit that is fine.
+- **Forgejo refuses a secret whose name starts with `GITHUB_` or `GITEA_`**
+  (its own error: "case-insensitive, alphanumeric characters or underscores
+  only, cannot start with GITEA_ or GITHUB_"). The mirror secrets were first
+  named `GITHUB_MIRROR_*` and could not be created; they are
+  `MIRROR_GITHUB_TOKEN`/`MIRROR_GITHUB_REPO`. Name any future Forgejo secret
+  with the forge-specific word second, never first.
 - `scripts/next-release.ps1 -Tag vX.Y.Z` writes the notes for an existing tag;
   that is how GitHub's release page gets the same text as Forgejo's.
 - **GitHub's workflow triggers on `create`, not `push: tags`, and that is

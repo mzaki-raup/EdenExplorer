@@ -120,18 +120,18 @@ jobs:
       # updates from GitHub. It only ever reacts to a tag, so this is the one
       # place a tag reaches it from. main is pushed on every run, released or
       # not, so GitHub's main never lags behind a docs-only push. Optional:
-      # with no GITHUB_MIRROR_TOKEN secret (a GitHub fine-grained token with
+      # with no MIRROR_GITHUB_TOKEN secret (a GitHub fine-grained token with
       # Contents: read and write on that repository), nothing is pushed and
       # the release here is unaffected. Runs when every step before it
       # succeeded or was skipped - never after a failed build.
       - name: Push main and the tag to GitHub
         env:
-          MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
-          MIRROR_REPO: ${{ secrets.GITHUB_MIRROR_REPO }}
+          MIRROR_TOKEN: ${{ secrets.MIRROR_GITHUB_TOKEN }}
+          MIRROR_REPO: ${{ secrets.MIRROR_GITHUB_REPO }}
           TAG: ${{ steps.plan.outputs.tag }}
         run: |
           if (-not $env:MIRROR_TOKEN) {
-            Write-Host "No GITHUB_MIRROR_TOKEN secret - not pushing to GitHub."
+            Write-Host "No MIRROR_GITHUB_TOKEN secret - not pushing to GitHub."
             exit 0
           }
           $repo = if ($env:MIRROR_REPO) { $env:MIRROR_REPO } else { "mzaki-raup/EdenExplorer" }
