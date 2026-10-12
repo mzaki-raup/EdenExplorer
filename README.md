@@ -25,11 +25,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/downloads/mzaki-raup/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/v/release/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/license/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/actions/workflow/status/mzaki-raup/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
-  <img src="https://img.shields.io/github/stars/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <a href="https://github.com/mzaki-raup/EdenExplorer/releases"><img src="https://img.shields.io/github/downloads/mzaki-raup/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" alt="Downloads" /></a>
+  <a href="https://github.com/mzaki-raup/EdenExplorer/releases/latest"><img src="https://img.shields.io/github/v/release/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" alt="License" /></a>
+  <a href="https://github.com/mzaki-raup/EdenExplorer/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/mzaki-raup/EdenExplorer/build.yml?style=for-the-badge&color=5F4B87&labelColor=14161A&branch=main&label=build" alt="Build status" /></a>
+  <a href="https://github.com/mzaki-raup/EdenExplorer/stargazers"><img src="https://img.shields.io/github/stars/mzaki-raup/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" alt="Stars" /></a>
 </p>
 
 <p align="center">
@@ -741,13 +741,14 @@ A running `EdenExplorer.exe` locks its own file, so a release build fails with
 
 Releases are produced automatically by [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/)
 on the instance that hosts this repository, and republished on GitHub by GitHub
-Actions. Three workflows, all running on a Windows runner:
+Actions. Four workflows, all running on a Windows runner:
 
 | Workflow | Runs on | What it does |
 |---|---|---|
 | [`.forgejo/workflows/ci.yml`](.forgejo/workflows/ci.yml) | every branch except `main`, and pull requests | formatting (advisory), `cargo test`, `cargo clippy`, release build |
 | [`.forgejo/workflows/release.yml`](.forgejo/workflows/release.yml) | pushes to `main` | works out the next version, re-runs the checks, bumps, tags, builds, publishes the release, pushes `main` (and the tag) to GitHub |
-| [`.github/workflows/release.yml`](.github/workflows/release.yml) | a `v*` tag being created on GitHub | checks out that tag, builds a GitHub-flavoured binary, publishes the same release there |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | a `v*` tag being created on GitHub | checks out that tag, builds a GitHub-flavoured binary, publishes the same release there, then starts `build.yml` on `main` |
+| [`.github/workflows/build.yml`](.github/workflows/build.yml) | every push and pull request on GitHub (and after each GitHub release) | the same checks as `ci.yml`; this is what the Build badge at the top shows |
 
 ### Two forges
 

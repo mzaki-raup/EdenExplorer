@@ -1,0 +1,63 @@
+name: Build
+
+# The lint, test and build gates on GitHub, and what the README's Build badge
+# shows. Same checks as the Forgejo CI (.forgejo/workflows/ci.yml); Forgejo
+# never runs this file, because it reads only .forgejo/workflows while that
+# directory exists.
+#
+# Release pushes from Forgejo end in the version-bump commit, which carries the
+# skip-ci marker, so GitHub starts nothing for them and the badge would keep
+# showing whatever ran before. The GitHub release workflow therefore dispatches
+# this one on main once it has published - workflow_dispatch is one of the two
+# events a GITHUB_TOKEN is allowed to start.
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    # Safety net in case .forgejo/workflows ever goes away and Forgejo starts
+    # reading this directory: it would fail on the first published action.
+    if: github.server_url == 'https://github.com'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the latest stable Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
+
+      # Advisory, not a gate: this codebase is not rustfmt-formatted yet.
+      - name: Formatting (advisory)
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::cargo fmt --check reports formatting differences. Run 'cargo fmt --all' to fix."
+          }
+          exit 0
+
+      - name: Tests
+        run: cargo test --locked
+
+      # No `-D warnings`: the existing clippy backlog would fail every run.
+      - name: Clippy
+        run: cargo clippy --release --all-targets --locked
+
+      - name: Build
+        run: |
+          cargo build --release --locked
+          Get-Item target/release/EdenExplorer.exe | Select-Object FullName, Length, LastWriteTime

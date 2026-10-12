@@ -2665,6 +2665,14 @@ The same history is also published at `github.com/mzaki-raup/EdenExplorer`
   named `GITHUB_MIRROR_*` and could not be created; they are
   `MIRROR_GITHUB_TOKEN`/`MIRROR_GITHUB_REPO`. Name any future Forgejo secret
   with the forge-specific word second, never first.
+- **`.github/workflows/build.yml` is what the README's Build badge shows**
+  (`?branch=main`), so it must reflect `main` after a release - but every
+  release push from Forgejo ends in the skip-ci bump commit, which starts
+  nothing on GitHub. The GitHub release workflow's last step therefore
+  dispatches `build.yml` on `main` (`gh workflow run`, needing
+  `actions: write`); `workflow_dispatch` is one of the two events a
+  `GITHUB_TOKEN` may start. Remove that step and the badge silently freezes
+  on whatever pushed last before the release.
 - `scripts/next-release.ps1 -Tag vX.Y.Z` writes the notes for an existing tag;
   that is how GitHub's release page gets the same text as Forgejo's.
 - **GitHub's workflow triggers on `create`, not `push: tags`, and that is
