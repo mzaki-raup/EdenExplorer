@@ -29,6 +29,8 @@ on:
 
 permissions:
   contents: write
+  # To start build.yml on main afterwards (see its header).
+  actions: write
 
 defaults:
   run:
@@ -115,3 +117,15 @@ jobs:
           $missing = @($wanted | Where-Object { $have -notcontains $_ })
           if ($missing.Count -gt 0) { throw "the release is missing $($missing -join ', ')." }
           Write-Host "Confirmed on the release: $($have -join ', ')"
+
+      # The push that brought this tag ended in the skip-ci bump commit, so
+      # build.yml never ran for it - run it now so the README's Build badge
+      # reflects main as released rather than an older push.
+      - name: Run the build checks on main
+        if: github.event_name == 'create'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run build.yml --ref main --repo ${{ github.repository }}
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning::could not start build.yml on main (exit $LASTEXITCODE) - the Build badge may show an older run." }
+          exit 0

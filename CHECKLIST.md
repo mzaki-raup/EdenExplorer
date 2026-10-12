@@ -600,6 +600,11 @@ Rationale and detail for each item is in `PRD.md` §9.
 |---|---|
 | Completed | **Direct user request: Ctrl+click on an already-selected file should deselect it.** `handle_row_click`'s Ctrl branch (`itemviewer_helper.rs`, shared by Details, Detail Preview and Gallery) only ever added to the selection; it now returns `ItemViewerAction::Deselect` when the item is already selected, and still moves the anchor/focus to the clicked item either way so a following Shift+click ranges from it, as in Explorer. Type-checked by cross-compiling for `x86_64-pc-windows-gnu`. **Verified working by the owner in the released build (1.16.1).** |
 
+### README badges: clickable, and Build reflects CI
+| State | Item |
+|---|---|
+| In-Progress | **Direct user request.** Each badge in the README header is now a link: Downloads → the GitHub releases page, Release → the latest release, License → `LICENSE` (relative, so it works on both forges), Build → `build.yml`'s runs, Stars → the stargazers page; each also got `alt` text. The Build badge pointed at `release.yml` (which only runs for a tag) and now shows a new `.github/workflows/build.yml` on `main` - formatting (advisory), `cargo test --locked`, clippy, release build, the same gates as the Forgejo `ci.yml` - run on every GitHub push and pull request. Because release pushes end in the skip-ci bump commit, the GitHub release workflow now dispatches `build.yml` on `main` after publishing, so the badge follows `main` as released. Both workflow files parse as YAML; **pending its first run on GitHub.** |
+
 ### Accessibility & input
 | State | Item |
 |---|---|

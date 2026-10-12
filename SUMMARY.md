@@ -113,7 +113,7 @@ and cuts a tag, and (given a `MIRROR_GITHUB_TOKEN` secret) pushes that tag to Gi
 `.github/workflows/release.yml` builds and publishes the same version. Each binary is told at
 build time which forge to update from (`EDEN_RELEASES_API`/`EDEN_REPO_URL`, read by
 `core::release`), so a copy from GitHub updates from GitHub and one from Forgejo from Forgejo.
-Commits made on GitHub are brought back with `scripts/sync-from-github.ps1` (fast-forward only).
+Commits made on GitHub are brought back with `scripts/sync-from-github.ps1` (fast-forward only). `.github/workflows/build.yml` runs the lint/test/build checks on every GitHub push and is what the README's Build badge reports; the README badges each link to their source (releases, latest release, `LICENSE`, workflow runs, stargazers).
 
 Releases are fully automated by Forgejo Actions (`.forgejo/workflows/`): pushing to `main`
 works out the next version from the commits since the last `v*` tag (`Add …` = minor,
