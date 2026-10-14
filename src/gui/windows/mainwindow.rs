@@ -355,6 +355,7 @@ impl Default for MainWindow {
                 vec![SessionTabEntry {
                     path: start_path,
                     split_path: None,
+                    third_path: None,
                 }],
                 0,
             ),
@@ -364,6 +365,7 @@ impl Default for MainWindow {
                     .map(|path| SessionTabEntry {
                         path: path.clone(),
                         split_path: None,
+                        third_path: None,
                     })
                     .collect(),
                 0,
@@ -388,13 +390,13 @@ impl Default for MainWindow {
                 loaded_settings.item_viewer_drive_column_sizes.clone(),
                 loaded_settings.recycle_bin_column_sizes.clone(),
             );
-            if let Some(split_path) = &entry.split_path {
-                let mut split_view = TabView::new(
-                    Navigation::new(split_path.clone()),
+            let restore_pane = |path: &std::path::PathBuf| {
+                let mut view = TabView::new(
+                    Navigation::new(path.clone()),
                     loaded_settings.sort_column,
                     loaded_settings.sort_ascending,
                 );
-                split_view.column_state = ItemViewerColumnState::from_orders(
+                view.column_state = ItemViewerColumnState::from_orders(
                     loaded_settings.item_viewer_file_column_order.clone(),
                     loaded_settings.item_viewer_drive_column_order.clone(),
                     loaded_settings.recycle_bin_column_order.clone(),
@@ -402,7 +404,15 @@ impl Default for MainWindow {
                     loaded_settings.item_viewer_drive_column_sizes.clone(),
                     loaded_settings.recycle_bin_column_sizes.clone(),
                 );
-                tab.split_view = Some(split_view);
+                view
+            };
+            if let Some(split_path) = &entry.split_path {
+                tab.split_view = Some(restore_pane(split_path));
+                // Only ever alongside a second pane - the third one splits
+                // the second column, so it has nowhere to go without it.
+                if let Some(third_path) = &entry.third_path {
+                    tab.third_view = Some(restore_pane(third_path));
+                }
             }
             tabs.push(tab);
             next_tab_id += 1;
@@ -532,14 +542,9 @@ impl Default for MainWindow {
 
         let current_settings = app.settings_window.current_settings.clone();
         for tab in &mut app.tabs {
-            apply_directory_settings_to_view(
-                &mut tab.primary_view,
-                &current_settings,
-                DisplayModeFallback::Default,
-            );
-            if let Some(split) = tab.split_view.as_mut() {
+            for view in tab.views_mut() {
                 apply_directory_settings_to_view(
-                    split,
+                    view,
                     &current_settings,
                     DisplayModeFallback::Default,
                 );
@@ -677,10 +682,7 @@ impl eframe::App for MainWindow {
         // other way to notice a change like that made outside itself.
         let is_focused = ui.input(|i| i.focused);
         if is_focused && !self.was_window_focused {
-            self.load_view(SplitSide::Primary);
-            if self.active_tab().split_view.is_some() {
-                self.load_view(SplitSide::Secondary);
-            }
+            self.load_active_tab_views();
         }
         self.was_window_focused = is_focused;
 
@@ -699,10 +701,7 @@ impl eframe::App for MainWindow {
             self.pending_command_refreshes = still_pending;
 
             if !due.is_empty() {
-                self.load_view(SplitSide::Primary);
-                if self.active_tab().split_view.is_some() {
-                    self.load_view(SplitSide::Secondary);
-                }
+                self.load_active_tab_views();
             }
             if let Some(next) = self.pending_command_refreshes.iter().min() {
                 ui.ctx()
@@ -725,10 +724,8 @@ impl eframe::App for MainWindow {
         if self.rename_state.is_none()
             && let Some(changed) = self.pending_dir_refresh.take()
         {
-            for side in [SplitSide::Primary, SplitSide::Secondary] {
-                if side == SplitSide::Secondary && self.active_tab().split_view.is_none() {
-                    continue;
-                }
+            let sides: Vec<SplitSide> = self.active_tab().sides().collect();
+            for side in sides {
                 if self.active_tab().view(side).nav.current == changed {
                     self.refresh_view(side);
                 }
@@ -774,15 +771,11 @@ impl eframe::App for MainWindow {
             .map(|backend| backend.is_inbound_drag_active())
             .unwrap_or(false);
         let drag_hover_target = dragdrop.and_then(|backend| backend.hovered_drop_target());
-        let drag_active = {
-            let tab = self.active_tab();
-            tab.primary_view.drag_state.active
-                || tab
-                    .split_view
-                    .as_ref()
-                    .map(|v| v.drag_state.active)
-                    .unwrap_or(false)
-        } || native_drag_active;
+        let drag_active = self
+            .active_tab()
+            .views()
+            .any(|view| view.drag_state.active)
+            || native_drag_active;
         if let Some(backend) = dragdrop {
             backend.set_scale_factor(ui.ctx().pixels_per_point());
         }
@@ -941,10 +934,13 @@ impl eframe::App for MainWindow {
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action: Option<TabsAction> = None;
         let mut tabbar_action = None;
-        let mut secondary_tabbar_action: Option<ItemViewerNavBarAction> = None;
-        let mut secondary_pending_action: Option<ItemViewerAction> = None;
+        // One slot per pane, in pane order - the panes are drawn in a loop
+        // (see `pane_count` below), and each one's breadcrumb/file-list
+        // actions are routed afterwards with focus pinned to that pane.
+        let mut pane_tabbar_actions: [Option<ItemViewerNavBarAction>; 3] = Default::default();
+        let mut pane_pending_actions: [Option<ItemViewerAction>; 3] = Default::default();
         let mut tags_changed = false;
-        let has_split = self.tabs[self.active_tab].split_view.is_some();
+        let pane_count = self.tabs[self.active_tab].pane_count();
 
         let offset = egui::vec2(8.0, 8.0);
 
@@ -1009,7 +1005,7 @@ impl eframe::App for MainWindow {
                                         self.sidebar_collapsed,
                                         self.hwnd,
                                         &palette,
-                                        has_split,
+                                        pane_count,
                                     ));
                                 });
                                 if !self.sidebar_collapsed {
@@ -1377,7 +1373,7 @@ impl eframe::App for MainWindow {
                                                 ui.set_max_height((full.height() - size).max(0.0));
                                             }
                                         }
-                                        if has_split {
+                                        if pane_count > 1 {
                                             let split_rect = ui.available_rect_before_wrap();
                                             let (split_rect, _) = ui.allocate_exact_size(
                                                 split_rect.size(),
@@ -1394,21 +1390,65 @@ impl eframe::App for MainWindow {
                                                 egui::vec2(primary_width, split_height),
                                             );
 
-                                            let secondary_rect = egui::Rect::from_min_size(
+                                            // Two columns, always. The left one is a single
+                                            // full-height pane; the right one holds the second
+                                            // pane alone, or the second and third stacked in
+                                            // equal halves.
+                                            let right_column = egui::Rect::from_min_size(
                                                 egui::pos2(
                                                     primary_rect.right() + SPLIT_GAP,
                                                     split_rect.top(),
                                                 ),
                                                 egui::vec2(secondary_width, split_height),
                                             );
+                                            let (secondary_rect, third_rect) = if pane_count > 2 {
+                                                let top_height =
+                                                    ((split_height - SPLIT_GAP) * 0.5).floor();
+                                                let bottom_height =
+                                                    (split_height - top_height - SPLIT_GAP).max(0.0);
+                                                (
+                                                    egui::Rect::from_min_size(
+                                                        right_column.min,
+                                                        egui::vec2(secondary_width, top_height),
+                                                    ),
+                                                    Some(egui::Rect::from_min_size(
+                                                        egui::pos2(
+                                                            right_column.left(),
+                                                            right_column.top()
+                                                                + top_height
+                                                                + SPLIT_GAP,
+                                                        ),
+                                                        egui::vec2(secondary_width, bottom_height),
+                                                    )),
+                                                )
+                                            } else {
+                                                (right_column, None)
+                                            };
 
-                                            // A subtle divider between the two split panes.
+                                            // A subtle divider between the two columns, and
+                                            // another between the right column's own two rows.
                                             let divider_x = primary_rect.right() + SPLIT_GAP * 0.5;
                                             ui.painter().vline(
                                                 divider_x,
                                                 split_rect.y_range(),
                                                 egui::Stroke::new(1.5, palette.borders_default),
                                             );
+                                            if let Some(third_rect) = third_rect {
+                                                ui.painter().hline(
+                                                    right_column.x_range(),
+                                                    third_rect.top() - SPLIT_GAP * 0.5,
+                                                    egui::Stroke::new(1.5, palette.borders_default),
+                                                );
+                                            }
+
+                                            let panes: Vec<(SplitSide, egui::Rect)> = [
+                                                Some((SplitSide::Primary, primary_rect)),
+                                                Some((SplitSide::Secondary, secondary_rect)),
+                                                third_rect.map(|rect| (SplitSide::Tertiary, rect)),
+                                            ]
+                                            .into_iter()
+                                            .flatten()
+                                            .collect();
 
                                             let (pointer_pos, primary_clicked) = ui.ctx().input(|i| {
                                                 (
@@ -1441,222 +1481,116 @@ impl eframe::App for MainWindow {
 
                                             if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
-                                                    let in_primary = primary_rect.contains(pos);
-                                                    let in_secondary = secondary_rect.contains(pos);
-
-                                                    if in_primary {
-                                                        self.focused_split = SplitSide::Primary;
-                                                    } else if in_secondary {
-                                                        self.focused_split = SplitSide::Secondary;
+                                                    if let Some(&(side, _)) = panes
+                                                        .iter()
+                                                        .find(|(_, rect)| rect.contains(pos))
+                                                    {
+                                                        self.focused_split = side;
                                                     }
                                                 }
                                             }
 
-                                            let primary_focused = self.focused_split == SplitSide::Primary;
-                                            let secondary_focused = !primary_focused;
+                                            for (index, &(side, pane_rect)) in panes.iter().enumerate() {
+                                                let pane_focused = self.focused_split == side;
+                                                ui.scope_builder(
+                                                    egui::UiBuilder::new().max_rect(pane_rect),
+                                                    |ui| {
+                                                    ui.set_clip_rect(pane_rect);
+                                                    ui.push_id(("pane", index), |ui| {
+                                                        ui.allocate_ui_with_layout(
+                                                            ui.available_size(),
+                                                            egui::Layout::top_down(egui::Align::Min),
+                                                            |ui| {
+                                                                if pane_focused {
+                                                                    let accent_rect =
+                                                                        ui.available_rect_before_wrap();
+                                                                    // Inset slightly so the indicator never
+                                                                    // renders flush against the pane's own
+                                                                    // outer edge (the sidebar-adjacent side
+                                                                    // for the left column, the app's outer
+                                                                    // window border for the right one) -
+                                                                    // matches the small gap every other
+                                                                    // bordered element keeps from it.
+                                                                    ui.painter().hline(
+                                                                        egui::Rangef::new(
+                                                                            accent_rect.left() + 6.0,
+                                                                            accent_rect.right() - 6.0,
+                                                                        ),
+                                                                        accent_rect.top(),
+                                                                        egui::Stroke::new(
+                                                                            ACTIVE_PANE_INDICATOR_THICKNESS,
+                                                                            palette.borders_active,
+                                                                        ),
+                                                                    );
+                                                                }
+                                                                ui.add_space(2.0);
 
-                                            ui.scope_builder(
-                                                egui::UiBuilder::new().max_rect(primary_rect),
-                                                |ui| {
-                                                ui.set_clip_rect(primary_rect);
-                                                ui.push_id("pane_0", |ui| {
-                                                    ui.allocate_ui_with_layout(
-                                                        ui.available_size(),
-                                                        egui::Layout::top_down(egui::Align::Min),
-                                                        |ui| {
-                                                            if primary_focused {
-                                                                let accent_rect =
-                                                                    ui.available_rect_before_wrap();
-                                                                // Inset slightly so the indicator never
-                                                                // renders flush against the pane's own
-                                                                // outer edge (the sidebar-adjacent side
-                                                                // here, the app's outer window border for
-                                                                // the secondary pane's equivalent line
-                                                                // below) - matches the small gap every
-                                                                // other bordered element keeps from it.
-                                                                ui.painter().hline(
-                                                                    egui::Rangef::new(
-                                                                        accent_rect.left() + 6.0,
-                                                                        accent_rect.right() - 6.0,
-                                                                    ),
-                                                                    accent_rect.top(),
-                                                                    egui::Stroke::new(
-                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
-                                                                        palette.borders_active,
-                                                                    ),
-                                                                );
-                                                            }
-                                                            ui.add_space(2.0);
-
-                                                            let tab_id = self.tabs[self.active_tab].id;
-                                                            let is_favorited = self
-                                                                .sidebar_state
-                                                                .favorites
-                                                                .iter()
-                                                                .any(|fav| {
-                                                                    fav.path
-                                                                        == self.tabs
-                                                                            [self.active_tab]
-                                                                            .primary_view
-                                                                            .nav
-                                                                            .current
-                                                                });
-                                                            let (a, b) = draw_tab_content(
-                                                                ui,
-                                                                &mut self.i18n,
-                                                                &icon_cache,
-                                                                &palette,
-                                                                self.hwnd,
-                                                                &mut self.tabs[self.active_tab]
-                                                                    .primary_view,
-                                                                tab_id,
-                                                                is_favorited,
-                                                                &self.folder_sizes,
-                                                                self.clipboard_has_files,
-                                                                &self.clipboard_set,
-                                                                self.clipboard_is_cut,
-                                                                self.settings_window
-                                                                    .current_settings
-                                                                    .show_hidden_files_folders,
-                                                                self.settings_window
-                                                                    .current_settings
-                                                                    .show_item_viewer_icons,
-                                                                &mut self.rename_state,
-                                                                &mut self.file_type_cache,
-                                                                &mut self.file_size_text_cache,
-                                                                &mut self.folder_size_text_cache,
-                                                                &mut self.drive_size_text_cache,
-                                                                &mut self.external_drag_to_internal_hover,
-                                                                drag_active,
-                                                                native_inbound_drag_active,
-                                                                drag_hover_target.clone(),
-                                                                &mut self.tags_state,
-                                                                &mut self.theme_customizer,
-                                                                &mut self.settings_window,
-                                                                &mut self.sidebar_state.favorites,
-                                                                &mut drop_targets,
-                                                                primary_focused,
-                                                                true,
-                                                                self.saved_searches_state.items.len(),
-                                                            );
-                                                            tabbar_action = a;
-                                                            pending_action = b;
-                                                            let snapshot =
-                                                                directory_settings_snapshot_for_view(
-                                                                    &self.tabs[self.active_tab]
-                                                                        .primary_view,
-                                                                );
-                                                            let _ =
-                                                                self
-                                                                        .settings_window
-                                                                        .current_settings.remember_folder_view(snapshot);
-                                                        },
-                                                    );
-                                                });
-                                            });
-
-                                            ui.scope_builder(
-                                                egui::UiBuilder::new().max_rect(secondary_rect),
-                                                |ui| {
-                                                ui.set_clip_rect(secondary_rect);
-                                                ui.push_id("pane_1", |ui| {
-                                                    ui.allocate_ui_with_layout(
-                                                        ui.available_size(),
-                                                        egui::Layout::top_down(egui::Align::Min),
-                                                        |ui| {
-                                                            if secondary_focused {
-                                                                let accent_rect =
-                                                                    ui.available_rect_before_wrap();
-                                                                // See the matching comment on the primary
-                                                                // pane's indicator above - without this
-                                                                // inset the line renders flush against the
-                                                                // app's own outer window border here.
-                                                                ui.painter().hline(
-                                                                    egui::Rangef::new(
-                                                                        accent_rect.left() + 6.0,
-                                                                        accent_rect.right() - 6.0,
-                                                                    ),
-                                                                    accent_rect.top(),
-                                                                    egui::Stroke::new(
-                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
-                                                                        palette.borders_active,
-                                                                    ),
-                                                                );
-                                                            }
-                                                            ui.add_space(2.0);
-
-                                                            let tab_id = self.tabs[self.active_tab].id;
-                                                            let is_favorited = self.tabs
-                                                                [self.active_tab]
-                                                                .split_view
-                                                                .as_ref()
-                                                                .map(|v| {
-                                                                    self.sidebar_state
-                                                                        .favorites
-                                                                        .iter()
-                                                                        .any(|fav| {
-                                                                            fav.path
-                                                                                == v.nav.current
-                                                                        })
-                                                                })
-                                                                .unwrap_or(false);
-                                                            let (a, b) = draw_tab_content(
-                                                                ui,
-                                                                &mut self.i18n,
-                                                                &icon_cache,
-                                                                &palette,
-                                                                self.hwnd,
-                                                                self.tabs[self.active_tab]
-                                                                    .split_view
-                                                                    .as_mut()
-                                                                    .unwrap(),
-                                                                tab_id,
-                                                                is_favorited,
-                                                                &self.folder_sizes,
-                                                                self.clipboard_has_files,
-                                                                &self.clipboard_set,
-                                                                self.clipboard_is_cut,
-                                                                self.settings_window
-                                                                    .current_settings
-                                                                    .show_hidden_files_folders,
-                                                                self.settings_window
-                                                                    .current_settings
-                                                                    .show_item_viewer_icons,
-                                                                &mut self.rename_state,
-                                                                &mut self.file_type_cache,
-                                                                &mut self.file_size_text_cache,
-                                                                &mut self.folder_size_text_cache,
-                                                                &mut self.drive_size_text_cache,
-                                                                &mut self.external_drag_to_internal_hover,
-                                                                drag_active,
-                                                                native_inbound_drag_active,
-                                                                drag_hover_target.clone(),
-                                                                &mut self.tags_state,
-                                                                &mut self.theme_customizer,
-                                                                &mut self.settings_window,
-                                                                &mut self.sidebar_state.favorites,
-                                                                &mut drop_targets,
-                                                                secondary_focused,
-                                                                true,
-                                                                self.saved_searches_state.items.len(),
-                                                            );
-                                                            secondary_tabbar_action = a;
-                                                            secondary_pending_action = b;
-                                                            let snapshot =
-                                                                directory_settings_snapshot_for_view(
+                                                                let tab_id = self.tabs[self.active_tab].id;
+                                                                let pane_dir = self.tabs
+                                                                    [self.active_tab]
+                                                                    .view(side)
+                                                                    .nav
+                                                                    .current
+                                                                    .clone();
+                                                                let is_favorited = self
+                                                                    .sidebar_state
+                                                                    .favorites
+                                                                    .iter()
+                                                                    .any(|fav| fav.path == pane_dir);
+                                                                let (a, b) = draw_tab_content(
+                                                                    ui,
+                                                                    &mut self.i18n,
+                                                                    &icon_cache,
+                                                                    &palette,
+                                                                    self.hwnd,
                                                                     self.tabs[self.active_tab]
-                                                                        .split_view
-                                                                        .as_ref()
-                                                                        .unwrap(),
+                                                                        .view_mut(side),
+                                                                    tab_id,
+                                                                    is_favorited,
+                                                                    &self.folder_sizes,
+                                                                    self.clipboard_has_files,
+                                                                    &self.clipboard_set,
+                                                                    self.clipboard_is_cut,
+                                                                    self.settings_window
+                                                                        .current_settings
+                                                                        .show_hidden_files_folders,
+                                                                    self.settings_window
+                                                                        .current_settings
+                                                                        .show_item_viewer_icons,
+                                                                    &mut self.rename_state,
+                                                                    &mut self.file_type_cache,
+                                                                    &mut self.file_size_text_cache,
+                                                                    &mut self.folder_size_text_cache,
+                                                                    &mut self.drive_size_text_cache,
+                                                                    &mut self.external_drag_to_internal_hover,
+                                                                    drag_active,
+                                                                    native_inbound_drag_active,
+                                                                    drag_hover_target.clone(),
+                                                                    &mut self.tags_state,
+                                                                    &mut self.theme_customizer,
+                                                                    &mut self.settings_window,
+                                                                    &mut self.sidebar_state.favorites,
+                                                                    &mut drop_targets,
+                                                                    pane_focused,
+                                                                    true,
+                                                                    self.saved_searches_state.items.len(),
                                                                 );
-                                                            let _ =
-                                                                self
-                                                                        .settings_window
-                                                                        .current_settings.remember_folder_view(snapshot);
-                                                        },
-                                                    );
+                                                                pane_tabbar_actions[index] = a;
+                                                                pane_pending_actions[index] = b;
+                                                                let snapshot =
+                                                                    directory_settings_snapshot_for_view(
+                                                                        self.tabs[self.active_tab]
+                                                                            .view(side),
+                                                                    );
+                                                                let _ = self
+                                                                    .settings_window
+                                                                    .current_settings
+                                                                    .remember_folder_view(snapshot);
+                                                            },
+                                                        );
+                                                    });
                                                 });
-                                            });
+                                            }
                                         } else {
                                             let tab_id = self.tabs[self.active_tab].id;
                                             let is_favorited =
@@ -1799,6 +1733,18 @@ impl eframe::App for MainWindow {
             }
         }
 
+        // The multi-pane branch above wrote into the per-pane slots; the
+        // single-pane one writes `tabbar_action`/`pending_action` directly.
+        // Both end up here, pane by pane.
+        let [pane_0_tabbar, secondary_tabbar_action, third_tabbar_action] =
+            std::mem::take(&mut pane_tabbar_actions);
+        let [pane_0_pending, secondary_pending_action, third_pending_action] =
+            std::mem::take(&mut pane_pending_actions);
+        if pane_count > 1 {
+            tabbar_action = pane_0_tabbar;
+            pending_action = pane_0_pending;
+        }
+
         let primary_drag_sources = if self.tabs[self.active_tab]
             .primary_view
             .drag_state
@@ -1815,22 +1761,20 @@ impl eframe::App for MainWindow {
                     .clone(),
             )
         };
-        let secondary_drag_sources = self.tabs[self.active_tab]
-            .split_view
-            .as_ref()
-            .and_then(|v| {
-                if v.drag_state.source_items.is_empty() {
-                    None
-                } else {
-                    Some(v.drag_state.source_items.clone())
-                }
-            });
-        let tabs_drag_sources = primary_drag_sources
+        let drag_sources_of = |view: Option<&TabView>| {
+            view.filter(|v| !v.drag_state.source_items.is_empty())
+                .map(|v| v.drag_state.source_items.clone())
+        };
+        let secondary_drag_sources =
+            drag_sources_of(self.tabs[self.active_tab].split_view.as_ref());
+        let third_drag_sources = drag_sources_of(self.tabs[self.active_tab].third_view.as_ref());
+        // Whichever pane the drag started in - only one ever has sources.
+        let any_drag_sources = primary_drag_sources
             .clone()
-            .or_else(|| secondary_drag_sources.clone());
-        let sidebar_drag_sources = primary_drag_sources
-            .clone()
-            .or_else(|| secondary_drag_sources.clone());
+            .or_else(|| secondary_drag_sources.clone())
+            .or_else(|| third_drag_sources.clone());
+        let tabs_drag_sources = any_drag_sources.clone();
+        let sidebar_drag_sources = any_drag_sources;
         let primary_move_target = tabbar_action
             .as_ref()
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
@@ -1843,10 +1787,14 @@ impl eframe::App for MainWindow {
                 .as_ref()
                 .and_then(|a| a.move_files_to_sidebar_dir.as_ref())
                 .is_some();
-        let secondary_move_target = secondary_tabbar_action
-            .as_ref()
-            .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
-            .is_some();
+        let breadcrumb_move_target = |action: &Option<ItemViewerNavBarAction>| {
+            action
+                .as_ref()
+                .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
+                .is_some()
+        };
+        let secondary_move_target = breadcrumb_move_target(&secondary_tabbar_action);
+        let third_move_target = breadcrumb_move_target(&third_tabbar_action);
 
         self.folder_size_cache.poll_loaded();
         self.handle_directory_batch_recieve(ui.ctx());
@@ -1869,6 +1817,10 @@ impl eframe::App for MainWindow {
             self.focused_split = SplitSide::Secondary;
             self.handle_tabbar_action(secondary_tabbar_action, secondary_drag_sources.as_deref());
         }
+        if third_tabbar_action.is_some() {
+            self.focused_split = SplitSide::Tertiary;
+            self.handle_tabbar_action(third_tabbar_action, third_drag_sources.as_deref());
+        }
         self.focused_split = restore_focus;
 
         if primary_move_target {
@@ -1884,6 +1836,13 @@ impl eframe::App for MainWindow {
                 split.drag_state.source_items.clear();
             }
         }
+        if third_move_target {
+            if let Some(third) = self.tabs[self.active_tab].third_view.as_mut() {
+                third.drag_state.active = false;
+                third.drag_state.start_pos = None;
+                third.drag_state.source_items.clear();
+            }
+        }
 
         // Letting go of the button ends the drag, whatever else happened to
         // the release. Each drop handler already clears its own view's state,
@@ -1895,7 +1854,7 @@ impl eframe::App for MainWindow {
         // nothing is taken away from them here.
         if ui.ctx().input(|i| i.pointer.primary_released()) {
             let tab = &mut self.tabs[self.active_tab];
-            for view in std::iter::once(&mut tab.primary_view).chain(tab.split_view.as_mut()) {
+            for view in tab.views_mut() {
                 view.drag_state.active = false;
                 view.drag_state.start_pos = None;
                 view.drag_state.source_items.clear();
@@ -1947,6 +1906,10 @@ impl eframe::App for MainWindow {
         if secondary_pending_action.is_some() {
             self.focused_split = SplitSide::Secondary;
             handle_pending_actions(secondary_pending_action, self);
+        }
+        if third_pending_action.is_some() {
+            self.focused_split = SplitSide::Tertiary;
+            handle_pending_actions(third_pending_action, self);
         }
         // If either call above just queued delayed post-command refreshes,
         // make sure a frame actually runs to check them later - the app may
@@ -2038,6 +2001,7 @@ impl eframe::App for MainWindow {
             .map(|tab| SessionTabEntry {
                 path: tab_path(&tab.primary_view.nav),
                 split_path: tab.split_view.as_ref().map(|split| tab_path(&split.nav)),
+                third_path: tab.third_view.as_ref().map(|third| tab_path(&third.nav)),
             })
             .collect();
 

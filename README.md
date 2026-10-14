@@ -168,13 +168,14 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | Feature | Description |
 |---|---|
 | **Tabs** | Open, close, reorder and pin tabs; pinned tabs restore on startup. A multi-row tab strip wraps when there are too many to fit comfortably. Right-click a tab for Close Others / To The Left / To The Right, Pin, Add To Favorites, Save As Tab Group, and Duplicate |
-| **Split panes** | Split any tab into two independent panes, each with its own folder, view mode, sort and history |
+| **Split panes** | Split any tab into two or three independent panes, each with its own folder, view mode, sort and history. The split button steps one pane -> two side by side -> three (one full-height pane on the left, two stacked on the right) -> back to one |
 | **Address bar** | Breadcrumb navigation with inline editing, `>` dropdown menus listing each segment's subfolders, Windows environment-variable expansion (`%APPDATA%`), and `shell:` URI / `::{GUID}` resolution — filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers) open natively |
 | **History** | Back / Forward / Up with full history saved and restored across sessions, including per-folder selection memory |
 | **Folders tree** | An expandable drive-and-folder tree in the sidebar, like Explorer's, with lazy loading |
 | **Recent locations** | The 20 most recently visited real folders, skipping anything already in Favorites |
 | **Flat view** | `Ctrl+Shift+L` — every file in every subfolder as one list, with a Folder column |
 | **Spring-loaded folders** | Rest on a folder mid-drag and it opens, so a single drag can descend several levels; a progress bar fills while you wait |
+| **Drag auto-scroll** | Hold a drag near the top or bottom of a list and it scrolls that way - faster the closer to the edge - so a folder below the fold is still a drop target, as in Explorer |
 | **Command palette** | `Ctrl+Shift+P` — every command with its icon and current shortcut, plus Settings pages, favorites and recent folders |
 | **Single-instance CLI** | `EdenExplorer.exe <folder>` opens a tab in the running window instead of a second one; accepts `::MY_PC::`, `::RECYCLE_BIN::` and `shell:` monikers |
 
@@ -222,7 +223,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 
 | Feature | Description |
 |---|---|
-| **Preview pane** | A **Preview** tab and a **Details** tab (size, dimensions, dates) beside the file list |
+| **Preview pane** | A **Preview** tab and a **Details** tab (size, dimensions, dates) beside the file list. In **Preview** and **Details + Preview** it follows the selection, including the arrow keys - so walking a folder with the keyboard previews each file as you reach it |
 | **Quick Look** | `Space` for a large preview over the window, with the name, size, date and position in the folder ("3 / 42"), previous/next, and arrow keys to walk the list with the preview following |
 | **Images** | PNG, JPEG, BMP, WebP, TIFF, ICO, AVIF, and **SVG** (including gzip-compressed `.svgz`), rasterized rather than shown as an icon |
 | **Animated GIFs** | Full playback with a seek bar, Play/Pause, Stop and frame stepping |
@@ -281,7 +282,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 
 | Feature | Description |
 |---|---|
-| **Terminal pane** | `` Ctrl+` `` docks a real terminal under (or beside) the file list — PowerShell 7, Windows PowerShell, Command Prompt, Git Bash or any WSL distribution — starting in the current folder and following it as you navigate |
+| **Terminal pane** | `` Ctrl+` `` docks a real terminal under (or beside) the file list — PowerShell 7, Windows PowerShell, Command Prompt, Git Bash, **Nushell** or any WSL distribution — starting in the current folder and following it as you navigate |
 | **Right-click to copy and paste** | In the terminal and the SSH shell, right-clicking a selection copies it; right-clicking with nothing selected pastes - the PuTTY convention, with no menu in the way. Ctrl+Shift+C / Ctrl+Shift+V still work, as does Ctrl+C for copy-or-interrupt; Ctrl+Shift+A selects everything and Ctrl+Shift+K clears the screen and the scrollback |
 | **Drag-to-select scrolls** | In the terminal and the SSH shell, dragging a selection past the top or bottom edge scrolls the history so the selection keeps going, faster the further out the pointer is; Shift+click or Shift+drag moves the end of the current selection to grow or shrink it |
 | **WSL layout** | Inside a WSL distribution the files and that distribution's shell sit side by side automatically |
@@ -577,6 +578,12 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 - [x] **WSL layout** - inside a WSL distribution the file view and that distribution's shell sit side by side: the terminal pane opens on the right by itself, already in the folder you're viewing (as its Linux path, `/home/me/projects`), and with **Follow Folder** on (the link button in the pane's header) the shell changes to each folder you open on the left (not while a full-screen program like vim or less is running). Drag the divider to resize it; leaving WSL puts the pane away again. The address bar and tab show the distribution's name instead of `\\wsl$\Ubuntu`. Settings > Behavior > WSL Layout turns it off
 - [x] **Faster big folders, flat view, and search** - dates are now formatted with the local time zone looked up once per hour of timestamps instead of once per date (Windows was asked twice per file), so a flat view of 30,150 files loads in 0.25 s instead of 19.8 s, and big folders and search results list much faster too. Flat view and search no longer measure every row's text on every frame to size their columns (86 ms → 9 ms per frame with 30,000 files): only each column's longest texts are measured, and only when the list changes. Items arriving in a big listing are merged into the sorted list instead of re-sorting it all for every batch of 128, and sorting no longer makes lowercase copies of names; folder sizes only re-sort the list when it's sorted by size. Git status and portable tags also skip mapped network drives (not just `\\server` paths), the terminal pane checks its folder once instead of every frame (a network round trip on WSL and network folders), and the mounted-image check reads its cached list in place
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
+- [x] **A third pane** - the split button now steps through one pane, two side by side, and three: one full-height pane in the left column, two equal halves stacked in the right one. Every pane is independent as before (its own folder, view layout, sort, selection, filter and history), the active one is marked the same way, and a three-pane tab is restored on the next launch like any other. Sessions saved by an older build still restore - they are read in their old shape and written back in the new one
+- [x] **Lists scroll while you drag** - holding a drag near the top or bottom edge of a file list or gallery scrolls it that way, faster the nearer the edge and at full speed once past it, so a folder that was off screen when the drag started is still somewhere you can drop. With the button held, neither the wheel nor the scrollbar is reachable, so previously the only drop targets were the rows that already happened to be visible. Combines with spring-loaded folders: scroll down to a folder, rest on it until it opens, and keep going
+- [x] **The preview follows the selection** - in **Preview** and **Details + Preview**, whatever is selected is what the pane shows: walking a folder with the arrow keys previews each file as you reach it (and scrolls it into view), and switching into either layout with something already selected previews it immediately instead of showing an empty pane. Previously only a mouse click on a row ever changed the preview. This also fixed the pane showing one file's name above another file's contents when the two happened to be exactly the same size
+- [x] **Nushell in the terminal pane** - [Nushell](https://www.nushell.sh/) is offered from the terminal pane's **+** menu alongside the other shells when it is installed (the winget/MSI install, Scoop, Chocolatey, a `cargo install`, or on `PATH`), with **Go To Current Folder** quoting paths the way Nushell wants them. Shells are also now looked up in the `PATH` as the registry currently holds it, not only the copy this process started with - so a shell installed (or added to `PATH`) while EdenExplorer was already running is found without restarting anything
+- [x] **Only the active pane responds to the arrow keys** - in a split, every Details or Details + Preview pane walked its own list on a single arrow key, because the table's keyboard navigation was never told which pane was the active one (Gallery's always had been). The Preview layout, meanwhile, had no arrow-key navigation at all - its list could only be walked with the mouse. Both fixed: the arrow keys move the selection in the pane you are working in, and only that one
+- [x] **New app icon** - a new blue folder icon, applied everywhere the old one was used: the program's own Windows icon (taskbar, Explorer, shortcuts), the window icon at runtime, and the logo at the top of this README
 
 
 </details>

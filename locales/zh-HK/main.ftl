@@ -69,6 +69,7 @@ tab_close_to_right = 關閉右側分頁
 tab_close_to_left = 關閉左側分頁
 tooltip_open_split = 開啟分割檢視
 tooltip_close_split = 關閉分割檢視
+tooltip_add_third_pane = 新增第三個窗格
 tooltip_hide_sidebar = 隱藏側邊欄
 tooltip_show_sidebar = 顯示側邊欄
 tooltip_favorites_disabled = 「此電腦」中無法使用我的最愛

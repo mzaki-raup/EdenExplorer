@@ -289,10 +289,8 @@ impl MainWindow {
     fn reload_views_showing(&mut self, dirs: &[PathBuf]) {
         use crate::gui::windows::containers::structs::SplitSide;
         let restore = self.focused_split;
-        for side in [SplitSide::Primary, SplitSide::Secondary] {
-            if side == SplitSide::Secondary && self.active_tab().split_view.is_none() {
-                continue;
-            }
+        let sides: Vec<SplitSide> = self.active_tab().sides().collect();
+        for side in sides {
             if dirs.contains(&self.active_tab().view(side).nav.current) {
                 self.focused_split = side;
                 self.load_view(side);

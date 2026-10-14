@@ -69,6 +69,7 @@ tab_close_to_right = Close Tabs To The Right
 tab_close_to_left = Close Tabs To The Left
 tooltip_open_split = Open In Split View
 tooltip_close_split = Close Split View
+tooltip_add_third_pane = Add A Third Pane
 tooltip_hide_sidebar = Hide Sidebar
 tooltip_show_sidebar = Show Sidebar
 tooltip_favorites_disabled = Favorites are disabled on This PC

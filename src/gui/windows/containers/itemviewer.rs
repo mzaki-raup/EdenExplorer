@@ -199,6 +199,17 @@ pub fn draw_item_viewer(
         && !is_recycle_bin_view;
     if is_detail_preview {
         preview_service.pump(ui.ctx());
+        // Follows the selection however it moved - arrow keys, a layout
+        // switch with something already selected, Select All collapsing back
+        // to one item. The per-row click handler further down still requests
+        // its own preview, so a click previews in the same frame rather than
+        // the next one.
+        crate::gui::windows::containers::itemviewer_preview::sync_preview_selection(
+            files,
+            explorer_state,
+            preview_selection,
+            preview_service,
+        );
     }
 
     // Drawn *before* the "empty" message below: `handle_global_actions`
@@ -382,6 +393,8 @@ pub fn draw_item_viewer(
             files,
             &filter_state.cached_indices,
             explorer_state,
+            is_focused,
+            modal_input_blocked,
             preview_service,
             video_service,
             audio_service,
@@ -582,6 +595,15 @@ pub fn draw_item_viewer(
                     column_state.layout_generation,
                 ));
                 let table_state_id = ui.id().with(table_id_salt);
+                // Where this table's scroll area reported itself to be at the
+                // end of the last frame (stored below, after `body`). Kept
+                // here rather than read out of egui's own state by id - see
+                // `drag_scroll_offset`.
+                let table_scroll_offset_id = table_state_id.with("drag_scroll_offset");
+                let table_scroll_offset: f32 = ui
+                    .ctx()
+                    .data(|d| d.get_temp(table_scroll_offset_id))
+                    .unwrap_or(0.0);
                 let mut table = TableBuilder::new(ui)
                     .vscroll(true)
                     .max_scroll_height(available_height)
@@ -597,6 +619,18 @@ pub fn draw_item_viewer(
                     .animate_scrolling(true)
                     .resizable(true)
                     .id_salt(table_id_salt);
+
+                // Explorer-style edge auto-scroll: with the primary button
+                // held, neither the wheel nor the scrollbar is reachable, so
+                // holding a drag near the top or bottom of the list is what
+                // brings an off-screen folder into view to drop onto.
+                if drag_hover_active {
+                    if let Some(offset) =
+                        drag_scroll_offset(&ctx, table_scroll_offset, table_rect, pointer_pos)
+                    {
+                        table = table.vertical_scroll_offset(offset);
+                    }
+                }
 
                 // If we have a pending selection from a refresh, scroll to it and select it
                 if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
@@ -749,7 +783,7 @@ pub fn draw_item_viewer(
 
                 let mut actual_column_widths = Vec::new();
 
-                table
+                let table_output = table
                     .header(layout.header_height, |mut header| {
                         if let Some(a) = draw_item_viewer_header(
                             i18n,
@@ -1017,6 +1051,12 @@ pub fn draw_item_viewer(
                         hovered_drop_target_rect = current_hovered_drop_target_rect;
                     });
 
+                // The scroll area's own account of where it ended up, for the
+                // next frame's drag auto-scroll to carry on from.
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(table_scroll_offset_id, table_output.state.offset.y)
+                });
+
                 // ------------------- END OF TABLE VIEW -------------------
                 let checkbox_column_count = if layout.show_checkboxes { 1 } else { 0 };
 
@@ -1125,7 +1165,15 @@ pub fn draw_item_viewer(
                 *hovered_drop_target_out = hovered_drop_target.clone();
                 *hovered_drop_target_rect_out = hovered_drop_target_rect;
 
-                if !modal_input_blocked {
+                // `is_focused` is what makes this the *active* pane's
+                // keyboard navigation rather than every pane's at once: a
+                // split draws this same table two or three times in one
+                // frame, each with its own selection, and every one of them
+                // used to move on the same arrow key (Gallery's equivalent
+                // call has always had this gate). Invisible until the
+                // preview pane started following the selection, which made
+                // all the panes change what they were showing together.
+                if !modal_input_blocked && is_focused {
                     if let Some(a) = handle_keyboard_navigation(
                         ui.ctx(),
                         &filter_state.cached_indices,

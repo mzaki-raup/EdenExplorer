@@ -1085,19 +1085,11 @@ impl MainWindow {
     fn reload_all_views(&mut self) {
         let settings = self.settings_window.current_settings.clone();
         for tab in &mut self.tabs {
-            apply_directory_settings_to_view(
-                &mut tab.primary_view,
-                &settings,
-                DisplayModeFallback::Default,
-            );
-            if let Some(split) = tab.split_view.as_mut() {
-                apply_directory_settings_to_view(split, &settings, DisplayModeFallback::Default);
+            for view in tab.views_mut() {
+                apply_directory_settings_to_view(view, &settings, DisplayModeFallback::Default);
             }
         }
-        self.load_view(SplitSide::Primary);
-        if self.active_tab().split_view.is_some() {
-            self.load_view(SplitSide::Secondary);
-        }
+        self.load_active_tab_views();
     }
 
     pub(crate) fn save_app_settings_to_disk(&self) {
@@ -1227,6 +1219,13 @@ impl MainWindow {
         self.load_view_with_fallback(side, DisplayModeFallback::Default);
     }
 
+    /// Re-lists every pane the active tab has open, however many that is.
+    pub(crate) fn load_active_tab_views(&mut self) {
+        for side in self.active_tab().sides().collect::<Vec<_>>() {
+            self.load_view(side);
+        }
+    }
+
     /// Re-lists a pane's own folder, keeping what was selected.
     ///
     /// `load_view` clears the selection unconditionally, which is right when
@@ -1307,16 +1306,21 @@ impl MainWindow {
             view.git = None;
             view.remote_error = Default::default();
         }
-        // Folder sizes are shared by both panes of a split: keep the other
-        // pane's (its folder isn't being reloaded), drop everything else.
-        let other_side = match side {
-            SplitSide::Primary => SplitSide::Secondary,
-            SplitSide::Secondary => SplitSide::Primary,
+        // Folder sizes are shared by every pane of a split: keep the ones
+        // belonging to the folders the other panes are showing (those aren't
+        // being reloaded), drop the rest.
+        let other_dirs: Vec<PathBuf> = {
+            let tab = self.active_tab();
+            tab.sides()
+                .filter(|&other| other != side)
+                .map(|other| tab.view(other).nav.current.clone())
+                .collect()
         };
-        let other_dir = (self.active_tab().split_view.is_some())
-            .then(|| self.active_tab().view(other_side).nav.current.clone());
-        self.folder_sizes
-            .retain(|path, _| other_dir.as_deref().is_some_and(|dir| path.parent() == Some(dir)));
+        self.folder_sizes.retain(|path, _| {
+            other_dirs
+                .iter()
+                .any(|dir| path.parent() == Some(dir.as_path()))
+        });
         self.file_size_text_cache.clear();
         self.folder_size_text_cache.clear();
         self.drive_size_text_cache.clear();
@@ -4221,7 +4225,7 @@ impl MainWindow {
         self.shutdown.store(true, Ordering::Relaxed);
 
         for tab in &mut self.tabs {
-            for view in std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut()) {
+            for view in tab.views_mut() {
                 // Dropping the senders/receivers wakes any blocked workers.
                 view.size_req_tx.take();
                 view.size_rx.take();
@@ -4899,19 +4903,11 @@ impl MainWindow {
             if let Some(id) = action.activate {
                 self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
                 self.focused_split = SplitSide::Primary;
-                let has_split = {
-                    let tab = self.active_tab_mut();
-                    tab.primary_view.item_viewer_filter_state.dirty = true;
-                    if let Some(split) = tab.split_view.as_mut() {
-                        split.item_viewer_filter_state.dirty = true;
-                    }
-                    tab.split_view.is_some()
-                };
-                self.pending_tab_scroll_id = Some(id);
-                self.load_view(SplitSide::Primary);
-                if has_split {
-                    self.load_view(SplitSide::Secondary);
+                for view in self.active_tab_mut().views_mut() {
+                    view.item_viewer_filter_state.dirty = true;
                 }
+                self.pending_tab_scroll_id = Some(id);
+                self.load_active_tab_views();
             }
             if action.open_new {
                 let cloned_nav = self.current_nav().clone();
@@ -5037,10 +5033,11 @@ impl MainWindow {
                 if self.tabs.len() > 1 {
                     if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
                         if let Some(tab) = self.tabs.get(idx) {
-                            let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
-                            if let Some(split) = tab.split_view.as_ref() {
-                                let snapshot = directory_settings_snapshot_for_view(split);
+                            let snapshots: Vec<_> = tab
+                                .views()
+                                .map(directory_settings_snapshot_for_view)
+                                .collect();
+                            for snapshot in snapshots {
                                 let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
@@ -5092,6 +5089,7 @@ impl MainWindow {
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
+                    self.tabs[0].third_view = None;
                     self.active_tab = 0;
                     self.focused_split = SplitSide::Primary;
                     self.mark_tab_infos_dirty();
@@ -5136,11 +5134,11 @@ impl MainWindow {
 
                     if !indices_to_close.is_empty() {
                         for &idx in &indices_to_close {
-                            let tab = &self.tabs[idx];
-                            let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
-                            if let Some(split) = tab.split_view.as_ref() {
-                                let snapshot = directory_settings_snapshot_for_view(split);
+                            let snapshots: Vec<_> = self.tabs[idx]
+                                .views()
+                                .map(directory_settings_snapshot_for_view)
+                                .collect();
+                            for snapshot in snapshots {
                                 let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
@@ -5215,22 +5213,41 @@ impl MainWindow {
         }
     }
 
-    /// Toggles the active tab's split view: creates a second view (duplicating
-    /// the primary view's directory+sort, with its own selection/filter/listing)
-    /// if none exists, or clears it if one does.
-    pub(crate) fn toggle_split_for_active_tab(&mut self) {
-        let has_split = self.active_tab().split_view.is_some();
-        if has_split {
-            self.active_tab_mut().split_view = None;
-            if self.focused_split == SplitSide::Secondary {
+    /// Steps the active tab through its three layouts: one pane, two side by
+    /// side, then three (the second column split in half), and back to one.
+    ///
+    /// Each pane added duplicates the focused pane's folder and sort order
+    /// but gets its own selection, filter and listing.
+    pub(crate) fn cycle_split_for_active_tab(&mut self) {
+        match self.active_tab().pane_count() {
+            1 => {
+                let tab = self.active_tab_mut();
+                tab.split_view = Some(tab.primary_view.duplicate_as_new());
+                self.focused_split = SplitSide::Secondary;
+                self.load_view(SplitSide::Secondary);
+            }
+            2 => {
+                let tab = self.active_tab_mut();
+                let source = tab
+                    .split_view
+                    .as_ref()
+                    .unwrap_or(&tab.primary_view)
+                    .duplicate_as_new();
+                tab.third_view = Some(source);
+                self.focused_split = SplitSide::Tertiary;
+                self.load_view(SplitSide::Tertiary);
+            }
+            // Back to a single pane. Both extra views are dropped together -
+            // closing only the third would leave the button's own next step
+            // ambiguous, and "close split" has always meant all of it.
+            _ => {
+                let tab = self.active_tab_mut();
+                tab.split_view = None;
+                tab.third_view = None;
                 self.focused_split = SplitSide::Primary;
             }
-        } else {
-            let tab = self.active_tab_mut();
-            tab.split_view = Some(tab.primary_view.duplicate_as_new());
-            self.focused_split = SplitSide::Secondary;
-            self.load_view(SplitSide::Secondary);
         }
+        self.mark_tab_infos_dirty();
     }
 
     /// Opens `path` as the active tab's split view, creating the split if none
@@ -5472,7 +5489,7 @@ impl MainWindow {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
             }
             if action.toggle_active_tab_split {
-                self.toggle_split_for_active_tab();
+                self.cycle_split_for_active_tab();
             }
         }
     }
@@ -5496,15 +5513,8 @@ impl MainWindow {
                 .unwrap_or(false)
             || self.sidebar_state.non_ntfs_popup_path.is_some()
             || active_tab
-                .primary_view
-                .explorer_state
-                .non_ntfs_popup_path
-                .is_some()
-            || active_tab
-                .split_view
-                .as_ref()
-                .map(|view| view.explorer_state.non_ntfs_popup_path.is_some())
-                .unwrap_or(false)
+                .views()
+                .any(|view| view.explorer_state.non_ntfs_popup_path.is_some())
             || topbar_menu_open
     }
 
@@ -5612,9 +5622,8 @@ impl MainWindow {
         let set = |view: &mut crate::gui::windows::containers::structs::TabView| {
             view.git = view.git_repo.as_deref().filter(|_| enabled).and_then(|w| git.status(w));
         };
-        set(&mut tab.primary_view);
-        if let Some(split) = tab.split_view.as_mut() {
-            set(split);
+        for view in tab.views_mut() {
+            set(view);
         }
     }
 
@@ -6031,9 +6040,8 @@ impl MainWindow {
         if should_pause {
             return;
         }
-        self.handle_throttle_size_requests_for(SplitSide::Primary);
-        if self.active_tab().split_view.is_some() {
-            self.handle_throttle_size_requests_for(SplitSide::Secondary);
+        for side in self.active_tab().sides().collect::<Vec<_>>() {
+            self.handle_throttle_size_requests_for(side);
         }
     }
 
@@ -6053,9 +6061,9 @@ impl MainWindow {
     }
 
     pub fn handle_directory_size_updates(&mut self, ctx: &egui::Context) {
-        let mut any_updated = self.handle_directory_size_updates_for(SplitSide::Primary);
-        if self.active_tab().split_view.is_some() {
-            any_updated |= self.handle_directory_size_updates_for(SplitSide::Secondary);
+        let mut any_updated = false;
+        for side in self.active_tab().sides().collect::<Vec<_>>() {
+            any_updated |= self.handle_directory_size_updates_for(side);
         }
         if any_updated {
             ctx.request_repaint();
@@ -6119,9 +6127,9 @@ impl MainWindow {
     }
 
     pub fn handle_directory_batch_recieve(&mut self, ctx: &egui::Context) {
-        let mut any_updated = self.handle_directory_batch_recieve_for(SplitSide::Primary);
-        if self.active_tab().split_view.is_some() {
-            any_updated |= self.handle_directory_batch_recieve_for(SplitSide::Secondary);
+        let mut any_updated = false;
+        for side in self.active_tab().sides().collect::<Vec<_>>() {
+            any_updated |= self.handle_directory_batch_recieve_for(side);
         }
         if any_updated {
             ctx.request_repaint();

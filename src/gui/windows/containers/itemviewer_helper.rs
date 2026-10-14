@@ -2570,7 +2570,7 @@ fn draw_visibility_checkbox(ui: &mut egui::Ui, label: String, checked: bool) -> 
 pub fn handle_keyboard_navigation(
     ctx: &egui::Context,
     filtered_indices: &[usize],
-    files: &Vec<FileItem>,
+    files: &[FileItem],
     is_drive_view: bool,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
@@ -3681,4 +3681,132 @@ pub fn draw_empty_folder_context_menu(
                 );
             }
         });
+}
+
+/// How deep into a list's own top/bottom edge a held drag still counts as
+/// "at the edge" and scrolls it.
+const DRAG_SCROLL_EDGE: f32 = 40.0;
+/// How fast that scroll runs, in points per second, with the pointer right
+/// at (or past) the edge.
+const DRAG_SCROLL_MAX_SPEED: f32 = 900.0;
+
+/// Points to scroll a list this frame while a drag is held near its top or
+/// bottom edge - negative scrolls up. `0.0` for a pointer anywhere else.
+///
+/// Dragging a file onto a folder that is off screen needs the list to follow
+/// the pointer the way Explorer's does: holding near an edge scrolls that
+/// way, faster the closer to the edge, at full speed once past it (a drag on
+/// its way to another pane leaves the list entirely). Without this the only
+/// drop targets were the rows that happened to already be visible when the
+/// drag started, since a held primary button means the wheel and the
+/// scrollbar are both out of reach.
+pub fn drag_scroll_delta(rect: egui::Rect, pointer: egui::Pos2, dt: f32) -> f32 {
+    if !rect.x_range().contains(pointer.x) {
+        return 0.0;
+    }
+    // A short list would otherwise have its two edge zones overlap, leaving
+    // nowhere in the middle to hold still over a row.
+    let edge = DRAG_SCROLL_EDGE.min(rect.height() / 3.0);
+    if edge <= 0.0 {
+        return 0.0;
+    }
+    let speed = if pointer.y < rect.top() + edge {
+        -(((rect.top() + edge - pointer.y) / edge).min(1.0))
+    } else if pointer.y > rect.bottom() - edge {
+        ((pointer.y - (rect.bottom() - edge)) / edge).min(1.0)
+    } else {
+        return 0.0;
+    };
+    speed * DRAG_SCROLL_MAX_SPEED * dt
+}
+
+/// The scroll offset a list should be at this frame for a drag held near its
+/// edge, or `None` to leave it where it is.
+///
+/// `current_offset` is where the list is now. Each caller keeps that itself,
+/// from the `ScrollAreaOutput` its own scroll area returned last frame,
+/// rather than looking the state up by id: `TableBuilder` derives its
+/// `ScrollArea`'s id through two layers of its own, and a *wrong* id is
+/// indistinguishable from a list that has never been scrolled - which, the
+/// first time this was written, moved the list by exactly one frame's worth
+/// of scroll and then sat there for ever.
+pub fn drag_scroll_offset(
+    ctx: &egui::Context,
+    current_offset: f32,
+    rect: egui::Rect,
+    pointer: Option<egui::Pos2>,
+) -> Option<f32> {
+    let pointer = pointer?;
+    // A frame that took a long time (a folder scan, a thumbnail batch) must
+    // not jump the list by that whole interval's worth of scrolling.
+    let dt = ctx.input(|i| i.stable_dt).min(1.0 / 30.0);
+    let delta = drag_scroll_delta(rect, pointer, dt);
+    if delta == 0.0 {
+        return None;
+    }
+    // Scrolling has to continue while the pointer is held still, which
+    // produces no input events of its own to wake the next frame.
+    ctx.request_repaint();
+    // The far end is clamped by `ScrollArea` itself, against a content
+    // height only it knows.
+    Some((current_offset + delta).max(0.0))
+}
+
+#[cfg(test)]
+mod drag_scroll_tests {
+    use super::*;
+
+    fn list() -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(100.0, 200.0), egui::vec2(400.0, 600.0))
+    }
+
+    #[test]
+    fn the_middle_of_a_list_does_not_scroll() {
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 500.0), 1.0), 0.0);
+        // Just inside either edge zone, but not in it.
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 241.0), 1.0), 0.0);
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 759.0), 1.0), 0.0);
+    }
+
+    #[test]
+    fn each_edge_scrolls_its_own_way_and_faster_the_closer_it_gets() {
+        let up_inner = drag_scroll_delta(list(), egui::pos2(300.0, 230.0), 1.0);
+        let up_edge = drag_scroll_delta(list(), egui::pos2(300.0, 205.0), 1.0);
+        assert!(up_inner < 0.0 && up_edge < up_inner, "{up_edge} {up_inner}");
+
+        let down_inner = drag_scroll_delta(list(), egui::pos2(300.0, 770.0), 1.0);
+        let down_edge = drag_scroll_delta(list(), egui::pos2(300.0, 795.0), 1.0);
+        assert!(down_inner > 0.0 && down_edge > down_inner, "{down_edge} {down_inner}");
+    }
+
+    #[test]
+    fn a_pointer_dragged_past_the_list_scrolls_at_full_speed_but_no_faster() {
+        let dt = 1.0 / 60.0;
+        let full = DRAG_SCROLL_MAX_SPEED * dt;
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 200.0), dt), -full);
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, -4000.0), dt), -full);
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 800.0), dt), full);
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(300.0, 4000.0), dt), full);
+    }
+
+    /// A drag heading for the other pane of a split passes outside this one
+    /// horizontally - it must not drag this list along with it.
+    #[test]
+    fn a_pointer_beside_the_list_does_not_scroll_it() {
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(80.0, 210.0), 1.0), 0.0);
+        assert_eq!(drag_scroll_delta(list(), egui::pos2(900.0, 790.0), 1.0), 0.0);
+    }
+
+    /// Both edge zones of a list only a few rows tall would otherwise
+    /// overlap, leaving nowhere to hold still over a row.
+    #[test]
+    fn a_short_list_keeps_a_still_zone_in_the_middle() {
+        let short = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 60.0));
+        assert_eq!(drag_scroll_delta(short, egui::pos2(100.0, 30.0), 1.0), 0.0);
+        assert!(drag_scroll_delta(short, egui::pos2(100.0, 2.0), 1.0) < 0.0);
+        assert!(drag_scroll_delta(short, egui::pos2(100.0, 58.0), 1.0) > 0.0);
+        // A rect with no height at all has no edges to speak of.
+        let empty = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 0.0));
+        assert_eq!(drag_scroll_delta(empty, egui::pos2(100.0, 0.0), 1.0), 0.0);
+    }
 }
