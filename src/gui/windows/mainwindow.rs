@@ -724,8 +724,9 @@ impl eframe::App for MainWindow {
         if self.rename_state.is_none()
             && let Some(changed) = self.pending_dir_refresh.take()
         {
-            let sides: Vec<SplitSide> = self.active_tab().sides().collect();
-            for side in sides {
+            for side in
+                TabState::SIDES.into_iter().take(self.active_tab().pane_count())
+            {
                 if self.active_tab().view(side).nav.current == changed {
                     self.refresh_view(side);
                 }
@@ -1441,14 +1442,14 @@ impl eframe::App for MainWindow {
                                                 );
                                             }
 
-                                            let panes: Vec<(SplitSide, egui::Rect)> = [
+                                            // A fixed array rather than a
+                                            // `Vec`: this is per-frame code,
+                                            // and it is iterated twice.
+                                            let panes: [Option<(SplitSide, egui::Rect)>; 3] = [
                                                 Some((SplitSide::Primary, primary_rect)),
                                                 Some((SplitSide::Secondary, secondary_rect)),
                                                 third_rect.map(|rect| (SplitSide::Tertiary, rect)),
-                                            ]
-                                            .into_iter()
-                                            .flatten()
-                                            .collect();
+                                            ];
 
                                             let (pointer_pos, primary_clicked) = ui.ctx().input(|i| {
                                                 (
@@ -1481,16 +1482,19 @@ impl eframe::App for MainWindow {
 
                                             if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
-                                                    if let Some(&(side, _)) = panes
+                                                    if let Some((side, _)) = panes
                                                         .iter()
+                                                        .flatten()
                                                         .find(|(_, rect)| rect.contains(pos))
                                                     {
-                                                        self.focused_split = side;
+                                                        self.focused_split = *side;
                                                     }
                                                 }
                                             }
 
-                                            for (index, &(side, pane_rect)) in panes.iter().enumerate() {
+                                            for (index, &(side, pane_rect)) in
+                                                panes.iter().flatten().enumerate()
+                                            {
                                                 let pane_focused = self.focused_split == side;
                                                 ui.scope_builder(
                                                     egui::UiBuilder::new().max_rect(pane_rect),

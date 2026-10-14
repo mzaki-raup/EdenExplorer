@@ -287,10 +287,9 @@ impl MainWindow {
 
     /// Reloads the active tab's panes showing any of `dirs`.
     fn reload_views_showing(&mut self, dirs: &[PathBuf]) {
-        use crate::gui::windows::containers::structs::SplitSide;
+        use crate::gui::windows::containers::structs::TabState;
         let restore = self.focused_split;
-        let sides: Vec<SplitSide> = self.active_tab().sides().collect();
-        for side in sides {
+        for side in TabState::SIDES.into_iter().take(self.active_tab().pane_count()) {
             if dirs.contains(&self.active_tab().view(side).nav.current) {
                 self.focused_split = side;
                 self.load_view(side);

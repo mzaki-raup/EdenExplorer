@@ -310,6 +310,15 @@ pub struct ColumnsViewState {
     /// The currently-selected file (not folder) in the deepest column, used by
     /// `ItemViewerDisplayMode::ColumnPreview` to know what to preview.
     pub selected_file: Option<PathBuf>,
+    /// The item the arrow keys are currently on, in the deepest column.
+    ///
+    /// The column browser's own idea of "selected" is positional - a folder
+    /// is the one whose contents the next column shows, a file is
+    /// `selected_file` - and neither can express "the keyboard is on this
+    /// folder but has not opened it". This can, and it is what the arrow
+    /// keys move; a file it lands on also becomes `selected_file`, so the
+    /// preview follows.
+    pub keyboard_selection: Option<PathBuf>,
     /// Set whenever the view navigates/refreshes (see `load_view`) so the
     /// column browser re-reads every currently-open column's contents from
     /// disk instead of reusing its cache - otherwise Columns/ColumnPreview
@@ -993,6 +1002,14 @@ impl TabState {
         1 + self.split_view.is_some() as usize + self.third_view.is_some() as usize
     }
 
+    /// Every side, in pane order - a tab has the first `pane_count()` of
+    /// them. Taken by value, so iterating it allocates nothing.
+    pub const SIDES: [SplitSide; 3] = [
+        SplitSide::Primary,
+        SplitSide::Secondary,
+        SplitSide::Tertiary,
+    ];
+
     /// The sides this tab actually has a pane for, in pane order.
     ///
     /// Everything that has to touch "every open pane" (re-listing a folder,
@@ -1001,10 +1018,7 @@ impl TabState {
     /// of them - which is exactly the shape of gap this codebase has hit
     /// before with handlers wired into one view out of several.
     pub fn sides(&self) -> impl Iterator<Item = SplitSide> + use<> {
-        let count = self.pane_count();
-        [SplitSide::Primary, SplitSide::Secondary, SplitSide::Tertiary]
-            .into_iter()
-            .take(count)
+        Self::SIDES.into_iter().take(self.pane_count())
     }
 
     pub fn views(&self) -> impl Iterator<Item = &TabView> {

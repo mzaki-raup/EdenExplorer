@@ -166,9 +166,9 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Find in preview - highlights matches with next/previous navigation](12-find-in-preview.png)
 
-### Split-pane view
+### Split-pane view - up to three panes, one full-height on the left and two stacked on the right
 
-![Split-pane view](13-split-view.png)
+![Three-pane split view](13-split-view.png)
 
 ### File/folder right-click menu
 

@@ -72,7 +72,7 @@
   <li><b>Tabbed navigation</b> with independent loading states</li>
   <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
   <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
-  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video - following the selection, arrow keys included</li>
+  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video - following the selection in all three preview layouts, arrow keys included</li>
   <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>
   <li><b>New File templates</b> - Text, Markdown, Word, and Excel documents, plus your own templates folder</li>
   <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
