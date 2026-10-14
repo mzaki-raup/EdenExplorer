@@ -2534,6 +2534,58 @@ PowerShell process) rather than the app's own code - if you're using the
   unrelated change. Tests cannot run this way (they would be Windows
   binaries), and none of it replaces live verification of a UI change.
 
+- **A guessed `egui` widget id that resolves to nothing is indistinguishable
+  from a widget that has never been used - and for a scroll offset that means
+  "scrolled to the top", not "no answer".** The new drag auto-scroll read the
+  list's current offset with `egui::scroll_area::State::load(ctx, id)`, adding
+  a delta to it each frame. For the Details table the id was wrong:
+  `TableBuilder` builds its `ScrollArea` with
+  `id_salt(state_id.with("__scroll_area"))`, `ScrollArea` then resolves that
+  through `ui.make_persistent_id`, and `state_id` is itself
+  `ui.id().with(id_salt)` - so the real id is `ui.id().with(ui.id()
+  .with(id_salt).with("__scroll_area"))`, two layers deep. `load` returned
+  `None`, the code treated that as offset `0.0`, and the list therefore
+  jumped to exactly one frame's worth of scroll and sat there for ever while
+  the drag was held - which reads as "the feature half-works", not as "the id
+  is wrong". Two attempts at *deriving* the id (one layer, then two) both
+  missed; what settled it was a debug build printing the `load` result every
+  frame, which showed `state=None` with a perfectly good pointer and delta.
+  **The fix was to stop needing the id at all**: `Table::body` returns a
+  `ScrollAreaOutput`, and `ScrollArea::show`/`show_viewport` likewise, whose
+  `.state.offset.y` is the widget's own account of where it ended up - stored
+  in `ctx.data_mut` each frame under an id this code owns, and read back on
+  the next one. If something needs another widget's internal state, prefer
+  whatever that widget *returns* over reconstructing the id it files that
+  state under, and if an id must be guessed, make a miss fail loudly rather
+  than silently defaulting (`drag_scroll_offset` now returns `None` when the
+  state is missing instead of assuming `0.0`).
+- **Every view in this app is drawn once per pane, so a keyboard handler that
+  is not gated on `is_focused` is not "the active pane's keyboard" - it is all
+  of them at once.** `itemviewer.rs`'s call to `handle_keyboard_navigation`
+  was gated on `!modal_input_blocked` alone, so in a split every Details /
+  Detail-Preview pane moved its own selection on a single arrow key. Gallery's
+  equivalent call had always carried the gate; the table's simply never did.
+  Nothing made it visible while a selection was only a highlight - it took the
+  preview pane starting to follow the selection (so every pane visibly changed
+  what it was showing together) for the user to report it. The matching gap on
+  the other side: the **Preview** layout returns from `draw_item_viewer`
+  before that call is ever reached, so it had no arrow-key navigation at all.
+  When adding any keyboard handling to a view here, gate it on `is_focused`
+  and check whether the layouts that return early need their own copy - the
+  same "wired into one view out of six" shape this file already records for
+  gestures applies to keys.
+- **A cache keyed by a cheap proxy for the content (its length) instead of by
+  the thing it belongs to is a bug waiting for two items of the same size.**
+  The preview pane's syntax-highlighted galley was cached on `(text length,
+  dark mode, find highlight)` with a comment arguing the text could not change
+  without the enclosing path changing - true, but the path was not in the key.
+  Two different files of exactly the same size (65 bytes, in the case that
+  found it) therefore left the old galley in place: the pane showed one file's
+  name above another file's contents. It survived unnoticed for as long as the
+  preview only ever changed on a deliberate click, and broke immediately once
+  the preview started following the arrow keys. Key a cache by what it is
+  *for*, not by a value that happens to vary most of the time.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

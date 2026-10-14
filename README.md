@@ -122,7 +122,7 @@
 | | |
 |---|---|
 | ![Details view with tags](Screenshots/01-details-view-with-tags.png) | ![Gallery view](Screenshots/02-gallery-view.png) |
-| ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
+| ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Three-pane split view](Screenshots/13-split-view.png) |
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 | ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
 | ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage - Largest Files](Screenshots/60-disk-usage-largest-files.png) |
