@@ -759,6 +759,18 @@ fn status_counts_for_view(
         }
     };
 
+    // This runs every frame, for every pane - so once per frame per open
+    // pane, which a tab can now have three of. The selected size used to be
+    // a second pass over *all* of `view.files` (not just the visible ones,
+    // and a search or flat view can hold tens of thousands); it is folded
+    // into the pass below instead, costing one hash lookup per visible row.
+    // Nothing is lost by only looking at visible rows: `draw_item_viewer`
+    // drops the selection whenever a filter change would hide any of it, so
+    // a selected item is always one of these.
+    let selected_paths = &view.explorer_state.selected_paths;
+    let selected_count = selected_paths.len();
+    let mut selected_size = 0u64;
+
     for &idx in &view.item_viewer_filter_state.cached_indices {
         let file = &view.files[idx];
         if file.is_dir {
@@ -766,20 +778,12 @@ fn status_counts_for_view(
         } else {
             file_count += 1;
         }
-        total_size += item_size(file);
+        let size = item_size(file);
+        total_size += size;
+        if selected_count > 0 && selected_paths.contains(&file.path) {
+            selected_size += size;
+        }
     }
-
-    let selected_paths = &view.explorer_state.selected_paths;
-    let selected_count = selected_paths.len();
-    let selected_size = if selected_count == 0 {
-        0
-    } else {
-        view.files
-            .iter()
-            .filter(|file| selected_paths.contains(&file.path))
-            .map(item_size)
-            .sum()
-    };
 
     StatusCounts {
         dir_count,

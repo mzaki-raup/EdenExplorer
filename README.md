@@ -168,7 +168,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 | Feature | Description |
 |---|---|
 | **Tabs** | Open, close, reorder and pin tabs; pinned tabs restore on startup. A multi-row tab strip wraps when there are too many to fit comfortably. Right-click a tab for Close Others / To The Left / To The Right, Pin, Add To Favorites, Save As Tab Group, and Duplicate |
-| **Split panes** | Split any tab into two or three independent panes, each with its own folder, view mode, sort and history. The split button steps one pane -> two side by side -> three (one full-height pane on the left, two stacked on the right) -> back to one |
+| **Split panes** | Split any tab into two or three independent panes, each with its own folder, view mode, sort and history. The split button steps one pane -> two side by side -> three (one full-height pane on the left, two stacked on the right) -> back to one, and a folder's **Open In Split View** opens in the next pane along rather than taking over the one you are in |
 | **Address bar** | Breadcrumb navigation with inline editing, `>` dropdown menus listing each segment's subfolders, Windows environment-variable expansion (`%APPDATA%`), and `shell:` URI / `::{GUID}` resolution — filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers) open natively |
 | **History** | Back / Forward / Up with full history saved and restored across sessions, including per-folder selection memory |
 | **Folders tree** | An expandable drive-and-folder tree in the sidebar, like Explorer's, with lazy loading |
@@ -223,7 +223,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 
 | Feature | Description |
 |---|---|
-| **Preview pane** | A **Preview** tab and a **Details** tab (size, dimensions, dates) beside the file list. In **Preview** and **Details + Preview** it follows the selection, including the arrow keys - so walking a folder with the keyboard previews each file as you reach it |
+| **Preview pane** | A **Preview** tab and a **Details** tab (size, dimensions, dates) beside the file list. In **Preview**, **Details + Preview** and **Column + Preview** it follows the selection, including the arrow keys - so walking a folder with the keyboard previews each file as you reach it |
 | **Quick Look** | `Space` for a large preview over the window, with the name, size, date and position in the folder ("3 / 42"), previous/next, and arrow keys to walk the list with the preview following |
 | **Images** | PNG, JPEG, BMP, WebP, TIFF, ICO, AVIF, and **SVG** (including gzip-compressed `.svgz`), rasterized rather than shown as an icon |
 | **Animated GIFs** | Full playback with a seek bar, Play/Pause, Stop and frame stepping |
@@ -584,6 +584,9 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 - [x] **Nushell in the terminal pane** - [Nushell](https://www.nushell.sh/) is offered from the terminal pane's **+** menu alongside the other shells when it is installed (the winget/MSI install, Scoop, Chocolatey, a `cargo install`, or on `PATH`), with **Go To Current Folder** quoting paths the way Nushell wants them. Shells are also now looked up in the `PATH` as the registry currently holds it, not only the copy this process started with - so a shell installed (or added to `PATH`) while EdenExplorer was already running is found without restarting anything
 - [x] **Only the active pane responds to the arrow keys** - in a split, every Details or Details + Preview pane walked its own list on a single arrow key, because the table's keyboard navigation was never told which pane was the active one (Gallery's always had been). The Preview layout, meanwhile, had no arrow-key navigation at all - its list could only be walked with the mouse. Both fixed: the arrow keys move the selection in the pane you are working in, and only that one
 - [x] **New app icon** - a new blue folder icon, applied everywhere the old one was used: the program's own Windows icon (taskbar, Explorer, shortcuts), the window icon at runtime, and the logo at the top of this README
+- [x] **Column + Preview follows the selection too** - the column browser had no keyboard navigation at all, so its list could only be walked with the mouse. Up/Down/Home/End now move through the deepest column (Enter opens what they land on - a folder as a new column, a file in its program), a file they land on is previewed as you go, and switching into the layout with a file already selected elsewhere previews it straight away instead of showing an empty pane
+- [x] **"Open In Split View" opens the next pane along** - asking for it from the second pane used to replace the folder you were looking at there; it now opens the third pane instead (and from the first pane, the second, as before), so it never takes over the pane the request came from
+- [x] **Less work per frame in big folders** - keyboard navigation used to look up where the selection sat on *every* frame of *every* pane (a path comparison per visible row, in a search or flat view easily tens of thousands) before checking whether any key had been pressed; it now checks the keys first. The status bar's selected-size figure was a second pass over every file in the folder and is now folded into the pass it already made over the visible ones - which matters three times over with three panes open
 
 
 </details>

@@ -41,6 +41,10 @@ pub fn draw_columns_view(
     columns_state: &mut ColumnsViewState,
     current_dir: &Path,
     show_hidden_files_folders: bool,
+    // Whether this is the pane the user is working in - a split draws this
+    // view once per pane, each with its own columns, so only the focused
+    // one may act on a keypress.
+    is_focused: bool,
     icon_cache: &IconCache,
     palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
@@ -61,6 +65,7 @@ pub fn draw_columns_view(
         icon_cache,
         palette,
         None,
+        is_focused,
         explorer_state,
         tags_state,
         settings_window,
@@ -81,6 +86,7 @@ pub fn draw_column_preview_view(
     columns_state: &mut ColumnsViewState,
     current_dir: &Path,
     show_hidden_files_folders: bool,
+    is_focused: bool,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
@@ -98,6 +104,29 @@ pub fn draw_column_preview_view(
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
 
+    // Switching into this layout with a file already selected in whichever
+    // layout came before previews it straight away, instead of an empty pane
+    // until something here is clicked - the same hand-off
+    // `sync_preview_selection` does for the other two preview layouts. The
+    // item is looked up in the deepest column rather than stat-ed, so this
+    // costs no syscall, and either branch leaves a mark that stops it from
+    // running again on the next frame.
+    if columns_state.selected_file.is_none()
+        && columns_state.keyboard_selection.is_none()
+        && explorer_state.selected_paths.len() == 1
+        && let Some(selected) = explorer_state.selected_paths.iter().next()
+        && let Some(item) = columns_state
+            .columns
+            .last()
+            .and_then(|column| column.items.iter().find(|item| &item.path == selected))
+    {
+        columns_state.keyboard_selection = Some(item.path.clone());
+        if !item.is_dir {
+            columns_state.selected_file = Some(item.path.clone());
+            preview_service.request(&item.path);
+        }
+    }
+
     let mut action = None;
 
     StripBuilder::new(ui)
@@ -114,6 +143,7 @@ pub fn draw_column_preview_view(
                     icon_cache,
                     palette,
                     Some(preview_service),
+                    is_focused,
                     explorer_state,
                     tags_state,
                     settings_window,
@@ -148,6 +178,104 @@ pub fn draw_column_preview_view(
     action
 }
 
+/// Moves the keyboard selection through the deepest column, and keeps the
+/// preview pointed at it.
+///
+/// The column browser had no keyboard navigation at all - its list could only
+/// be walked with the mouse, so in Column + Preview there was no way to step
+/// through a folder watching each file's preview, which every other preview
+/// layout allows. Up/Down/Home/End move through the deepest column's visible
+/// items; a file lands in `selected_file` (and is queued for preview), a
+/// folder is only highlighted, since a folder has nothing to show in the
+/// preview pane.
+///
+/// `Enter` opens what the keyboard is on - a folder as a new column, a file
+/// in its default program - matching what a click and a double-click do.
+///
+/// Returns an action when `Enter` opened a file; a folder is handled in place.
+fn handle_columns_keyboard(
+    ctx: &egui::Context,
+    columns_state: &mut ColumnsViewState,
+    show_hidden_files_folders: bool,
+    preview_service: &mut Option<&mut PreviewService>,
+) -> (Option<ItemViewerAction>, bool) {
+    let (down, up, home, end, enter) = ctx.input(|i| {
+        (
+            i.key_pressed(egui::Key::ArrowDown),
+            i.key_pressed(egui::Key::ArrowUp),
+            i.key_pressed(egui::Key::Home),
+            i.key_pressed(egui::Key::End),
+            i.key_pressed(egui::Key::Enter),
+        )
+    });
+    if !(down || up || home || end || enter) {
+        return (None, false);
+    }
+
+    let Some(column) = columns_state.columns.last() else {
+        return (None, false);
+    };
+    let visible: Vec<ColumnItem> = column
+        .items
+        .iter()
+        .filter(|item| show_hidden_files_folders || !item.is_hidden)
+        .cloned()
+        .collect();
+    if visible.is_empty() {
+        return (None, false);
+    }
+
+    // Whatever is on screen as selected is where the keyboard carries on
+    // from: its own last position, or the file a click selected.
+    let current = columns_state
+        .keyboard_selection
+        .as_ref()
+        .or(columns_state.selected_file.as_ref())
+        .and_then(|path| visible.iter().position(|item| &item.path == path));
+
+    if enter {
+        if let Some(index) = current {
+            let item = &visible[index];
+            if item.is_dir {
+                columns_state.columns.push(load_column(&item.path));
+                columns_state.selected_file = None;
+                columns_state.keyboard_selection = None;
+                return (Some(ItemViewerAction::Open(item.path.clone())), true);
+            }
+            return (
+                Some(ItemViewerAction::OpenWithDefault(vec![item.path.clone()])),
+                true,
+            );
+        }
+        return (None, false);
+    }
+
+    let next = match (current, down, up, home, end) {
+        (_, _, _, true, _) => 0,
+        (_, _, _, _, true) => visible.len() - 1,
+        (None, true, _, _, _) => 0,
+        (None, _, true, _, _) => visible.len() - 1,
+        (Some(index), true, _, _, _) => (index + 1).min(visible.len() - 1),
+        (Some(index), _, true, _, _) => index.saturating_sub(1),
+        _ => return (None, false),
+    };
+
+    let item = &visible[next];
+    columns_state.keyboard_selection = Some(item.path.clone());
+    if item.is_dir {
+        // A folder has nothing to preview - leaving the last file up while
+        // the highlight is elsewhere would be the stale-preview bug the
+        // other layouts just had fixed.
+        columns_state.selected_file = None;
+    } else {
+        columns_state.selected_file = Some(item.path.clone());
+        if let Some(service) = preview_service.as_deref_mut() {
+            service.request(&item.path);
+        }
+    }
+    (None, true)
+}
+
 /// Shared column-browser rendering. `current_dir` is the tab's actual navigated
 /// directory (the last column); if it doesn't match what's cached, the column
 /// list is rebuilt starting fresh from `current_dir` (e.g. the display mode was
@@ -163,6 +291,7 @@ fn draw_columns_core(
     icon_cache: &IconCache,
     palette: &ThemePalette,
     mut preview_service: Option<&mut PreviewService>,
+    is_focused: bool,
     explorer_state: &mut ExplorerState,
     tags_state: &mut TagsState,
     settings_window: &mut SettingsWindow,
@@ -206,6 +335,20 @@ fn draw_columns_core(
         !modal_input_blocked && settings_window.current_settings.double_click_navigates_up;
 
     let mut action = None;
+    let keyboard_moved = if is_focused && !modal_input_blocked && rename_state.is_none() {
+        let (keyboard_action, moved) = handle_columns_keyboard(
+            ui.ctx(),
+            columns_state,
+            show_hidden_files_folders,
+            &mut preview_service,
+        );
+        if keyboard_action.is_some() {
+            action = keyboard_action;
+        }
+        moved
+    } else {
+        false
+    };
     let mut navigate_up = false;
     let mut clicked_folder: Option<(usize, PathBuf)> = None;
     let mut selected_file: Option<PathBuf> = None;
@@ -278,18 +421,29 @@ fn draw_columns_core(
                                             continue;
                                         }
 
-                                        let is_selected = if item.is_dir {
-                                            selected_next_path.as_ref() == Some(&item.path)
-                                        } else {
-                                            is_last_column
-                                                && columns_state.selected_file.as_ref()
-                                                    == Some(&item.path)
-                                        };
+                                        let keyboard_on_this = is_last_column
+                                            && columns_state.keyboard_selection.as_ref()
+                                                == Some(&item.path);
+                                        let is_selected = keyboard_on_this
+                                            || if item.is_dir {
+                                                selected_next_path.as_ref() == Some(&item.path)
+                                            } else {
+                                                is_last_column
+                                                    && columns_state.selected_file.as_ref()
+                                                        == Some(&item.path)
+                                            };
 
                                         let (rect, resp) = ui.allocate_exact_size(
                                             egui::vec2(ui.available_width(), ROW_HEIGHT),
                                             egui::Sense::click(),
                                         );
+
+                                        // A keypress has no row response of
+                                        // its own to scroll with, so the row
+                                        // it moved to has to pull itself in.
+                                        if keyboard_moved && keyboard_on_this {
+                                            resp.scroll_to_me(Some(egui::Align::Center));
+                                        }
 
                                         // Set right after creating a new
                                         // file/folder so the user can
@@ -448,6 +602,8 @@ fn draw_columns_core(
                                             // opens, matching every other view in the app.
                                             if resp.clicked() {
                                                 selected_file = Some(item.path.clone());
+                                                columns_state.keyboard_selection =
+                                                    Some(item.path.clone());
                                             }
                                             if resp.double_clicked() {
                                                 opened_file = Some(item.path.clone());

@@ -2578,6 +2578,23 @@ pub fn handle_keyboard_navigation(
         return None;
     }
 
+    // Nothing below acts on anything but these four keys, and finding where
+    // the selection currently sits costs a path comparison per visible row -
+    // which ran on every frame, of every pane, whether or not a key had been
+    // touched. In a search, a flat view, or any folder with thousands of
+    // items that is real work for no result; one cheap read first instead.
+    let (down_pressed, up_pressed, home_pressed, end_pressed) = ctx.input(|i| {
+        (
+            i.key_pressed(egui::Key::ArrowDown),
+            i.key_pressed(egui::Key::ArrowUp),
+            i.key_pressed(egui::Key::Home),
+            i.key_pressed(egui::Key::End),
+        )
+    });
+    if !(down_pressed || up_pressed || home_pressed || end_pressed) {
+        return None;
+    }
+
     let is_selectable = |row_idx: usize| -> bool {
         if !is_drive_view {
             return true;
@@ -2608,8 +2625,6 @@ pub fn handle_keyboard_navigation(
     };
 
     let mut action: Option<ItemViewerAction> = None;
-    let home_pressed = ctx.input(|i| i.key_pressed(egui::Key::Home));
-    let end_pressed = ctx.input(|i| i.key_pressed(egui::Key::End));
 
     let current_index = explorer_state
         .selected_paths
@@ -2644,7 +2659,7 @@ pub fn handle_keyboard_navigation(
                 return Some(ItemViewerAction::ReplaceSelection(last));
             }
 
-            if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            if down_pressed {
                 let first_idx = first_selectable()?;
                 let first = files[filtered_indices[first_idx]].path.clone();
 
@@ -2654,7 +2669,7 @@ pub fn handle_keyboard_navigation(
                 return Some(ItemViewerAction::ReplaceSelection(first));
             }
 
-            if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            if up_pressed {
                 let last_idx = last_selectable()?;
                 let last = files[filtered_indices[last_idx]].path.clone();
 
@@ -2686,13 +2701,13 @@ pub fn handle_keyboard_navigation(
 
         let mut new_focus = focus;
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        if down_pressed {
             if let Some(next) = next_selectable(focus, 1) {
                 new_focus = next;
             }
         }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        if up_pressed {
             if let Some(prev) = next_selectable(focus, -1) {
                 new_focus = prev;
             }
@@ -2734,13 +2749,13 @@ pub fn handle_keyboard_navigation(
     else {
         let mut new_idx = current_idx;
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+        if down_pressed {
             if let Some(next) = next_selectable(current_idx, 1) {
                 new_idx = next;
             }
         }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+        if up_pressed {
             if let Some(prev) = next_selectable(current_idx, -1) {
                 new_idx = prev;
             }

@@ -1221,7 +1221,7 @@ impl MainWindow {
 
     /// Re-lists every pane the active tab has open, however many that is.
     pub(crate) fn load_active_tab_views(&mut self) {
-        for side in self.active_tab().sides().collect::<Vec<_>>() {
+        for side in TabState::SIDES.into_iter().take(self.active_tab().pane_count()) {
             self.load_view(side);
         }
     }
@@ -5250,12 +5250,25 @@ impl MainWindow {
         self.mark_tab_infos_dirty();
     }
 
-    /// Opens `path` as the active tab's split view, creating the split if none
-    /// exists yet, or replacing the current split target if one does.
+    /// Opens `path` in the pane after the one being worked in, creating that
+    /// pane if it does not exist yet.
+    ///
+    /// "Open In Split View" used to always mean the second pane, so asking
+    /// for it *from* the second pane replaced the folder the user was
+    /// looking at instead of opening another pane beside it - reported
+    /// directly. The next pane along is what it means now: from the first,
+    /// the second; from the second, the third; and from the third (where
+    /// there is no fourth) back to the second, so it never lands on the pane
+    /// the request came from.
     pub(crate) fn open_path_in_split(&mut self, path: PathBuf) {
+        let target = match self.focused_split {
+            SplitSide::Primary => SplitSide::Secondary,
+            SplitSide::Secondary => SplitSide::Tertiary,
+            SplitSide::Tertiary => SplitSide::Secondary,
+        };
         let mut new_view = self
             .active_tab()
-            .view(SplitSide::Primary)
+            .view(self.focused_split)
             .duplicate_as_new();
         new_view.nav = Navigation::new(path);
         let current_settings = self.settings_window.current_settings.clone();
@@ -5264,10 +5277,26 @@ impl MainWindow {
             &current_settings,
             DisplayModeFallback::Default,
         );
-        let tab = self.active_tab_mut();
-        tab.split_view = Some(new_view);
-        self.focused_split = SplitSide::Secondary;
-        self.load_view(SplitSide::Secondary);
+        {
+            let tab = self.active_tab_mut();
+            // The third pane splits the second column, so it can only exist
+            // alongside a second pane - opening straight into it from a
+            // single pane would have nowhere to draw itself.
+            if target == SplitSide::Tertiary && tab.split_view.is_none() {
+                tab.split_view = Some(new_view);
+                self.focused_split = SplitSide::Secondary;
+                self.load_view(SplitSide::Secondary);
+                self.mark_tab_infos_dirty();
+                return;
+            }
+            match target {
+                SplitSide::Tertiary => tab.third_view = Some(new_view),
+                _ => tab.split_view = Some(new_view),
+            }
+        }
+        self.focused_split = target;
+        self.load_view(target);
+        self.mark_tab_infos_dirty();
     }
 
     fn move_selected_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: PathBuf) {
@@ -6040,7 +6069,7 @@ impl MainWindow {
         if should_pause {
             return;
         }
-        for side in self.active_tab().sides().collect::<Vec<_>>() {
+        for side in TabState::SIDES.into_iter().take(self.active_tab().pane_count()) {
             self.handle_throttle_size_requests_for(side);
         }
     }
@@ -6062,7 +6091,7 @@ impl MainWindow {
 
     pub fn handle_directory_size_updates(&mut self, ctx: &egui::Context) {
         let mut any_updated = false;
-        for side in self.active_tab().sides().collect::<Vec<_>>() {
+        for side in TabState::SIDES.into_iter().take(self.active_tab().pane_count()) {
             any_updated |= self.handle_directory_size_updates_for(side);
         }
         if any_updated {
@@ -6128,7 +6157,7 @@ impl MainWindow {
 
     pub fn handle_directory_batch_recieve(&mut self, ctx: &egui::Context) {
         let mut any_updated = false;
-        for side in self.active_tab().sides().collect::<Vec<_>>() {
+        for side in TabState::SIDES.into_iter().take(self.active_tab().pane_count()) {
             any_updated |= self.handle_directory_batch_recieve_for(side);
         }
         if any_updated {
