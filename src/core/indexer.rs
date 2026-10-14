@@ -1186,12 +1186,49 @@ pub fn save_custom_themes(snapshot: &CustomThemesSnapshot) {
     }
 }
 
-/// One restored tab: its primary folder, and the secondary (split-view)
-/// folder alongside it, if the tab had split view open.
+/// One restored tab: its primary folder, plus the folders of the second and
+/// third panes alongside it, for however many of them the tab had open.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SessionTabEntry {
     pub path: PathBuf,
     pub split_path: Option<PathBuf>,
+    /// Appended after `split_path`, which `postcard` requires of any new
+    /// field (its format is positional) - and which on its own would lose
+    /// every saved session, since a whole-struct decode of older bytes then
+    /// fails. `SessionTabsSnapshotLegacy` below is what rescues those.
+    #[serde(default)]
+    pub third_path: Option<PathBuf>,
+}
+
+/// `SessionTabEntry` exactly as it was before the third pane existed, kept
+/// only to decode sessions saved by an older build.
+#[derive(Serialize, Deserialize)]
+struct SessionTabEntryLegacy {
+    path: PathBuf,
+    split_path: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SessionTabsSnapshotLegacy {
+    tabs: Vec<SessionTabEntryLegacy>,
+    active_index: usize,
+}
+
+impl From<SessionTabsSnapshotLegacy> for SessionTabsSnapshot {
+    fn from(old: SessionTabsSnapshotLegacy) -> Self {
+        Self {
+            tabs: old
+                .tabs
+                .into_iter()
+                .map(|tab| SessionTabEntry {
+                    path: tab.path,
+                    split_path: tab.split_path,
+                    third_path: None,
+                })
+                .collect(),
+            active_index: old.active_index,
+        }
+    }
 }
 
 /// The set of tabs (and which was active) open when the app last exited, used to
@@ -1209,7 +1246,19 @@ fn session_tabs_cache_path() -> Option<PathBuf> {
 
 pub fn load_session_tabs() -> Option<SessionTabsSnapshot> {
     let path = session_tabs_cache_path()?;
-    load_or_migrate_bincode_to_postcard::<SessionTabsSnapshot>(&path)
+    load_or_migrate_bincode_to_postcard::<SessionTabsSnapshot>(&path).or_else(|| {
+        // Saved before `third_path` existed. The current shape cannot read
+        // those bytes (it looks for a third field where the next tab's own
+        // path begins), so without this every restored session would be
+        // lost once, on the first launch after the update - it is read in
+        // the old shape instead and written back in the new one by the next
+        // save. The two shapes can't be confused for one another: the byte
+        // the old stream has where the new one expects `third_path`'s
+        // `Option` tag is a path's own length, never 0 or 1 for any real
+        // path, so the current shape fails outright rather than silently
+        // decoding something wrong.
+        load_or_migrate_bincode_to_postcard::<SessionTabsSnapshotLegacy>(&path).map(Into::into)
+    })
 }
 
 pub fn save_session_tabs(snapshot: &SessionTabsSnapshot) {
@@ -1529,16 +1578,18 @@ mod tests {
     }
 
     #[test]
-    fn session_tab_entry_roundtrips_split_path() {
+    fn session_tab_entry_roundtrips_every_pane() {
         let snapshot = SessionTabsSnapshot {
             tabs: vec![
                 SessionTabEntry {
                     path: PathBuf::from("D:\\"),
                     split_path: Some(PathBuf::from("C:\\Users")),
+                    third_path: Some(PathBuf::from("C:\\Windows")),
                 },
                 SessionTabEntry {
                     path: PathBuf::from("C:\\"),
                     split_path: None,
+                    third_path: None,
                 },
             ],
             active_index: 1,
@@ -1551,8 +1602,71 @@ mod tests {
         assert_eq!(decoded.tabs.len(), 2);
         assert_eq!(decoded.tabs[0].path, PathBuf::from("D:\\"));
         assert_eq!(decoded.tabs[0].split_path, Some(PathBuf::from("C:\\Users")));
+        assert_eq!(
+            decoded.tabs[0].third_path,
+            Some(PathBuf::from("C:\\Windows"))
+        );
         assert_eq!(decoded.tabs[1].path, PathBuf::from("C:\\"));
         assert_eq!(decoded.tabs[1].split_path, None);
+        assert_eq!(decoded.tabs[1].third_path, None);
+    }
+
+    /// A session saved before the third pane existed has to come back rather
+    /// than be thrown away - and the two shapes must not be mistakable for
+    /// one another, or an old session would restore the wrong folders
+    /// instead of falling through to the legacy decode.
+    #[test]
+    fn legacy_session_tabs_without_third_path_still_restore() {
+        let cases = [
+            vec![SessionTabEntryLegacy {
+                path: PathBuf::from("D:\\WORK"),
+                split_path: Some(PathBuf::from("C:\\Users")),
+            }],
+            vec![
+                SessionTabEntryLegacy {
+                    path: PathBuf::from("D:\\WORK"),
+                    split_path: Some(PathBuf::from("C:\\Users")),
+                },
+                SessionTabEntryLegacy {
+                    path: PathBuf::from("C:\\Windows"),
+                    split_path: None,
+                },
+                SessionTabEntryLegacy {
+                    path: PathBuf::from("E:\\"),
+                    split_path: None,
+                },
+            ],
+        ];
+
+        for tabs in cases {
+            let expected: Vec<(PathBuf, Option<PathBuf>)> = tabs
+                .iter()
+                .map(|tab| (tab.path.clone(), tab.split_path.clone()))
+                .collect();
+            let bytes = postcard::to_allocvec(&SessionTabsSnapshotLegacy {
+                tabs,
+                active_index: 1,
+            })
+            .unwrap();
+
+            assert!(
+                postcard::from_bytes::<SessionTabsSnapshot>(&bytes).is_err(),
+                "the current shape must not decode legacy bytes, or the \
+                 fallback would never run"
+            );
+
+            let migrated: SessionTabsSnapshot =
+                postcard::from_bytes::<SessionTabsSnapshotLegacy>(&bytes)
+                    .unwrap()
+                    .into();
+            assert_eq!(migrated.active_index, 1);
+            assert_eq!(migrated.tabs.len(), expected.len());
+            for (tab, (path, split_path)) in migrated.tabs.iter().zip(expected) {
+                assert_eq!(tab.path, path);
+                assert_eq!(tab.split_path, split_path);
+                assert_eq!(tab.third_path, None);
+            }
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    BLOCKING_MODAL_MEMORY_ID, handle_editing_file_name,
+    BLOCKING_MODAL_MEMORY_ID, handle_editing_file_name, handle_keyboard_navigation,
 };
 use crate::gui::windows::containers::structs::{ExplorerState, FindInPreviewState, RenameState};
 use chrono::{DateTime, Local};
@@ -21,6 +21,46 @@ use std::path::{Path, PathBuf};
 pub const PREVIEW_PANE_WIDTH: f32 = 560.0;
 const ROW_HEIGHT: f32 = 24.0;
 
+/// Points the preview pane at whatever is selected, if that isn't already
+/// what it is showing.
+///
+/// Both preview layouts used to set `preview_selection` from a mouse click on
+/// a row and nowhere else, which left two gaps the user actually hit: walking
+/// the list with the arrow keys moved the selection while the pane kept
+/// showing the file clicked before it, and *switching into* a preview layout
+/// with something already selected previewed nothing at all. Running this
+/// every frame covers both, plus every other way a selection can change
+/// (type-to-filter, Select All, a search result, a newly created file).
+///
+/// Only a single selected item is previewed - for several, like Explorer,
+/// there is no one file to show.
+pub(crate) fn sync_preview_selection(
+    files: &[FileItem],
+    explorer_state: &ExplorerState,
+    preview_selection: &mut Option<PathBuf>,
+    preview_service: &mut PreviewService,
+) {
+    if explorer_state.selected_paths.len() != 1 {
+        return;
+    }
+    let Some(selected) = explorer_state.selected_paths.iter().next() else {
+        return;
+    };
+    if preview_selection.as_deref() == Some(selected.as_path()) {
+        return;
+    }
+    // The selection can name something this listing doesn't hold yet (a
+    // folder still being scanned, or one just navigated away from) - leave
+    // the pane as it is rather than preview a path that isn't on screen.
+    let Some(file) = files.iter().find(|file| &file.path == selected) else {
+        return;
+    };
+    *preview_selection = Some(file.path.clone());
+    if !file.is_dir {
+        preview_service.request(&file.path);
+    }
+}
+
 /// A layout with a simple file list on the left and a preview pane on the right
 /// (showing the content of the selected file - text, image, PDF, or Word document).
 #[allow(clippy::too_many_arguments)]
@@ -30,6 +70,11 @@ pub fn draw_preview_view(
     files: &[FileItem],
     filtered_indices: &[usize],
     explorer_state: &mut ExplorerState,
+    // `is_focused`: whether this is the pane the user is working in. A split
+    // draws this view once per pane in the same frame, each with its own
+    // selection, so without it every pane walks its own list on one arrow key.
+    is_focused: bool,
+    modal_input_blocked: bool,
     preview_service: &mut PreviewService,
     video_service: &mut VideoPreviewService,
     audio_service: &mut AudioPreviewService,
@@ -45,9 +90,34 @@ pub fn draw_preview_view(
     double_click_navigates_up: bool,
 ) -> Option<ItemViewerAction> {
     preview_service.pump(ui.ctx());
+    sync_preview_selection(files, explorer_state, preview_selection, preview_service);
 
     let mut action = None;
     let now = ui.input(|i| i.time);
+    // This layout returns before the Details table's own call to
+    // `handle_keyboard_navigation`, so the arrow keys did nothing here at
+    // all - the list could only be walked with the mouse.
+    if is_focused && !modal_input_blocked {
+        if let Some(keyboard_action) = handle_keyboard_navigation(
+            ui.ctx(),
+            filtered_indices,
+            files,
+            false,
+            explorer_state,
+        ) {
+            action = Some(keyboard_action);
+        }
+    }
+    // The focused row then has to pull itself into view, since a keypress
+    // has no row response of its own to scroll with - otherwise walking past
+    // the bottom of the list previews files that can't be seen.
+    let arrow_nav = is_focused
+        && ui.ctx().input(|i| {
+            i.key_pressed(egui::Key::ArrowDown)
+                || i.key_pressed(egui::Key::ArrowUp)
+                || i.key_pressed(egui::Key::Home)
+                || i.key_pressed(egui::Key::End)
+        });
     let navigate_up_on_double_click = double_click_navigates_up
         && !ui.ctx().memory(|mem| {
             mem.data
@@ -107,6 +177,10 @@ pub fn draw_preview_view(
                                         egui::vec2(ui.available_width(), ROW_HEIGHT),
                                         egui::Sense::click(),
                                     );
+
+                                    if arrow_nav && explorer_state.selection_focus == Some(idx) {
+                                        resp.scroll_to_me(Some(egui::Align::Center));
+                                    }
 
                                     if pending_scroll_path.as_ref() == Some(&file.path) {
                                         resp.scroll_to_me(Some(egui::Align::Center));
@@ -733,6 +807,7 @@ fn draw_find_bar(
 /// waiting for `secondary_clicked()`.
 fn draw_selectable_text_with_copy(
     ui: &mut egui::Ui,
+    path: &Path,
     text: &str,
     ext: &str,
     palette: &ThemePalette,
@@ -780,18 +855,23 @@ fn draw_selectable_text_with_copy(
     });
 
     // `.layouter` runs at least once per frame per egui's own docs, so the
-    // resulting `Arc<Galley>` is cached keyed by (text length, dark-mode,
-    // highlighted range) - cheap enough to check every frame, and rebuilding
-    // only happens when the previewed file, the theme, or the current find
-    // match actually changes, not on every repaint. A length-only key is an
-    // approximation (it can't tell two same-length edits apart), but this
-    // buffer is read-only, so the text itself never changes without the
-    // cache key (the enclosing `path`) changing too, which already
-    // invalidates `PreviewService`'s own cache and re-triggers this whole
-    // function with new `text`.
+    // resulting `Arc<Galley>` is cached keyed by (file, text length,
+    // dark-mode, highlighted range) - cheap enough to check every frame, and
+    // rebuilding only happens when the previewed file, the theme, or the
+    // current find match actually changes, not on every repaint.
+    //
+    // The file is part of that key because the length alone is not enough:
+    // two different files of the *same* size (65 bytes apiece, in the case
+    // that found this) left the cached galley in place while the pane's
+    // title and everything else moved on, so the preview showed one file's
+    // name above another file's contents. That went unnoticed while the
+    // pane only ever changed on a deliberate click; it shows up at once now
+    // that the preview follows the selection (see `sync_preview_selection`)
+    // and the arrow keys walk a folder of similarly-sized files.
     type HighlightCache = std::sync::Arc<
         std::sync::Mutex<
             Option<(
+                PathBuf,
                 usize,
                 bool,
                 Option<egui::text::CCursorRange>,
@@ -806,14 +886,16 @@ fn draw_selectable_text_with_copy(
         .clone()
     });
 
+    let cached_path = path.to_path_buf();
     let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
         let dark_mode = ui.visuals().dark_mode;
         let text = buf.as_str();
 
         let mut guard = cache.lock().unwrap();
         let needs_rebuild = match guard.as_ref() {
-            Some((len, cached_dark, cached_highlight, _)) => {
-                *len != text.len()
+            Some((cached_path_in_cache, len, cached_dark, cached_highlight, _)) => {
+                *cached_path_in_cache != cached_path
+                    || *len != text.len()
                     || *cached_dark != dark_mode
                     || *cached_highlight != highlight_char_range
             }
@@ -846,8 +928,14 @@ fn draw_selectable_text_with_copy(
                     None,
                 );
             }
-            *guard = Some((text.len(), dark_mode, highlight_char_range, galley));
-        } else if let Some((_, _, _, galley)) = guard.as_ref()
+            *guard = Some((
+                cached_path.clone(),
+                text.len(),
+                dark_mode,
+                highlight_char_range,
+                galley,
+            ));
+        } else if let Some((_, _, _, _, galley)) = guard.as_ref()
             && (galley.job.wrap.max_width - wrap_width).abs() > 0.5
         {
             let mut job = (*galley.job).clone();
@@ -861,9 +949,15 @@ fn draw_selectable_text_with_copy(
                     None,
                 );
             }
-            *guard = Some((text.len(), dark_mode, highlight_char_range, new_galley));
+            *guard = Some((
+                cached_path.clone(),
+                text.len(),
+                dark_mode,
+                highlight_char_range,
+                new_galley,
+            ));
         }
-        guard.as_ref().unwrap().3.clone()
+        guard.as_ref().unwrap().4.clone()
     };
 
     let mut text_ref: &str = text;
@@ -1242,6 +1336,7 @@ fn draw_preview_body(
                 .show(ui, |ui| {
                     draw_selectable_text_with_copy(
                         ui,
+                        path,
                         &text,
                         &ext,
                         palette,

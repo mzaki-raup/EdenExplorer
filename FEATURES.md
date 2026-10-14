@@ -11,7 +11,7 @@
   <li><b>Streaming directory enumeration</b> for responsive browsing of large directories</li>
   <li><b>Intuitive navigation</b> with <b>Back / Forward / Up</b> controls and persistent navigation history</li>
   <li><b>Tabbed navigation</b> with independent loading states, tab pinning, and automatic tab restoration</li>
-  <li><b>Split-pane Explorer view</b> for browsing multiple locations side-by-side</li>
+  <li><b>Split-pane Explorer view</b> for browsing two or three locations at once - one full-height pane on the left, one or two stacked on the right</li>
   <li><b>Collapsible sidebar</b> with quick access to common folders and customizable favorites</li>
   <li><b>Native Recycle Bin support</b> with dedicated Explorer integration</li>  
   <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
@@ -72,13 +72,13 @@
   <li><b>Tabbed navigation</b> with independent loading states</li>
   <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
   <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
-  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video</li>
+  <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video - following the selection, arrow keys included</li>
   <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>
   <li><b>New File templates</b> - Text, Markdown, Word, and Excel documents, plus your own templates folder</li>
   <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
   <li><b>Hover previews</b> for images and videos in Details view</li>
   <li><b>Breadcrumb folder menus</b> - the <code>&gt;</code> arrows in the address bar list the folders inside each part, like Explorer (can be turned off in Settings &gt; General)</li>
-  <li><b>Terminal pane</b> (<code>Ctrl+`</code>) - Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, and WSL (Ubuntu, ...) in session tabs docked under the file view, with colors, scrollback, selection, and Go To Current Folder; loads your PowerShell profile (Oh My Posh), Clink in Command Prompt, and a Nerd Font automatically for prompt icons</li>
+  <li><b>Terminal pane</b> (<code>Ctrl+`</code>) - Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, Nushell, and WSL (Ubuntu, ...) in session tabs docked under the file view, with colors, scrollback, selection, and Go To Current Folder; loads your PowerShell profile (Oh My Posh), Clink in Command Prompt, and a Nerd Font automatically for prompt icons</li>
   <li><b>Folders tree in the sidebar</b> - every drive's folders as an expandable tree, like Explorer's navigation pane: it opens down to the folder you're viewing and highlights it, reads subfolders in the background, and accepts dropped files</li>
   <li><b>Filter bar options</b> (<code>Ctrl+Shift+F</code>) - plain text, wildcards (<code>*.jpg; *.png</code>), or a regular expression, Hide Matches, and kind chips (Folders, Images, Documents, Video, Audio, Archives, Code)</li>
   <li><b>Spring-loaded folders</b> - while dragging files, rest on a folder (file list, address bar, or Folders tree) and it opens, so you can drop deeper without letting go</li>

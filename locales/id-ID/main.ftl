@@ -69,6 +69,7 @@ tab_close_to_right = Tutup Tab di Sebelah Kanan
 tab_close_to_left = Tutup Tab di Sebelah Kiri
 tooltip_open_split = Buka tampilan terpisah
 tooltip_close_split = Tutup tampilan terpisah
+tooltip_add_third_pane = Tambah panel ketiga
 tooltip_hide_sidebar = Sembunyikan bilah sisi
 tooltip_show_sidebar = Tampilkan bilah sisi
 tooltip_favorites_disabled = Favorit dinonaktifkan di PC Ini

@@ -11,8 +11,9 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_folder_context_menu, handle_context_menu_actions, handle_drop_on_empty_view,
-    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
+    draw_empty_folder_context_menu, drag_scroll_offset, handle_context_menu_actions,
+    handle_drop_on_empty_view, handle_editing_file_name, handle_keyboard_navigation,
+    handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -198,9 +199,23 @@ pub fn draw_gallery_view(
     );
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
-        egui::ScrollArea::vertical()
-            .id_salt(("item_viewer_gallery_scroll", active_tab_id))
-            .auto_shrink([false, true])
+        let scroll_salt = ("item_viewer_gallery_scroll", active_tab_id);
+        let scroll_offset_id = ui.id().with(scroll_salt).with("drag_scroll_offset");
+        let scroll_offset: f32 = ui.ctx().data(|d| d.get_temp(scroll_offset_id)).unwrap_or(0.0);
+        let mut scroll_area = egui::ScrollArea::vertical()
+            .id_salt(scroll_salt)
+            .auto_shrink([false, true]);
+        // See `drag_scroll_offset` - a drag held at the top or bottom of the
+        // grid scrolls it, since the wheel and scrollbar are both out of
+        // reach with the button held down.
+        if drag_hover_active {
+            if let Some(offset) =
+                drag_scroll_offset(&ui.ctx().clone(), scroll_offset, scroll_rect, pointer_pos)
+            {
+                scroll_area = scroll_area.vertical_scroll_offset(offset);
+            }
+        }
+        let scroll_output = scroll_area
             .show_viewport(ui, |ui, viewport| {
                 ui.set_width(available_width);
                 ui.set_min_height(content_height);
@@ -583,6 +598,10 @@ pub fn draw_gallery_view(
                         });
                 }
             });
+        // Where the grid ended up this frame, for the next frame's drag
+        // auto-scroll to carry on from (see `drag_scroll_offset`).
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(scroll_offset_id, scroll_output.state.offset.y));
     });
     if let Some(rect) = current_hovered_drop_target_rect {
         let painter = ui.ctx().layer_painter(egui::LayerId::new(

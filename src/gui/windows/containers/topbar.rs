@@ -14,7 +14,7 @@ pub fn draw_topbar(
     sidebar_collapsed: bool,
     hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
-    has_split: bool,
+    pane_count: usize,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
 
@@ -30,7 +30,7 @@ pub fn draw_topbar(
                 hwnd,
                 palette,
                 &mut action,
-                has_split,
+                pane_count,
             );
             draw_drag_region(ui, hwnd);
         });
@@ -49,7 +49,7 @@ pub fn draw_topbar(
                     hwnd,
                     palette,
                     &mut action,
-                    has_split,
+                    pane_count,
                 );
             });
 
@@ -124,7 +124,7 @@ fn draw_mode_icons(
     _hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
     action: &mut TopbarAction,
-    has_split: bool,
+    pane_count: usize,
 ) {
     let sidebar_tooltip_key = if sidebar_collapsed {
         "tooltip_show_sidebar"
@@ -165,10 +165,13 @@ fn draw_mode_icons(
 
     ui.separator();
 
-    let (icon, tooltip_key) = if has_split {
-        (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split")
-    } else {
-        (regular::SPLIT_HORIZONTAL, "tooltip_open_split")
+    // One button, three steps: one pane -> two side by side -> three (the
+    // right-hand column split in half) -> back to one. The icon and tooltip
+    // say what the *next* press does, not what is on screen now.
+    let (icon, tooltip_key) = match pane_count {
+        1 => (regular::SPLIT_HORIZONTAL, "tooltip_open_split"),
+        2 => (regular::ROWS_PLUS_BOTTOM, "tooltip_add_third_pane"),
+        _ => (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split"),
     };
     if clickable_icon(ui, icon, palette)
         .on_hover_text(

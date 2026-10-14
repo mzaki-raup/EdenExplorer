@@ -69,6 +69,7 @@ tab_close_to_right = 右側のタブを閉じる
 tab_close_to_left = 左側のタブを閉じる
 tooltip_open_split = 分割ビューを開く
 tooltip_close_split = 分割ビューを閉じる
+tooltip_add_third_pane = 3つ目のペインを追加
 tooltip_hide_sidebar = サイドバーを非表示
 tooltip_show_sidebar = サイドバーを表示
 tooltip_favorites_disabled = 「PC」ではお気に入りを使用できません

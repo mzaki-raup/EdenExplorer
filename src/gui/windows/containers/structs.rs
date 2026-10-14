@@ -99,10 +99,13 @@ pub struct TabsAction {
     pub save_search: Option<(String, crate::core::everything::SearchScope)>,
 }
 
+/// Which of a tab's up-to-three panes something refers to. `Primary` fills
+/// the left column; `Secondary` and `Tertiary` share the right one, stacked.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SplitSide {
     Primary,
     Secondary,
+    Tertiary,
 }
 
 /// One directory view: its own navigation, sort/selection/filter, listing, and
@@ -942,10 +945,16 @@ fn sanitize_column_order(
     sanitized
 }
 
+/// A tab's panes: always a `primary_view`, plus up to two more.
+///
+/// `third_view` is only ever `Some` while `split_view` is too - the third
+/// pane splits the *second* column in half, so there is nowhere for it to go
+/// without one (see `MainWindow::cycle_split_for_active_tab`).
 pub struct TabState {
     pub id: u64,
     pub primary_view: TabView,
     pub split_view: Option<TabView>,
+    pub third_view: Option<TabView>,
 }
 
 impl TabState {
@@ -959,6 +968,7 @@ impl TabState {
             id,
             primary_view: TabView::new(nav, default_sort_column, default_sort_ascending),
             split_view: None,
+            third_view: None,
         }
     }
 
@@ -966,6 +976,7 @@ impl TabState {
         match side {
             SplitSide::Primary => &self.primary_view,
             SplitSide::Secondary => self.split_view.as_ref().unwrap_or(&self.primary_view),
+            SplitSide::Tertiary => self.third_view.as_ref().unwrap_or(&self.primary_view),
         }
     }
 
@@ -973,7 +984,39 @@ impl TabState {
         match side {
             SplitSide::Primary => &mut self.primary_view,
             SplitSide::Secondary => self.split_view.as_mut().unwrap_or(&mut self.primary_view),
+            SplitSide::Tertiary => self.third_view.as_mut().unwrap_or(&mut self.primary_view),
         }
+    }
+
+    /// How many panes this tab shows: 1, 2, or 3.
+    pub fn pane_count(&self) -> usize {
+        1 + self.split_view.is_some() as usize + self.third_view.is_some() as usize
+    }
+
+    /// The sides this tab actually has a pane for, in pane order.
+    ///
+    /// Everything that has to touch "every open pane" (re-listing a folder,
+    /// Git status, folder-size scans, ending a drag) iterates this rather
+    /// than a hard-coded pair, so a pane added later can't be missed by one
+    /// of them - which is exactly the shape of gap this codebase has hit
+    /// before with handlers wired into one view out of several.
+    pub fn sides(&self) -> impl Iterator<Item = SplitSide> + use<> {
+        let count = self.pane_count();
+        [SplitSide::Primary, SplitSide::Secondary, SplitSide::Tertiary]
+            .into_iter()
+            .take(count)
+    }
+
+    pub fn views(&self) -> impl Iterator<Item = &TabView> {
+        std::iter::once(&self.primary_view)
+            .chain(self.split_view.as_ref())
+            .chain(self.third_view.as_ref())
+    }
+
+    pub fn views_mut(&mut self) -> impl Iterator<Item = &mut TabView> {
+        std::iter::once(&mut self.primary_view)
+            .chain(self.split_view.as_mut())
+            .chain(self.third_view.as_mut())
     }
 }
 

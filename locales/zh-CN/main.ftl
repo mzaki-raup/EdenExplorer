@@ -69,6 +69,7 @@ tab_close_to_right = 关闭右侧标签页
 tab_close_to_left = 关闭左侧标签页
 tooltip_open_split = 开启分屏视图
 tooltip_close_split = 关闭分屏视图
+tooltip_add_third_pane = 添加第三个窗格
 tooltip_hide_sidebar = 隐藏侧边栏
 tooltip_show_sidebar = 显示侧边栏
 tooltip_favorites_disabled = “此电脑”中无法使用收藏夹

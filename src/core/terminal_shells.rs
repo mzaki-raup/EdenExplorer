@@ -1,8 +1,8 @@
 //! The shells the terminal pane can run, found on this PC: Command Prompt,
 //! Windows PowerShell, PowerShell 7 (winget/MSI/Store installs), Git Bash,
-//! every installed WSL distribution (Ubuntu, ...), and MSYS2/Cygwin bash.
-//! Only shells that are actually installed are listed. Programs are always
-//! started from their full path (see `system_paths`).
+//! Nushell, every installed WSL distribution (Ubuntu, ...), and MSYS2/Cygwin
+//! bash. Only shells that are actually installed are listed. Programs are
+//! always started from their full path (see `system_paths`).
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -13,6 +13,7 @@ pub enum ShellKind {
     WindowsPowerShell,
     PowerShell7,
     GitBash,
+    Nushell,
     /// A WSL distribution, by name.
     Wsl(String),
     Msys2,
@@ -26,7 +27,7 @@ pub enum ShellKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShellProfile {
     /// Stable id saved in settings: "cmd", "powershell", "pwsh",
-    /// "git-bash", "wsl:Ubuntu", "msys2", "cygwin".
+    /// "git-bash", "nu", "wsl:Ubuntu", "msys2", "cygwin".
     pub id: String,
     pub name: String,
     pub kind: ShellKind,
@@ -70,6 +71,9 @@ impl ShellProfile {
                 }
             }
             ShellKind::WindowsPowerShell | ShellKind::PowerShell7 => args.push("-NoLogo".into()),
+            // A bare `nu` starts its REPL in the folder the pseudo console
+            // is given, so there is nothing to pass.
+            ShellKind::Nushell => {}
             ShellKind::GitBash | ShellKind::Msys2 | ShellKind::Cygwin => {
                 args.extend(["--login".to_string(), "-i".to_string()]);
                 // Keeps the login profile from changing to the home folder.
@@ -106,6 +110,19 @@ impl ShellProfile {
             ShellKind::GitBash | ShellKind::Msys2 | ShellKind::Cygwin => {
                 format!("\x15cd \"$(cygpath -u '{}')\"\r", single(&path, "'\\''"))
             }
+            // Reedline (Nushell's line editor) clears the line on Ctrl+U,
+            // like bash. Nushell's single quotes take no escapes at all, so a
+            // path containing an apostrophe has to go through the
+            // double-quoted form instead - where every backslash in a Windows
+            // path needs doubling.
+            ShellKind::Nushell => {
+                if path.contains('\'') {
+                    let escaped = path.replace('\\', r"\\").replace('"', "\\\"");
+                    format!("\x15cd \"{escaped}\"\r")
+                } else {
+                    format!("\x15cd '{path}'\r")
+                }
+            }
             ShellKind::Wsl(distro) => match wsl_dir(distro, dir) {
                 WslDir::Linux(linux) => format!("\x15cd '{}'\r", single(&linux, "'\\''")),
                 WslDir::OtherDistro => "\x15cd ~\r".to_string(),
@@ -132,6 +149,7 @@ impl ShellProfile {
             ShellKind::Cmd => regular::TERMINAL,
             ShellKind::WindowsPowerShell | ShellKind::PowerShell7 => regular::WINDOWS_LOGO,
             ShellKind::GitBash => regular::GIT_BRANCH,
+            ShellKind::Nushell => regular::TERMINAL_WINDOW,
             ShellKind::Wsl(_) => regular::LINUX_LOGO,
             ShellKind::Msys2 | ShellKind::Cygwin => regular::CURRENCY_DOLLAR,
             ShellKind::Ssh(_) => regular::CLOUD,
@@ -264,6 +282,9 @@ fn detect() -> Vec<ShellProfile> {
     if let Some(bash) = find_git_bash() {
         add("git-bash", "Git Bash", ShellKind::GitBash, bash);
     }
+    if let Some(nu) = find_nu() {
+        add("nu", "Nushell", ShellKind::Nushell, nu);
+    }
     let wsl = system32_dir().join("wsl.exe");
     if wsl.is_file() {
         for distro in wsl_distributions() {
@@ -290,11 +311,92 @@ fn env_dir(var: &str) -> Option<PathBuf> {
 /// app itself runs from (see `system_paths`).
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let own_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
-    let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var)
+    path_dirs()
+        .into_iter()
         .filter(|dir| dir.is_absolute() && Some(dir) != own_dir.as_ref())
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.symlink_metadata().is_ok())
+}
+
+/// Every folder to look a program up in: this process's own `PATH` first,
+/// then the `PATH` as the registry currently holds it (for the machine and
+/// for this user).
+///
+/// The second half matters because a process's environment is a *copy* taken
+/// when it started: a program installed - or added to `PATH` - after
+/// EdenExplorer launched is invisible to `std::env::var_os("PATH")` until the
+/// app is restarted, and the copy Explorer hands out is itself stale until
+/// Explorer restarts too. Reported for Nushell, installed and on both the
+/// user and system `PATH`, which the terminal pane still would not list.
+fn path_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|var| std::env::split_paths(&var).collect())
+        .unwrap_or_default();
+    for extra in registry_path_dirs() {
+        if !dirs.iter().any(|dir| dir == &extra) {
+            dirs.push(extra);
+        }
+    }
+    dirs
+}
+
+/// `PATH` read straight out of the registry - the machine's and this user's -
+/// with `%VARIABLE%` references expanded.
+fn registry_path_dirs() -> Vec<PathBuf> {
+    use windows::Win32::System::Registry::*;
+    use windows::core::HSTRING;
+
+    const MACHINE_ENV: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+    const USER_ENV: &str = "Environment";
+
+    let mut out = Vec::new();
+    for (root, sub) in [(HKEY_LOCAL_MACHINE, MACHINE_ENV), (HKEY_CURRENT_USER, USER_ENV)] {
+        let mut buf = vec![0u16; 8192];
+        let mut len = (buf.len() * 2) as u32;
+        // No `RRF_NOEXPAND`, so a REG_EXPAND_SZ value arrives already
+        // expanded (`%SystemRoot%\system32` -> `C:\Windows\system32`).
+        let status = unsafe {
+            RegGetValueW(
+                root,
+                &HSTRING::from(sub),
+                &HSTRING::from("Path"),
+                RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+                None,
+                Some(buf.as_mut_ptr().cast()),
+                Some(&mut len),
+            )
+        };
+        if status.is_ok() {
+            let chars = (len as usize / 2).saturating_sub(1).min(buf.len());
+            let value = String::from_utf16_lossy(&buf[..chars]);
+            out.extend(std::env::split_paths(&value));
+        }
+    }
+    out
+}
+
+/// Nushell: the winget/MSI install, Scoop, Chocolatey, a `cargo install`,
+/// or `nu.exe` on `PATH`.
+fn find_nu() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for var in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(dir) = env_dir(var) {
+            candidates.push(dir.join(r"nu\bin\nu.exe"));
+        }
+    }
+    if let Some(local) = env_dir("LOCALAPPDATA") {
+        candidates.push(local.join(r"Programs\nu\bin\nu.exe"));
+        candidates.push(local.join(r"Microsoft\WinGet\Links\nu.exe"));
+    }
+    if let Some(home) = env_dir("USERPROFILE") {
+        candidates.push(home.join(r"scoop\apps\nu\current\nu.exe"));
+        candidates.push(home.join(r".cargo\bin\nu.exe"));
+    }
+    candidates.push(PathBuf::from(r"C:\ProgramData\chocolatey\bin\nu.exe"));
+    candidates
+        .into_iter()
+        .find(|p| p.symlink_metadata().is_ok())
+        .or_else(|| find_on_path("nu.exe"))
 }
 
 /// PowerShell 7: the MSI/winget install, the preview, the Microsoft Store
@@ -451,6 +553,46 @@ mod tests {
     }
 
     #[test]
+    fn nushell_starts_bare_and_quotes_its_own_way() {
+        let dir = Path::new(r"C:\Users\Me\My Docs");
+        let launch = profile(ShellKind::Nushell).launch(dir);
+        assert!(launch.args.is_empty());
+        assert!(launch.env.is_empty());
+        assert!(!launch.raw_args);
+        // A plain path goes in single quotes, which Nushell takes literally -
+        // no doubling of the backslashes.
+        assert_eq!(
+            profile(ShellKind::Nushell).cd_command(dir),
+            "\x15cd 'C:\\Users\\Me\\My Docs'\r"
+        );
+        // An apostrophe can't be escaped inside Nushell's single quotes, so
+        // this one has to switch to the double-quoted form, where the
+        // backslashes do need doubling.
+        assert_eq!(
+            profile(ShellKind::Nushell).cd_command(Path::new(r"C:\Bob's Files")),
+            "\x15cd \"C:\\\\Bob's Files\"\r"
+        );
+    }
+
+    /// The registry's `PATH` is only ever *extra* places to look, after the
+    /// process's own - so a program the running copy can already see keeps
+    /// being found at the same path it always was.
+    #[test]
+    fn path_dirs_start_with_the_process_path_and_hold_no_duplicates() {
+        let dirs = path_dirs();
+        let own: Vec<PathBuf> = std::env::var_os("PATH")
+            .map(|var| std::env::split_paths(&var).collect())
+            .unwrap_or_default();
+        assert_eq!(dirs[..own.len()], own[..]);
+        for (index, dir) in dirs.iter().enumerate().skip(own.len()) {
+            assert!(
+                !dirs[..index].contains(dir),
+                "{dir:?} is listed twice in the search path"
+            );
+        }
+    }
+
+    #[test]
     fn default_order_and_distributions() {
         let mut shells = vec![
             ShellProfile { id: "cmd".into(), ..profile(ShellKind::Cmd) },
@@ -472,3 +614,4 @@ mod tests {
         );
     }
 }
+
