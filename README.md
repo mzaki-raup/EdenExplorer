@@ -263,7 +263,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 |---|---|
 | **Favorites** | Pin folders to the sidebar, reorder by drag, and manage them on their own Settings page — rename, retarget, change icon, delete |
 | **Tags** | Colored tags with multi-tagging (an item can belong to several groups), a dedicated tab per tag listing every member, colored row tints in the file list, Filled or Outline icon styles, and optional **portable tags** stored with the file itself so they travel with it |
-| **Tab groups** | Save the open tabs (or hand-pick folders) as a named group and reopen the set at once; supports dual-pane entries and per-group icons |
+| **Tab groups** | Save the open tabs (or hand-pick folders) as a named group and reopen the set at once; an entry can carry up to three panes, so a split tab reopens as one, plus per-group icons |
 | **Sidebar** | Ten sections — Places, Storage, Cloud, Linux, Folders, Favorites, Tags, Saved Searches, Recent and Network — each of which can be hidden or rearranged |
 | **Cloud & Linux** | Automatic entries for OneDrive (personal and work), Dropbox, Google Drive, iCloud Drive and Box, plus every installed WSL distribution |
 
@@ -591,6 +591,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 - [x] **Choose which terminal Open Terminal opens** - Settings > Behavior > Terminal Program lists every shell installed on the PC (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, Nushell), or Automatic, which keeps the old behaviour of using Windows Terminal when it is there. The chosen shell starts in the folder you are looking at, with the same arguments and environment the terminal pane gives it, and falls back to Automatic if it is ever uninstalled
 - [x] **Open Terminal as administrator** - a Settings > Behavior tick box opens that terminal elevated, with Windows' own confirmation prompt each time. It applies to whichever program Open Terminal starts, the Automatic choice included; the terminal pane docked inside the app is unaffected, since nothing can elevate a program that is already running
 - [x] **Selecting a folder clears the preview pane** instead of filling it with "No preview available for this file type" - in Preview, Details + Preview and the column browser alike
+- [x] **A tab group entry can hold three panes** - a three-pane tab saved into a group now reopens as one three-pane tab, where only its first two folders used to come back. Settings > Tab Groups grows a third folder row under each entry, which appears once the second is set (the third pane splits the second column, so it cannot exist on its own) and goes again if the second is removed
 
 
 </details>

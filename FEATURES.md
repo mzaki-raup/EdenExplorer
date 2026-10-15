@@ -70,7 +70,7 @@
   <li><b>Dedicated special-folder icons</b> for Desktop, Downloads, Home, Music, Videos, and Documents</li>
   <li><b>Media Gallery views</b> with small, medium, large, and extra-large thumbnail layouts</li>
   <li><b>Tabbed navigation</b> with independent loading states</li>
-  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
+  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once; an entry can hold up to three panes, so a split tab reopens as one</li>
   <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
   <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video - following the selection in all three preview layouts, arrow keys included</li>
   <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>

@@ -2616,6 +2616,58 @@ PowerShell process) rather than the app's own code - if you're using the
   screenshot lands on a different folder. Check `focused()` before
   investigating any "the keyboard went somewhere else" report here.
 
+- **A scripted screenshot can publish someone's real files, and the only
+  thing that catches it is looking at the image before committing.** While
+  re-shooting the screenshot set, a scene that needed each new pane pointed
+  at a different folder did it by clicking a **sidebar favourite** - which on
+  this machine means the real `C:\Users\<user>\Pictures` and `Downloads`, not
+  the demo tree. The capture came back full of genuine personal file names
+  (contact exports, note exports, installers) and would have gone straight
+  into a public README had it not been read first. The demo profile
+  (`D:\EdenRun`, `D:\EdenDemo`) only controls what the *app* starts on; every
+  sidebar place, drive and Recent entry still points at the real machine.
+  Navigate a scene with the address bar (`Alt+D`, which the toolkit's own
+  `Go` uses) and keep every path inside `$DEMO` - and read each finished
+  capture before staging it, the same way a click's landing spot gets
+  verified elsewhere in this file.
+- **The screenshot toolkit in `D:\EdenRun\tools` needs three fixes before it
+  will run again** (all hit while refreshing the set for v1.20.0):
+  `common.ps1` and every `batch-*.ps1` dot-source paths inside a previous
+  session's scratchpad, which no longer exists - copy them somewhere and
+  rewrite `$SP`/`$OUT`; its `$PAGE` table of settings-category y-positions
+  predates the Sidebar, Toolbar and Network pages (rows are 30px apart with
+  General at 167, so Behavior is **227** now, not 197); and `batch-b` and
+  `batch-d` both still shoot `13-split-view.png` as a **two-pane** split,
+  which silently undoes the three-pane screenshot if either is re-run.
+- **Two ways of opening a folder that a screenshot scene must not use.** A
+  synthetic double-click on an already-selected row is read as this app's own
+  click-pause-click **rename** gesture, and the capture comes back with an
+  inline edit box open in it. Select-then-Enter is safe only if the row is
+  certainly a folder - on a file it opens Windows' "how do you want to open
+  this file" dialog, which then sits over the window and fails the next
+  capture with "another window is covering EdenExplorer" (terminate
+  `OpenWith.exe` rather than clicking in it, as recorded above). The address
+  bar avoids both.
+
+- **A `*Legacy` shadow struct that embeds a *live* type is not frozen, and
+  the next field added to that type silently breaks the very fallback the
+  shadow exists to provide.** `tab_groups.rs` keeps one shadow per
+  generation of its saved shape (the pattern this file already recommends
+  for any `postcard`-persisted struct), and `TabGroupLegacyV2` - the
+  pre-icon shape - declared `entries: Vec<TabGroupEntry>`, the current
+  entry type. That was correct on the day it was written and wrong the
+  moment `TabGroupEntry` gained a `third_path`: V2 bytes carry two fields
+  per entry, the new type wants three, so decoding them fails and the
+  fallback chain falls through to the oldest shape, which does not match
+  either - resetting a user's tab groups to empty, which is exactly the
+  outcome the shadow was added to prevent. Nothing warns about it; the code
+  still compiles and every test that only exercises the *new* shape still
+  passes. Fixed by pointing it at `TabGroupEntryLegacyV3`, a frozen copy of
+  the two-field entry. **When adding a field to a persisted struct, grep for
+  every other struct that mentions that type by name, not just the load
+  function** - a shadow of an older shape must be built entirely from frozen
+  types, or it silently tracks the thing it is supposed to be a snapshot of.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

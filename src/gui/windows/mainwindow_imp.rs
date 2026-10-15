@@ -838,7 +838,7 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
-        self.open_new_tab_with_split(path, None);
+        self.open_new_tab_with_split(path, None, None);
     }
 
     /// Like `open_new_tab`, but when `split_path` is `Some`, the new tab
@@ -846,7 +846,12 @@ impl MainWindow {
     /// second folder - used when opening a `TabGroupEntry` that captured a
     /// dual-pane tab, so reopening the group restores the same layout
     /// rather than just the primary folder.
-    pub fn open_new_tab_with_split(&mut self, path: PathBuf, split_path: Option<PathBuf>) {
+    pub fn open_new_tab_with_split(
+        &mut self,
+        path: PathBuf,
+        split_path: Option<PathBuf>,
+        third_path: Option<PathBuf>,
+    ) {
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -862,18 +867,22 @@ impl MainWindow {
             &current_settings,
             DisplayModeFallback::Default,
         );
-        if let Some(split_path) = split_path {
-            let mut split_view = TabView::new(
-                Navigation::new(split_path),
-                sort_column,
-                sort_ascending,
-            );
+        let restore_pane = |path: PathBuf| {
+            let mut view = TabView::new(Navigation::new(path), sort_column, sort_ascending);
             apply_directory_settings_to_view(
-                &mut split_view,
+                &mut view,
                 &current_settings,
                 DisplayModeFallback::Default,
             );
-            self.tabs.last_mut().unwrap().split_view = Some(split_view);
+            view
+        };
+        if let Some(split_path) = split_path {
+            self.tabs.last_mut().unwrap().split_view = Some(restore_pane(split_path));
+            // Only ever alongside a second pane - the third one splits the
+            // second column, so it has nowhere to go without it.
+            if let Some(third_path) = third_path {
+                self.tabs.last_mut().unwrap().third_view = Some(restore_pane(third_path));
+            }
         }
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
@@ -4947,7 +4956,7 @@ impl MainWindow {
             }
             if let Some(entries) = action.open_group {
                 for entry in entries {
-                    self.open_new_tab_with_split(entry.path, entry.split_path);
+                    self.open_new_tab_with_split(entry.path, entry.split_path, entry.third_path);
                 }
                 self.load_path();
                 // `load_path()` only loads the newly-active tab's Primary
@@ -4959,8 +4968,12 @@ impl MainWindow {
                 // entry had one - would otherwise stay unloaded and show as
                 // an incorrect "this folder is empty" until switched away
                 // from and back.
-                if self.active_tab().split_view.is_some() {
-                    self.load_view(SplitSide::Secondary);
+                for side in TabState::SIDES
+                    .into_iter()
+                    .take(self.active_tab().pane_count())
+                    .filter(|&side| side != SplitSide::Primary)
+                {
+                    self.load_view(side);
                 }
             }
             if let Some(entries) = action.replace_with_group {
@@ -4986,15 +4999,21 @@ impl MainWindow {
                             &current_settings,
                             DisplayModeFallback::Default,
                         );
-                        if let Some(split_path) = entry.split_path {
-                            let mut split_view =
-                                TabView::new(Navigation::new(split_path), sort_column, sort_ascending);
+                        let restore_pane = |path: PathBuf| {
+                            let mut view =
+                                TabView::new(Navigation::new(path), sort_column, sort_ascending);
                             apply_directory_settings_to_view(
-                                &mut split_view,
+                                &mut view,
                                 &current_settings,
                                 DisplayModeFallback::Default,
                             );
-                            tab.split_view = Some(split_view);
+                            view
+                        };
+                        if let Some(split_path) = entry.split_path {
+                            tab.split_view = Some(restore_pane(split_path));
+                            if let Some(third_path) = entry.third_path {
+                                tab.third_view = Some(restore_pane(third_path));
+                            }
                         }
                         self.tabs.push(tab);
                     }
@@ -5005,12 +5024,16 @@ impl MainWindow {
                     // active tab's Primary side gets loaded here, so its own
                     // Secondary split (if this entry had one) needs loading
                     // explicitly too.
-                    if self.active_tab().split_view.is_some() {
-                        self.load_view(SplitSide::Secondary);
+                    for side in TabState::SIDES
+                        .into_iter()
+                        .take(self.active_tab().pane_count())
+                        .filter(|&side| side != SplitSide::Primary)
+                    {
+                        self.load_view(side);
                     }
                 }
             }
-            if let Some((name, path, split_path)) = action.add_tab_to_new_group {
+            if let Some((name, path, split_path, third_path)) = action.add_tab_to_new_group {
                 let id = crate::core::tab_groups::next_group_id(
                     &self.settings_window.current_settings.tab_groups,
                 );
@@ -5018,13 +5041,17 @@ impl MainWindow {
                     crate::core::tab_groups::TabGroup {
                         id,
                         name,
-                        entries: vec![crate::core::tab_groups::TabGroupEntry { path, split_path }],
+                        entries: vec![crate::core::tab_groups::TabGroupEntry {
+                            path,
+                            split_path,
+                            third_path,
+                        }],
                         icon: crate::core::tab_groups::TabGroupIcon::None,
                     },
                 );
                 self.save_app_settings_to_disk();
             }
-            if let Some((group_id, path, split_path)) = action.add_tab_to_existing_group {
+            if let Some((group_id, path, split_path, third_path)) = action.add_tab_to_existing_group {
                 if let Some(group) = self
                     .settings_window
                     .current_settings
@@ -5035,7 +5062,11 @@ impl MainWindow {
                     // Duplicates are allowed on purpose - see `TabGroup`.
                     group
                         .entries
-                        .push(crate::core::tab_groups::TabGroupEntry { path, split_path });
+                        .push(crate::core::tab_groups::TabGroupEntry {
+                            path,
+                            split_path,
+                            third_path,
+                        });
                 }
                 self.save_app_settings_to_disk();
             }
