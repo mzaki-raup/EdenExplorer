@@ -91,6 +91,11 @@ pub enum SettingsAction {
     OpenTemplatesFolder,
     ExportSettings,
     ImportSettings,
+    /// Settings > Advanced > Updates: start a check the user asked for.
+    /// Handled exactly like About's own button - both route to
+    /// `check_for_updates_now`, so the one modal reports the result wherever
+    /// the check was started from.
+    CheckForUpdates,
     /// Export/import *just* the custom context menu list (see
     /// `core::context_menu_settings::ContextMenuExportBundle`) - a full
     /// settings export/import already carries this list as part of

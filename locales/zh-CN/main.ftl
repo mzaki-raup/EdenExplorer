@@ -1223,6 +1223,9 @@ tooltip_disk_usage_unaccounted = 驱动器报告为已用但扫描看不到的�
 # In-app update check (core::release / core::update, windows::update_ui)
 update_check_now = 检查更新
 update_auto_check = 自动检查更新
+settings_updates = 更新
+tooltip_settings_updates = 检查是否已发布更新版本，并选择 EdenExplorer 是否自动检查。与“关于”对话框和状态栏提示中的检查相同。
+update_view = 查看更新
 update_checking = 正在检查更新…
 update_up_to_date = 您使用的已是最新版本。
 update_available_title = 有可用更新

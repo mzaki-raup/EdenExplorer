@@ -4358,6 +4358,9 @@ impl MainWindow {
                         }
                     }
                 }
+                SettingsAction::CheckForUpdates => {
+                    self.check_for_updates_now();
+                }
                 SettingsAction::ExportSettings => {
                     if let Some(path) = crate::gui::windows::windowsoverrides::dialog()
                         .add_filter("Eden Explorer Settings", &["json"])
