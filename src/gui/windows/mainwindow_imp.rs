@@ -4666,6 +4666,15 @@ impl MainWindow {
                     self.toggle_flat_view();
                     None
                 }
+                ToolbarItem::Terminal => {
+                    let dir = self.current_nav().current.clone();
+                    let shell = self.external_terminal_shell();
+                    crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(
+                        &dir,
+                        shell.as_deref(),
+                    );
+                    None
+                }
                 ToolbarItem::TerminalPane => {
                     self.toggle_terminal();
                     None
@@ -5741,8 +5750,23 @@ impl MainWindow {
             crate::core::ui_prefs::save_ui_prefs(prefs);
         }
         if action.open_external {
-            crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(dir);
+            let shell = prefs.terminal.external_shell.clone();
+            crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(
+                dir,
+                shell.as_deref(),
+            );
         }
+    }
+
+    /// The shell Settings > Behavior > Terminal Program says to open in its
+    /// own window, if the user picked one.
+    pub(crate) fn external_terminal_shell(&self) -> Option<String> {
+        self.settings_window
+            .current_settings
+            .ui_prefs
+            .terminal
+            .external_shell
+            .clone()
     }
 
     pub(crate) fn toggle_performance_panel(&mut self) {
@@ -6571,7 +6595,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::OpenTerminal => {
                 let current_dir = explorer.current_nav().current.clone();
-                open_default_terminal(&current_dir);
+                let shell = explorer.external_terminal_shell();
+                open_default_terminal(&current_dir, shell.as_deref());
             }
             ItemViewerAction::MoveColumnLeft(column) => {
                 let moved = {

@@ -135,6 +135,15 @@ pub struct TerminalPrefs {
     /// silently resize the other.
     #[serde(default)]
     pub ssh_side_width: f32,
+    /// Shell the **Open Terminal** button and context-menu entry start in
+    /// their own window (`ShellProfile::id`); `None` = Windows Terminal if
+    /// it is installed, else Windows PowerShell, else Command Prompt.
+    ///
+    /// Separate from `default_shell`, which is about the pane docked inside
+    /// the app - wanting a shell *in* the window says nothing about which
+    /// one should open *outside* it.
+    #[serde(default)]
+    pub external_shell: Option<String>,
 }
 
 impl Default for TerminalPrefs {
@@ -148,6 +157,7 @@ impl Default for TerminalPrefs {
             side_width: 560.0,
             wsl_follow: true,
             ssh_side_width: 0.0,
+            external_shell: None,
         }
     }
 }

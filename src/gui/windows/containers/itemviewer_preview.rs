@@ -55,10 +55,16 @@ pub(crate) fn sync_preview_selection(
     let Some(file) = files.iter().find(|file| &file.path == selected) else {
         return;
     };
-    *preview_selection = Some(file.path.clone());
-    if !file.is_dir {
-        preview_service.request(&file.path);
+    if file.is_dir {
+        // A folder has nothing to show. Pointing the pane at one produced
+        // "No preview available for this file type", which reads as a
+        // failure rather than as "there is nothing here to preview" - and
+        // the column browser, asked for the same behaviour, clears instead.
+        *preview_selection = None;
+        return;
     }
+    *preview_selection = Some(file.path.clone());
+    preview_service.request(&file.path);
 }
 
 /// A layout with a simple file list on the left and a preview pane on the right
@@ -320,8 +326,14 @@ pub fn draw_preview_view(
                                             explorer_state.selected_paths.insert(file.path.clone());
                                             explorer_state.selection_focus = Some(idx);
                                             explorer_state.selection_anchor = Some(idx);
-                                            *preview_selection = Some(file.path.clone());
-                                            if !file.is_dir {
+                                            // See `sync_preview_selection`: a
+                                            // folder clears the pane rather
+                                            // than filling it with "no
+                                            // preview available".
+                                            if file.is_dir {
+                                                *preview_selection = None;
+                                            } else {
+                                                *preview_selection = Some(file.path.clone());
                                                 preview_service.request(&file.path);
                                             }
                                         }
