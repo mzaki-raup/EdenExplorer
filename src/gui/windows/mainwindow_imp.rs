@@ -4668,10 +4668,11 @@ impl MainWindow {
                 }
                 ToolbarItem::Terminal => {
                     let dir = self.current_nav().current.clone();
-                    let shell = self.external_terminal_shell();
+                    let (shell, as_admin) = self.external_terminal_choice();
                     crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(
                         &dir,
                         shell.as_deref(),
+                        as_admin,
                     );
                     None
                 }
@@ -5751,22 +5752,21 @@ impl MainWindow {
         }
         if action.open_external {
             let shell = prefs.terminal.external_shell.clone();
+            let as_admin = prefs.terminal.external_shell_admin;
             crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(
                 dir,
                 shell.as_deref(),
+                as_admin,
             );
         }
     }
 
-    /// The shell Settings > Behavior > Terminal Program says to open in its
-    /// own window, if the user picked one.
-    pub(crate) fn external_terminal_shell(&self) -> Option<String> {
-        self.settings_window
-            .current_settings
-            .ui_prefs
-            .terminal
-            .external_shell
-            .clone()
+    /// What Settings > Behavior says Open Terminal should start: the shell
+    /// the user picked (if any), and whether to ask for administrator
+    /// rights.
+    pub(crate) fn external_terminal_choice(&self) -> (Option<String>, bool) {
+        let terminal = &self.settings_window.current_settings.ui_prefs.terminal;
+        (terminal.external_shell.clone(), terminal.external_shell_admin)
     }
 
     pub(crate) fn toggle_performance_panel(&mut self) {
@@ -6595,8 +6595,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::OpenTerminal => {
                 let current_dir = explorer.current_nav().current.clone();
-                let shell = explorer.external_terminal_shell();
-                open_default_terminal(&current_dir, shell.as_deref());
+                let (shell, as_admin) = explorer.external_terminal_choice();
+                open_default_terminal(&current_dir, shell.as_deref(), as_admin);
             }
             ItemViewerAction::MoveColumnLeft(column) => {
                 let moved = {

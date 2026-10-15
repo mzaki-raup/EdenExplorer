@@ -1380,6 +1380,16 @@ fn draw_behavior_section(
             ui,
             i18n,
             palette,
+            &mut settings.current_settings.ui_prefs.terminal.external_shell_admin,
+            "settings_terminal_program_admin",
+            "tooltip_settings_terminal_program_admin",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
             &mut settings.current_settings.ui_prefs.terminal.wsl_layout,
             "settings_terminal_wsl_layout",
             "tooltip_settings_terminal_wsl_layout",
