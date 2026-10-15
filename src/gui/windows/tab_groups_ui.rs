@@ -359,6 +359,8 @@ pub fn draw_tab_groups_settings(
                             let mut move_entry: Option<(usize, usize)> = None;
                             let mut clear_split: Option<usize> = None;
                             let mut set_split: Option<(usize, std::path::PathBuf)> = None;
+                            let mut clear_third: Option<usize> = None;
+                            let mut set_third: Option<(usize, std::path::PathBuf)> = None;
                             let entry_total = group.entries.len();
                             for (entry_index, entry) in group.entries.iter().enumerate() {
                                 ui.horizontal(|ui| {
@@ -380,56 +382,92 @@ pub fn draw_tab_groups_settings(
                                         .on_hover_text(entry.path.display().to_string());
                                 });
 
-                                // The dual-pane half of this entry - either
-                                // shows the split folder (with its own
+                                // The extra panes of this entry - each row
+                                // either shows its folder (with its own
                                 // remove button) or a small link to set one,
-                                // indented under the primary folder so the
-                                // pairing reads as "this entry opens as one
-                                // dual-pane tab", not two separate entries.
-                                ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(regular::COLUMNS)
-                                                .color(palette.text_normal.gamma_multiply(0.7)),
+                                // indented under the primary folder so they
+                                // read as "this entry opens as one split
+                                // tab", not as separate entries.
+                                //
+                                // The third row only appears once the second
+                                // is set: the third pane splits the second
+                                // column, so it cannot exist without one,
+                                // and offering it first would promise a
+                                // layout the app will not open.
+                                let pane_row = |ui: &mut egui::Ui,
+                                                current: Option<&std::path::PathBuf>,
+                                                add_label: &str,
+                                                add_tooltip: &str,
+                                                remove_tooltip: &str|
+                                 -> Option<Option<std::path::PathBuf>> {
+                                    let mut outcome = None;
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(24.0);
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(regular::COLUMNS)
+                                                    .color(palette.text_normal.gamma_multiply(0.7)),
+                                            )
+                                            .selectable(false),
+                                        );
+                                        if let Some(path) = current {
+                                            if eden_button(ui, palette, regular::X)
+                                                .on_hover_text(remove_tooltip)
+                                                .clicked()
+                                            {
+                                                outcome = Some(None);
+                                            }
+                                            if let Some(texture) = icon_cache.get(path, true) {
+                                                ui.add(
+                                                    egui::Image::new(&texture)
+                                                        .fit_to_exact_size(FOLDER_ICON_SIZE),
+                                                );
+                                            }
+                                            ui.label(path.display().to_string())
+                                                .on_hover_text(path.display().to_string());
+                                        } else if eden_button(
+                                            ui,
+                                            palette,
+                                            &format!("{} {}", regular::FOLDER_OPEN, add_label),
                                         )
-                                        .selectable(false),
-                                    );
-                                    if let Some(split_path) = &entry.split_path {
-                                        if eden_button(ui, palette, regular::X)
-                                            .on_hover_text(i18n.tr("tab_group_remove_split"))
-                                            .clicked()
+                                        .on_hover_text(add_tooltip)
+                                        .clicked()
+                                            && let Some(picked) =
+                                                crate::gui::windows::windowsoverrides::dialog()
+                                                    .pick_folder()
                                         {
-                                            clear_split = Some(entry_index);
+                                            outcome = Some(Some(picked));
                                         }
-                                        if let Some(texture) = icon_cache.get(split_path, true) {
-                                            ui.add(
-                                                egui::Image::new(&texture)
-                                                    .fit_to_exact_size(FOLDER_ICON_SIZE),
-                                            );
-                                        }
-                                        ui.label(split_path.display().to_string())
-                                            .on_hover_text(split_path.display().to_string());
-                                    } else if eden_button(
-                                        ui,
-                                        palette,
-                                        &format!(
-                                            "{} {}",
-                                            regular::FOLDER_OPEN,
-                                            i18n.tr("tab_group_add_split_folder")
-                                        ),
-                                    )
-                                    .on_hover_text(i18n.tr("tooltip_tab_group_add_split_folder"))
-                                    .clicked()
-                                    {
-                                        if let Some(path) =
-                                            crate::gui::windows::windowsoverrides::dialog()
-                                                .pick_folder()
-                                        {
-                                            set_split = Some((entry_index, path));
-                                        }
+                                    });
+                                    outcome
+                                };
+
+                                if let Some(outcome) = pane_row(
+                                    ui,
+                                    entry.split_path.as_ref(),
+                                    &i18n.tr("tab_group_add_split_folder"),
+                                    &i18n.tr("tooltip_tab_group_add_split_folder"),
+                                    &i18n.tr("tab_group_remove_split"),
+                                ) {
+                                    match outcome {
+                                        Some(path) => set_split = Some((entry_index, path)),
+                                        None => clear_split = Some(entry_index),
                                     }
-                                });
+                                }
+                                if entry.split_path.is_some()
+                                    && let Some(outcome) = pane_row(
+                                        ui,
+                                        entry.third_path.as_ref(),
+                                        &i18n.tr("tab_group_add_third_folder"),
+                                        &i18n.tr("tooltip_tab_group_add_third_folder"),
+                                        &i18n.tr("tab_group_remove_third"),
+                                    )
+                                {
+                                    match outcome {
+                                        Some(path) => set_third = Some((entry_index, path)),
+                                        None => clear_third = Some(entry_index),
+                                    }
+                                }
                                 ui.add_space(6.0);
                             }
                             if let Some((from, to)) = move_entry {
@@ -437,11 +475,22 @@ pub fn draw_tab_groups_settings(
                                 changed = true;
                             }
                             if let Some(i) = clear_split {
+                                // The third pane splits the second column,
+                                // so it goes when the second does.
                                 group.entries[i].split_path = None;
+                                group.entries[i].third_path = None;
                                 changed = true;
                             }
                             if let Some((i, path)) = set_split {
                                 group.entries[i].split_path = Some(path);
+                                changed = true;
+                            }
+                            if let Some(i) = clear_third {
+                                group.entries[i].third_path = None;
+                                changed = true;
+                            }
+                            if let Some((i, path)) = set_third {
+                                group.entries[i].third_path = Some(path);
                                 changed = true;
                             }
                             if let Some(i) = remove_entry {

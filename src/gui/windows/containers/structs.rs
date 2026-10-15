@@ -51,9 +51,12 @@ pub struct TabInfo {
     pub title: String,
     pub full_path: PathBuf,
     /// The tab's own Secondary split-view path, if it currently has one open
-    /// - lets "Add to New/Existing Group" capture a dual-pane tab as a
-    /// single `TabGroupEntry` instead of losing the split.
+    /// - lets "Add to New/Existing Group" capture a split tab as a single
+    /// `TabGroupEntry` instead of losing the split.
     pub split_path: Option<PathBuf>,
+    /// The third pane's path, when the tab has all three open, captured the
+    /// same way and for the same reason.
+    pub third_path: Option<PathBuf>,
     pub is_pinned: bool,
 }
 
@@ -83,12 +86,12 @@ pub struct TabsAction {
     /// entries (one tab per entry, duplicates included).
     pub replace_with_group: Option<Vec<crate::core::tab_groups::TabGroupEntry>>,
     /// Create a brand-new tab group with this name, containing just this one
-    /// tab's `(path, split_path)` (from right-clicking a tab and choosing
+    /// tab's `(path, split_path, third_path)` (from right-clicking a tab and choosing
     /// "Add to New Group").
-    pub add_tab_to_new_group: Option<(String, PathBuf, Option<PathBuf>)>,
-    /// Append this tab's `(path, split_path)` to an existing group (by id) -
+    pub add_tab_to_new_group: Option<(String, PathBuf, Option<PathBuf>, Option<PathBuf>)>,
+    /// Append this tab's `(path, split_path, third_path)` to an existing group (by id) -
     /// allowed to duplicate an entry already in that group.
-    pub add_tab_to_existing_group: Option<(u64, PathBuf, Option<PathBuf>)>,
+    pub add_tab_to_existing_group: Option<(u64, PathBuf, Option<PathBuf>, Option<PathBuf>)>,
     /// Add or remove this tab's folder from the sidebar Favorites list
     /// (from right-clicking a tab and choosing "Add to Favorites"/"Remove
     /// from Favorites").

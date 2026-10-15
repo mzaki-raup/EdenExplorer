@@ -4,11 +4,12 @@
 //! in a group (each occurrence opens as its own separate tab, not
 //! deduplicated).
 //!
-//! Each entry can also carry a `split_path` - when set, opening that entry
-//! opens one tab with a Secondary split-view pane already showing that
-//! second folder, mirroring how a real dual-pane tab looks today. This lets
-//! a group remember "these two folders side by side" as a single unit,
-//! not just a flat list of single-pane tabs.
+//! Each entry can also carry a `split_path`, and alongside it a
+//! `third_path` - when set, opening that entry opens one tab with the
+//! second (and third) pane already showing those folders, mirroring how a
+//! real split tab looks today. This lets a group remember "these folders
+//! side by side" as a single unit, not just a flat list of single-pane
+//! tabs.
 //!
 //! Persisted separately from the rest of `AppSettings` (its own file, own
 //! load/save functions), the same way favorites/tags/custom-context-menu
@@ -25,6 +26,12 @@ pub struct TabGroupEntry {
     /// plain single-pane tab.
     #[serde(default)]
     pub split_path: Option<PathBuf>,
+    /// The third pane's folder, which splits the second column in half.
+    /// Only meaningful alongside `split_path` - the third pane cannot exist
+    /// without the second, and `open_new_tab_with_split` ignores it if it
+    /// somehow does. Appended last, as `postcard` requires of any new field.
+    #[serde(default)]
+    pub third_path: Option<PathBuf>,
 }
 
 impl TabGroupEntry {
@@ -32,6 +39,7 @@ impl TabGroupEntry {
         Self {
             path,
             split_path: None,
+            third_path: None,
         }
     }
 }
@@ -93,6 +101,63 @@ struct TabGroupsSnapshot {
     groups: Vec<TabGroup>,
 }
 
+// --- Legacy shape, from before entries could carry a third pane. Same
+// reasoning as every other `*Legacy` shadow here: `postcard`'s whole-struct
+// decode has no per-field rescue for a trailing field, so without this an
+// existing user's saved tab groups would reset to empty the first time they
+// launch a build that has it.
+#[derive(Serialize, Deserialize)]
+struct TabGroupEntryLegacyV3 {
+    path: PathBuf,
+    #[serde(default)]
+    split_path: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TabGroupLegacyV3 {
+    id: u64,
+    name: String,
+    #[serde(default)]
+    entries: Vec<TabGroupEntryLegacyV3>,
+    #[serde(default = "legacy_icon")]
+    icon: TabGroupIcon,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TabGroupsSnapshotLegacyV3 {
+    #[serde(default)]
+    groups: Vec<TabGroupLegacyV3>,
+}
+
+fn legacy_icon() -> TabGroupIcon {
+    TabGroupIcon::None
+}
+
+impl From<TabGroupsSnapshotLegacyV3> for TabGroupsSnapshot {
+    fn from(legacy: TabGroupsSnapshotLegacyV3) -> Self {
+        Self {
+            groups: legacy
+                .groups
+                .into_iter()
+                .map(|g| TabGroup {
+                    id: g.id,
+                    name: g.name,
+                    entries: g
+                        .entries
+                        .into_iter()
+                        .map(|e| TabGroupEntry {
+                            path: e.path,
+                            split_path: e.split_path,
+                            third_path: None,
+                        })
+                        .collect(),
+                    icon: g.icon,
+                })
+                .collect(),
+        }
+    }
+}
+
 // --- Legacy shape, from after dual-pane entries existed but before this
 // group-icon field did (`entries: Vec<TabGroupEntry>`, no `icon`) - kept as
 // a decode fallback for the same reason `TabGroupsSnapshotLegacy` below is:
@@ -104,8 +169,11 @@ struct TabGroupsSnapshot {
 struct TabGroupLegacyV2 {
     id: u64,
     name: String,
+    // The entry shape as it was when these bytes were written - not
+    // `TabGroupEntry`, which has gained a field since and would make this
+    // fallback expect a third one these bytes do not carry.
     #[serde(default)]
-    entries: Vec<TabGroupEntry>,
+    entries: Vec<TabGroupEntryLegacyV3>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -123,7 +191,15 @@ impl From<TabGroupsSnapshotLegacyV2> for TabGroupsSnapshot {
                 .map(|g| TabGroup {
                     id: g.id,
                     name: g.name,
-                    entries: g.entries,
+                    entries: g
+                        .entries
+                        .into_iter()
+                        .map(|e| TabGroupEntry {
+                            path: e.path,
+                            split_path: e.split_path,
+                            third_path: None,
+                        })
+                        .collect(),
                     icon: TabGroupIcon::None,
                 })
                 .collect(),
@@ -179,6 +255,9 @@ pub fn load_tab_groups() -> Vec<TabGroup> {
     };
     if let Ok(snapshot) = postcard::from_bytes::<TabGroupsSnapshot>(&data) {
         return snapshot.groups;
+    }
+    if let Ok(legacy) = postcard::from_bytes::<TabGroupsSnapshotLegacyV3>(&data) {
+        return TabGroupsSnapshot::from(legacy).groups;
     }
     if let Ok(legacy) = postcard::from_bytes::<TabGroupsSnapshotLegacyV2>(&data) {
         return TabGroupsSnapshot::from(legacy).groups;
@@ -264,6 +343,7 @@ mod tests {
             entries: vec![TabGroupEntry {
                 path: PathBuf::from("C:\\a"),
                 split_path: Some(PathBuf::from("C:\\b")),
+                third_path: None,
             }],
             icon: TabGroupIcon::Glyph("star".to_string()),
         }];
@@ -281,7 +361,10 @@ mod tests {
             groups: vec![TabGroupLegacyV2 {
                 id: 1,
                 name: "Dev".to_string(),
-                entries: vec![TabGroupEntry::new(PathBuf::from("C:\\a"))],
+                entries: vec![TabGroupEntryLegacyV3 {
+                    path: PathBuf::from("C:\\a"),
+                    split_path: None,
+                }],
             }],
         };
         let bytes = postcard::to_allocvec(&legacy).unwrap();
@@ -295,6 +378,61 @@ mod tests {
         assert_eq!(migrated.groups.len(), 1);
         assert_eq!(migrated.groups[0].name, "Dev");
         assert_eq!(migrated.groups[0].icon, TabGroupIcon::None);
+    }
+
+    #[test]
+    fn tab_group_with_three_panes_round_trips_through_postcard() {
+        let groups = vec![TabGroup {
+            id: 1,
+            name: "Dev".to_string(),
+            entries: vec![TabGroupEntry {
+                path: PathBuf::from("C:\\a"),
+                split_path: Some(PathBuf::from("C:\\b")),
+                third_path: Some(PathBuf::from("C:\\c")),
+            }],
+            icon: TabGroupIcon::Glyph("star".to_string()),
+        }];
+        let bytes = postcard::to_allocvec(&TabGroupsSnapshot {
+            groups: groups.clone(),
+        })
+        .unwrap();
+        let decoded = postcard::from_bytes::<TabGroupsSnapshot>(&bytes).unwrap();
+        assert_eq!(decoded.groups, groups);
+    }
+
+    #[test]
+    fn legacy_tab_group_bytes_without_third_path_still_decode() {
+        let legacy = TabGroupsSnapshotLegacyV3 {
+            groups: vec![TabGroupLegacyV3 {
+                id: 1,
+                name: "Dev".to_string(),
+                entries: vec![TabGroupEntryLegacyV3 {
+                    path: PathBuf::from("C:\\a"),
+                    split_path: Some(PathBuf::from("C:\\b")),
+                }],
+                icon: TabGroupIcon::Glyph("star".to_string()),
+            }],
+        };
+        let bytes = postcard::to_allocvec(&legacy).unwrap();
+
+        // The current shape must fail to decode these bytes - otherwise the
+        // fallback below would never be reached in practice.
+        assert!(postcard::from_bytes::<TabGroupsSnapshot>(&bytes).is_err());
+
+        let decoded_legacy = postcard::from_bytes::<TabGroupsSnapshotLegacyV3>(&bytes).unwrap();
+        let migrated: TabGroupsSnapshot = decoded_legacy.into();
+        assert_eq!(
+            migrated.groups[0].entries,
+            vec![TabGroupEntry {
+                path: PathBuf::from("C:\\a"),
+                split_path: Some(PathBuf::from("C:\\b")),
+                third_path: None,
+            }]
+        );
+        assert_eq!(
+            migrated.groups[0].icon,
+            TabGroupIcon::Glyph("star".to_string())
+        );
     }
 
     /// Exercises the exact serialize/deserialize path the Export/Import Tab

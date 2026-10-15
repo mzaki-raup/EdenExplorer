@@ -2649,6 +2649,25 @@ PowerShell process) rather than the app's own code - if you're using the
   `OpenWith.exe` rather than clicking in it, as recorded above). The address
   bar avoids both.
 
+- **A `*Legacy` shadow struct that embeds a *live* type is not frozen, and
+  the next field added to that type silently breaks the very fallback the
+  shadow exists to provide.** `tab_groups.rs` keeps one shadow per
+  generation of its saved shape (the pattern this file already recommends
+  for any `postcard`-persisted struct), and `TabGroupLegacyV2` - the
+  pre-icon shape - declared `entries: Vec<TabGroupEntry>`, the current
+  entry type. That was correct on the day it was written and wrong the
+  moment `TabGroupEntry` gained a `third_path`: V2 bytes carry two fields
+  per entry, the new type wants three, so decoding them fails and the
+  fallback chain falls through to the oldest shape, which does not match
+  either - resetting a user's tab groups to empty, which is exactly the
+  outcome the shadow was added to prevent. Nothing warns about it; the code
+  still compiles and every test that only exercises the *new* shape still
+  passes. Fixed by pointing it at `TabGroupEntryLegacyV3`, a frozen copy of
+  the two-field entry. **When adding a field to a persisted struct, grep for
+  every other struct that mentions that type by name, not just the load
+  function** - a shadow of an older shape must be built entirely from frozen
+  types, or it silently tracks the thing it is supposed to be a snapshot of.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

@@ -333,6 +333,7 @@ pub fn draw_tabs(
                                     tab_groups,
                                     &tab.full_path,
                                     tab.split_path.as_ref(),
+                                    tab.third_path.as_ref(),
                                     &mut action,
                                 );
                             });
@@ -485,10 +486,10 @@ const TAB_GROUP_ICON_SIZE: egui::Vec2 = egui::vec2(16.0, 16.0);
 /// to Existing Group" (one entry per saved group) for a right-clicked tab's
 /// folder - the same path can already be in the target group; it's added
 /// again regardless, same as everywhere else tab groups allow duplicates.
-/// When the tab currently has a Secondary split-view pane open
-/// (`tab_split_path`), the new group entry captures it too, so reopening the
-/// group later restores the same dual-pane layout rather than just the
-/// primary folder.
+/// When the tab currently has a second (and third) pane open
+/// (`tab_split_path`, `tab_third_path`), the new group entry captures those
+/// too, so reopening the group later restores the same layout rather than
+/// just the primary folder.
 fn draw_add_tab_to_group_menu(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -496,6 +497,7 @@ fn draw_add_tab_to_group_menu(
     tab_groups: &[TabGroup],
     tab_path: &PathBuf,
     tab_split_path: Option<&PathBuf>,
+    tab_third_path: Option<&PathBuf>,
     action: &mut TabsAction,
 ) {
     ui.menu_button(
@@ -519,8 +521,12 @@ fn draw_add_tab_to_group_menu(
             ui.ctx().data_mut(|d| d.insert_temp(name_id, name.clone()));
 
             if ui.button(i18n.tr("tab_group_create")).clicked() {
-                action.add_tab_to_new_group =
-                    Some((name, tab_path.clone(), tab_split_path.cloned()));
+                action.add_tab_to_new_group = Some((
+                    name,
+                    tab_path.clone(),
+                    tab_split_path.cloned(),
+                    tab_third_path.cloned(),
+                ));
                 ui.ctx().data_mut(|d| d.insert_temp(name_id, String::new()));
                 ui.close();
             }
@@ -555,8 +561,12 @@ fn draw_add_tab_to_group_menu(
                     };
 
                     if clicked {
-                        action.add_tab_to_existing_group =
-                            Some((group.id, tab_path.clone(), tab_split_path.cloned()));
+                        action.add_tab_to_existing_group = Some((
+                            group.id,
+                            tab_path.clone(),
+                            tab_split_path.cloned(),
+                            tab_third_path.cloned(),
+                        ));
                         ui.close();
                     }
                 }
