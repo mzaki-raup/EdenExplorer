@@ -1292,7 +1292,10 @@ fn draw_navigation_bar_buttons(
 /// behaviour - Windows Terminal if it is installed, else Windows PowerShell,
 /// else Command Prompt. A chosen shell that is no longer installed falls
 /// back to the same chain rather than failing silently.
-pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>) {
+/// `as_admin` asks Windows for administrator rights, which shows the UAC
+/// prompt each time - it applies to whichever program ends up being started,
+/// the automatic chain included.
+pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>, as_admin: bool) {
     let start_dir = if current_dir.to_string_lossy() == MY_PC_PATH || !current_dir.exists() {
         dirs::home_dir().unwrap_or_else(|| current_dir.to_path_buf())
     } else {
@@ -1302,7 +1305,7 @@ pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>) {
     if let Some(id) = shell
         && let Some(profile) = crate::core::terminal_shells::shells(|| {})
             .and_then(|shells| shells.iter().find(|s| s.id == id))
-        && open_shell_window(profile, &start_dir)
+        && open_shell_window(profile, &start_dir, as_admin)
     {
         return;
     }
@@ -1315,19 +1318,9 @@ pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>) {
     // `core::system_paths`).
     use crate::core::system_paths;
     let launched = system_paths::windows_terminal_exe().is_some_and(|wt| {
-        Command::new(wt)
-            .current_dir(&start_dir)
-            .args(["-d", "."])
-            .spawn()
-            .is_ok()
-    }) || Command::new(system_paths::powershell_exe())
-        .current_dir(&start_dir)
-        .spawn()
-        .is_ok()
-        || Command::new(system_paths::cmd_exe())
-            .current_dir(&start_dir)
-            .spawn()
-            .is_ok();
+        spawn_terminal(&wt, &["-d".into(), ".".into()], &[], &start_dir, as_admin)
+    }) || spawn_terminal(&system_paths::powershell_exe(), &[], &[], &start_dir, as_admin)
+        || spawn_terminal(&system_paths::cmd_exe(), &[], &[], &start_dir, as_admin);
 
     if !launched {
         eprintln!("Failed to open terminal");
@@ -1336,29 +1329,125 @@ pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>) {
 
 /// Starts `profile` in its own console window, in `dir`.
 ///
-/// `CREATE_NEW_CONSOLE` is what gives it a window at all: this app is a GUI
-/// process with no console of its own, so a console program started from it
-/// would otherwise run with nowhere to draw. The program, its arguments and
-/// its environment all come from `ShellProfile::launch` - the same thing the
-/// terminal pane runs - so a shell behaves the same whether it opens inside
-/// the window or outside it.
+/// The program, its arguments and its environment all come from
+/// `ShellProfile::launch` - the same thing the terminal pane runs - so a
+/// shell behaves the same whether it opens inside the window or outside it.
 fn open_shell_window(
     profile: &crate::core::terminal_shells::ShellProfile,
     dir: &Path,
+    as_admin: bool,
 ) -> bool {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-
     let launch = profile.launch(dir);
-    let mut command = Command::new(&launch.program);
-    command
-        .args(&launch.args)
-        .current_dir(dir)
-        .creation_flags(CREATE_NEW_CONSOLE);
-    for (key, value) in &launch.env {
-        command.env(key, value);
+    spawn_terminal(&launch.program, &launch.args, &launch.env, dir, as_admin)
+}
+
+/// Starts `program` in a console window of its own, in `dir`.
+///
+/// Two launchers, because they can do different things:
+///
+/// * Ordinarily `Command` with `CREATE_NEW_CONSOLE`, which is what gives the
+///   program a window at all - this app is a GUI process with no console of
+///   its own, so a console program started from it would otherwise run with
+///   nowhere to draw.
+/// * For `as_admin`, `ShellExecuteW`'s `runas` verb, which is the only way to
+///   ask for elevation: a process cannot raise its own rights, and `Command`
+///   has no way to request the UAC prompt. Same call the Custom Context
+///   Menu's own "run as administrator" option already uses.
+///
+/// `ShellExecuteW` has no environment parameter - the program inherits this
+/// process's - so anything `env` asks for is set here for the duration of the
+/// call and put back afterwards. In practice that is `CHERE_INVOKING`, which
+/// is what keeps Git Bash in the folder being browsed rather than jumping to
+/// the home directory.
+fn spawn_terminal(
+    program: &Path,
+    args: &[String],
+    env: &[(String, String)],
+    dir: &Path,
+    as_admin: bool,
+) -> bool {
+    if !as_admin {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+        let mut command = Command::new(program);
+        command
+            .args(args)
+            .current_dir(dir)
+            .creation_flags(CREATE_NEW_CONSOLE);
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        return command.spawn().is_ok();
     }
-    command.spawn().is_ok()
+
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows::core::HSTRING;
+
+    // `ShellExecuteW` takes one command line, so an argument with a space in
+    // it has to carry its own quotes. Anything already quoted (cmd's Clink
+    // injection builds its own, deliberately) is left exactly as it is.
+    let parameters = args
+        .iter()
+        .map(|arg| {
+            if arg.contains(' ') && !arg.starts_with('"') {
+                let mut quoted = String::with_capacity(arg.len() + 2);
+                quoted.push('"');
+                quoted.push_str(arg);
+                quoted.push('"');
+                quoted
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let restore: Vec<(String, Option<String>)> = env
+        .iter()
+        .map(|(key, value)| {
+            let previous = std::env::var(key).ok();
+            set_env(key, Some(value));
+            (key.clone(), previous)
+        })
+        .collect();
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            &HSTRING::from("runas"),
+            &HSTRING::from(program.as_os_str()),
+            &HSTRING::from(parameters.as_str()),
+            &HSTRING::from(dir.as_os_str()),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    for (key, previous) in restore {
+        set_env(&key, previous.as_deref());
+    }
+
+    // Above 32 means it started; 32 or below is the error code, including
+    // `SE_ERR_ACCESSDENIED` (5) when the UAC prompt is dismissed.
+    result.0 as usize > 32
+}
+
+/// Sets (or, with `None`, clears) an environment variable for this process.
+///
+/// `std::env::set_var` is `unsafe` from the 2024 edition on, because another
+/// thread reading the environment at the same moment is undefined behaviour.
+/// The Win32 call carries no such rule, and this is only ever reached from
+/// the frame handling the click.
+fn set_env(key: &str, value: Option<&str>) {
+    use windows::Win32::System::Environment::SetEnvironmentVariableW;
+    use windows::core::HSTRING;
+    unsafe {
+        let _ = match value {
+            Some(value) => SetEnvironmentVariableW(&HSTRING::from(key), &HSTRING::from(value)),
+            None => SetEnvironmentVariableW(&HSTRING::from(key), None),
+        };
+    }
 }
 
 fn measure_breadcrumb_width(ui: &egui::Ui, font_id: &egui::FontId, text: &str) -> f32 {

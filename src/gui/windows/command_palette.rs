@@ -434,10 +434,11 @@ impl MainWindow {
             }
             Command::Terminal => {
                 let dir = self.current_nav().current.clone();
-                let shell = self.external_terminal_shell();
+                let (shell, as_admin) = self.external_terminal_choice();
                 crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(
                     &dir,
                     shell.as_deref(),
+                    as_admin,
                 );
             }
             Command::ToggleTheme => self.handle_topbar_action(Some(TopbarAction {

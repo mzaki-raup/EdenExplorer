@@ -144,6 +144,12 @@ pub struct TerminalPrefs {
     /// one should open *outside* it.
     #[serde(default)]
     pub external_shell: Option<String>,
+    /// Open that terminal with administrator rights (a UAC prompt each
+    /// time). Only applies to the window **Open Terminal** starts - the pane
+    /// inside the app runs as this process does, and nothing can elevate a
+    /// program already running unelevated.
+    #[serde(default)]
+    pub external_shell_admin: bool,
 }
 
 impl Default for TerminalPrefs {
@@ -158,6 +164,7 @@ impl Default for TerminalPrefs {
             wsl_follow: true,
             ssh_side_width: 0.0,
             external_shell: None,
+            external_shell_admin: false,
         }
     }
 }
