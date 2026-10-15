@@ -1223,6 +1223,9 @@ tooltip_disk_usage_unaccounted = ドライブが使用中と報告している�
 # In-app update check (core::release / core::update, windows::update_ui)
 update_check_now = 更新を確認
 update_auto_check = 更新を自動的に確認する
+settings_updates = 更新
+tooltip_settings_updates = 新しいリリースが公開されているか確認し、EdenExplorer が自動で確認するかどうかを選択します。バージョン情報やステータスバーの表示と同じ確認です。
+update_view = 更新を表示
 update_checking = 更新を確認しています…
 update_up_to_date = 最新バージョンを使用しています。
 update_available_title = 更新があります

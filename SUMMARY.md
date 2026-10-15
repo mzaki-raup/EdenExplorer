@@ -134,8 +134,11 @@ The app checks for its own updates against that same forge: `core::release` deci
 published release is newer than the running copy, `core::update` fetches it, verifies it against
 `SHA256SUMS.txt` and installs it in place, and `gui::windows::update_ui` provides the status-bar
 indicator and the offer/download/install modal. The running version is shown at the far left of
-the status bar in every view, and About has "Check for Updates" plus a "check automatically"
-toggle (at most one automatic check a day, persisted in its own `update_state.bin`).
+the status bar in every view, and both About and Settings > Advanced > Updates have "Check for
+Updates" plus a "check automatically" toggle (at most one automatic check a day, persisted in its
+own `update_state.bin`). All three surfaces drive the same check and the same modal - the Advanced
+page reads what the last check found from the context-memory flag the status-bar indicator already
+publishes, so it can never disagree with it.
 
 Supporting scripts live in `scripts/`: `next-release.ps1` (decide the version and write the
 release notes; `-Tag` writes the notes for an existing tag, which is what GitHub's workflow

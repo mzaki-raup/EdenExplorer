@@ -1219,6 +1219,9 @@ tooltip_disk_usage_unaccounted = Space the drive reports as used that the scan c
 # In-app update check (core::release / core::update, windows::update_ui)
 update_check_now = Check for Updates
 update_auto_check = Check for updates automatically
+settings_updates = Updates
+tooltip_settings_updates = Check whether a newer release has been published, and choose whether EdenExplorer looks on its own. The same check as the one in About and the status bar indicator.
+update_view = View Update
 update_checking = Checking for updates…
 update_up_to_date = You are running the latest version.
 update_available_title = Update available

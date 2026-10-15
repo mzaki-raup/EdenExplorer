@@ -1894,6 +1894,97 @@ fn draw_advanced_section(
     palette: &ThemePalette,
     action: &mut Option<SettingsAction>,
 ) {
+    // Updates. The same check the About dialog and the status bar indicator
+    // start, reported through the same modal - this page is only another way
+    // in, not a second implementation.
+    settings_section(ui, palette, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(i18n.tr("settings_updates"))
+                    .color(palette.text_normal)
+                    .strong(),
+            );
+            info_icon(ui, &i18n.tr("tooltip_settings_updates"), palette);
+        });
+        ui.add_space(SETTINGS_FIELD_GAP);
+
+        ui.label(
+            RichText::new(format!(
+                "{}: {}",
+                i18n.tr("about_current_version"),
+                env!("CARGO_PKG_VERSION")
+            ))
+            .size(palette.text_size - 1.0)
+            .color(palette.text_normal.gamma_multiply(0.75)),
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+
+        // What the last check found, if anything - read from the same
+        // context-memory flag the status bar's indicator uses, so this page
+        // needs no new state of its own and can never disagree with it.
+        let available = ui.ctx().memory(|mem| {
+            mem.data
+                .get_temp::<Option<String>>(egui::Id::new(
+                    crate::gui::windows::update_ui::UPDATE_BADGE_MEMORY_ID,
+                ))
+                .flatten()
+        });
+        if let Some(version) = &available {
+            ui.label(
+                RichText::new(format!("{} - v{version}", i18n.tr("update_available_title")))
+                    .color(palette.notification_status_success),
+            );
+            ui.add_space(SETTINGS_FIELD_GAP);
+        }
+
+        ui.horizontal(|ui| {
+            if eden_button(
+                ui,
+                palette,
+                &format!(
+                    "{} {}",
+                    regular::ARROW_CIRCLE_UP,
+                    i18n.tr("update_check_now")
+                ),
+            )
+            .clicked()
+            {
+                *action = Some(SettingsAction::CheckForUpdates);
+            }
+            // Only offered once there is something to act on - it opens the
+            // modal on an update already found, rather than asking the server
+            // again for an answer this page is already showing.
+            if available.is_some()
+                && eden_button(ui, palette, &i18n.tr("update_view")).clicked()
+            {
+                ui.ctx().memory_mut(|mem| {
+                    mem.data.insert_temp(
+                        egui::Id::new(crate::gui::windows::update_ui::UPDATE_CLICKED_MEMORY_ID),
+                        true,
+                    );
+                });
+            }
+        });
+        ui.add_space(SETTINGS_FIELD_GAP);
+
+        let auto = settings
+            .update_auto_check
+            .get_or_insert_with(|| crate::core::indexer::load_update_state().auto_check);
+        let mut auto_value = *auto;
+        if setting_checkbox(
+            ui,
+            palette,
+            &mut auto_value,
+            RichText::new(i18n.tr("update_auto_check")).color(palette.text_normal),
+            "update_auto_check",
+        ) {
+            *auto = auto_value;
+            let mut state = crate::core::indexer::load_update_state();
+            state.auto_check = auto_value;
+            crate::core::indexer::save_update_state(&state);
+        }
+    });
+
     settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if eden_button(ui, palette, &i18n.tr("settings_reset")).clicked() {

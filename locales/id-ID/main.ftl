@@ -1222,6 +1222,9 @@ tooltip_disk_usage_unaccounted = Ruang yang dilaporkan drive sebagai terpakai te
 # In-app update check (core::release / core::update, windows::update_ui)
 update_check_now = Periksa Pembaruan
 update_auto_check = Periksa pembaruan secara otomatis
+settings_updates = Pembaruan
+tooltip_settings_updates = Periksa apakah ada rilis yang lebih baru, dan tentukan apakah EdenExplorer memeriksanya sendiri. Sama dengan pemeriksaan di dialog Tentang dan indikator bilah status.
+update_view = Lihat Pembaruan
 update_checking = Memeriksa pembaruan…
 update_up_to_date = Anda menggunakan versi terbaru.
 update_available_title = Pembaruan tersedia

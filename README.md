@@ -591,6 +591,7 @@ anything still planned is in [ROADMAP.md](ROADMAP.md).
 - [x] **Choose which terminal Open Terminal opens** - Settings > Behavior > Terminal Program lists every shell installed on the PC (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, Nushell), or Automatic, which keeps the old behaviour of using Windows Terminal when it is there. The chosen shell starts in the folder you are looking at, with the same arguments and environment the terminal pane gives it, and falls back to Automatic if it is ever uninstalled
 - [x] **Open Terminal as administrator** - a Settings > Behavior tick box opens that terminal elevated, with Windows' own confirmation prompt each time. It applies to whichever program Open Terminal starts, the Automatic choice included; the terminal pane docked inside the app is unaffected, since nothing can elevate a program that is already running
 - [x] **Selecting a folder clears the preview pane** instead of filling it with "No preview available for this file type" - in Preview, Details + Preview and the column browser alike
+- [x] **Check for updates from Settings too** - Settings > Advanced gains an Updates section with the current version, a Check for Updates button, the automatic-check toggle, and (once a check has found something) the version it found plus a View Update button that reopens the offer. The same check and the same modal as About's own button and the status bar indicator, so there is nothing new to learn and nothing that can disagree
 - [x] **A tab group entry can hold three panes** - a three-pane tab saved into a group now reopens as one three-pane tab, where only its first two folders used to come back. Settings > Tab Groups grows a third folder row under each entry, which appears once the second is set (the third pane splits the second column, so it cannot exist on its own) and goes again if the second is removed
 
 
@@ -723,10 +724,14 @@ belongs to.
 
 - The version you are running is shown at the far left of the status bar, and in
   **About**.
-- **About → Check for Updates** looks right now and reports whatever it finds.
-  **Check for updates automatically** (same dialog) runs a quiet check at most
-  once a day, which only speaks up when there is actually something newer; turn
-  it off and no check is ever made on its own.
+- **About → Check for Updates** and **Settings → Advanced → Updates** both look
+  right now and report whatever they find - the same check, the same modal,
+  whichever one it is started from. The Advanced page also names the version it
+  last found and offers **View Update**, which reopens that modal without asking
+  the server again.
+  **Check for updates automatically** (in either place) runs a quiet check at
+  most once a day, which only speaks up when there is actually something newer;
+  turn it off and no check is ever made on its own.
 - When an update is available the status bar shows a clickable indicator; the
   modal behind it offers the release notes, **Download & Install**, **Release
   Notes** (opens the release page), and **Skip This Version** (which keeps

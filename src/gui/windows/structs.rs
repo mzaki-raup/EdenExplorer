@@ -265,6 +265,11 @@ pub struct SettingsWindow {
     pub recording_shortcut: Option<crate::core::keymap::ShortcutAction>,
     pub shortcut_message: Option<(bool, String)>,
     pub shortcuts_page_last_pass: u64,
+    /// Settings > Advanced > Updates: the persisted "check automatically"
+    /// flag (`core::indexer`), read the first time that page is drawn rather
+    /// than every frame - the same reason `AboutWindow::auto_check` caches
+    /// it, since this page is redrawn sixty times a second while it is open.
+    pub update_auto_check: Option<bool>,
 }
 
 pub struct SidebarState {
