@@ -2616,6 +2616,39 @@ PowerShell process) rather than the app's own code - if you're using the
   screenshot lands on a different folder. Check `focused()` before
   investigating any "the keyboard went somewhere else" report here.
 
+- **A scripted screenshot can publish someone's real files, and the only
+  thing that catches it is looking at the image before committing.** While
+  re-shooting the screenshot set, a scene that needed each new pane pointed
+  at a different folder did it by clicking a **sidebar favourite** - which on
+  this machine means the real `C:\Users\<user>\Pictures` and `Downloads`, not
+  the demo tree. The capture came back full of genuine personal file names
+  (contact exports, note exports, installers) and would have gone straight
+  into a public README had it not been read first. The demo profile
+  (`D:\EdenRun`, `D:\EdenDemo`) only controls what the *app* starts on; every
+  sidebar place, drive and Recent entry still points at the real machine.
+  Navigate a scene with the address bar (`Alt+D`, which the toolkit's own
+  `Go` uses) and keep every path inside `$DEMO` - and read each finished
+  capture before staging it, the same way a click's landing spot gets
+  verified elsewhere in this file.
+- **The screenshot toolkit in `D:\EdenRun\tools` needs three fixes before it
+  will run again** (all hit while refreshing the set for v1.20.0):
+  `common.ps1` and every `batch-*.ps1` dot-source paths inside a previous
+  session's scratchpad, which no longer exists - copy them somewhere and
+  rewrite `$SP`/`$OUT`; its `$PAGE` table of settings-category y-positions
+  predates the Sidebar, Toolbar and Network pages (rows are 30px apart with
+  General at 167, so Behavior is **227** now, not 197); and `batch-b` and
+  `batch-d` both still shoot `13-split-view.png` as a **two-pane** split,
+  which silently undoes the three-pane screenshot if either is re-run.
+- **Two ways of opening a folder that a screenshot scene must not use.** A
+  synthetic double-click on an already-selected row is read as this app's own
+  click-pause-click **rename** gesture, and the capture comes back with an
+  inline edit box open in it. Select-then-Enter is safe only if the row is
+  certainly a folder - on a file it opens Windows' "how do you want to open
+  this file" dialog, which then sits over the window and fails the next
+  capture with "another window is covering EdenExplorer" (terminate
+  `OpenWith.exe` rather than clicking in it, as recorded above). The address
+  bar avoids both.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not
