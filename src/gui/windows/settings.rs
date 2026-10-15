@@ -1315,6 +1315,67 @@ fn draw_behavior_section(
             },
         );
         ui.add_space(SETTINGS_FIELD_GAP);
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(
+                    ui,
+                    &i18n.tr("settings_terminal_program"),
+                    Some((&i18n.tr("tooltip_settings_terminal_program"), palette)),
+                    palette,
+                );
+            },
+            |ui| {
+                // The same list the pane's own "+" menu offers, minus the
+                // WSL distributions: `wsl.exe -d <distro>` in its own
+                // console window works, but a distribution is a place to
+                // browse here, not a terminal program to default to.
+                let installed = crate::core::terminal_shells::shells(|| {}).unwrap_or(&[]);
+                let terminal = &mut settings.current_settings.ui_prefs.terminal;
+                let automatic = i18n.tr("settings_terminal_program_auto");
+                let selected = terminal
+                    .external_shell
+                    .as_deref()
+                    .and_then(|id| installed.iter().find(|shell| shell.id == id))
+                    .map(|shell| shell.name.clone())
+                    .unwrap_or_else(|| automatic.clone());
+                let mut picked: Option<Option<String>> = None;
+                draw_dropdown(
+                    ui,
+                    palette,
+                    "terminal_program_selector",
+                    SETTINGS_COMBO_WIDTH + 40.0,
+                    selected,
+                    |ui| {
+                        if ui
+                            .selectable_label(terminal.external_shell.is_none(), automatic.as_str())
+                            .clicked()
+                        {
+                            picked = Some(None);
+                            ui.close();
+                        }
+                        for shell in installed.iter().filter(|shell| {
+                            !matches!(
+                                shell.kind,
+                                crate::core::terminal_shells::ShellKind::Wsl(_)
+                                    | crate::core::terminal_shells::ShellKind::Ssh(_)
+                            )
+                        }) {
+                            let chosen = terminal.external_shell.as_deref() == Some(&shell.id);
+                            if ui.selectable_label(chosen, shell.name.as_str()).clicked() {
+                                picked = Some(Some(shell.id.clone()));
+                                ui.close();
+                            }
+                        }
+                    },
+                );
+                if let Some(shell) = picked {
+                    terminal.external_shell = shell;
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
         applying_checkbox(
             ui,
             i18n,

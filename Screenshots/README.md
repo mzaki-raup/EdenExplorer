@@ -458,7 +458,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Terminal pane](85-terminal-pane.png)
 
-### The terminal pane's + menu - every installed shell (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, each WSL distribution) and Default Shell
+### The terminal pane's + menu - every installed shell (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, Nushell, each WSL distribution) and Default Shell
 
 ![Terminal shells](86-terminal-shells.png)
 
@@ -466,7 +466,7 @@ Clicking Ubuntu in the sidebar's Linux section opens the distribution's files wi
 
 ![Terminal with Oh My Posh](87-terminal-oh-my-posh.png)
 
-### Settings - Behavior - Terminal Font Size and Terminal Font (Automatic picks an installed Nerd Font for prompt themes like Oh My Posh)
+### Settings - Behavior - Terminal Font Size, Terminal Font (Automatic picks an installed Nerd Font for prompt themes like Oh My Posh) and Terminal Program (which shell Open Terminal opens in its own window)
 
 ![Terminal settings](88-terminal-settings.png)
 

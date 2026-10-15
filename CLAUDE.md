@@ -2586,6 +2586,36 @@ PowerShell process) rather than the app's own code - if you're using the
   the preview started following the arrow keys. Key a cache by what it is
   *for*, not by a value that happens to vary most of the time.
 
+- **Before concluding anything about a view-layout-specific behaviour, confirm
+  which layout is actually on screen - the six toolbar icons are easy to
+  mis-count, and a wrong one wastes a whole test pass.** Verifying the new
+  Column + Preview keyboard navigation, the clicks went to the *fifth* icon
+  (the eye, plain **Preview**) while the intended target was the *fourth*
+  (`COLUMNS_PLUS_RIGHT`, **Column + Preview**). Everything that followed was
+  read as evidence about the column browser when it was really the Preview
+  layout: arrow keys "worked", and a folder "wrongly" showing in the preview
+  pane looked like a bug in the new code. It was found only by a debug build
+  printing the pane's own `display_mode` on each keypress - which is the
+  cheap tell worth reaching for first: print the state the feature is keyed
+  on, rather than inferring it from the screenshot. The order, left to
+  right: Details, Gallery, Columns, **Column + Preview**, Preview (eye),
+  Details + Preview (sidebar), Flat View (layers). The misread was not
+  wasted, though - it surfaced a real inconsistency in the layout that *was*
+  being tested (a folder filling the preview with "No preview available"),
+  which is now fixed everywhere.
+- **egui's arrow-key focus traversal cannot do anything in this app, so a
+  "the arrow keys went to the sidebar" report is a stray click, not a focus
+  bug.** egui turns a bare arrow into a `FocusDirection`
+  (`Memory::begin_pass`), but `find_widget_in_direction` opens with
+  `let current_focused = self.focused_widget?` - it only ever *moves* an
+  existing focus, never creates one. Nothing in the sidebar requests keyboard
+  focus, and a debug build printing `memory().focused()` on every arrow press
+  showed `None` throughout, including straight after clicking a sidebar item.
+  What looked like the sidebar reacting was this file's own long-recorded
+  hazard: the sidebar scrolls, so a y-coordinate taken from an older
+  screenshot lands on a different folder. Check `focused()` before
+  investigating any "the keyboard went somewhere else" report here.
+
 ## Build & release workflow
 
 CI/CD runs on the **Forgejo** instance that hosts this repo (`git.zacx.net`), not

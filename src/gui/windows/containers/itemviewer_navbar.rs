@@ -137,7 +137,6 @@ pub fn draw_itemviewer_navigation_bar(
                 palette,
                 toolbar_layout,
                 is_favorited,
-                &tab.nav.current,
                 tab.nav.is_root() || is_settings,
                 disable_file_actions,
                 can_go_back,
@@ -169,7 +168,6 @@ pub fn draw_itemviewer_navigation_bar(
                 palette,
                 toolbar_layout,
                 is_favorited,
-                &tab.nav.current,
                 tab.nav.is_root() || is_settings,
                 disable_file_actions,
                 can_go_back,
@@ -1173,7 +1171,6 @@ fn draw_navigation_bar_buttons(
     palette: &ThemePalette,
     layout: &[ToolbarItem],
     is_favorited: bool,
-    current_dir: &Path,
     is_root: bool,
     is_recycle_bin: bool,
     can_go_back: bool,
@@ -1275,7 +1272,10 @@ fn draw_navigation_bar_buttons(
                     }
                     ToolbarItem::NewFolder => action.create_folder = true,
                     ToolbarItem::NewFile => action.create_file = true,
-                    ToolbarItem::Terminal => open_default_terminal(current_dir),
+                    // Routed centrally like every other toolbar command
+                    // rather than launched from here: which shell opens is a
+                    // user setting, and this function has no settings in
+                    // scope (nor should it need them to draw a button).
                     other => action.toolbar_command = Some(other),
                 }
             }
@@ -1285,12 +1285,27 @@ fn draw_navigation_bar_buttons(
     action
 }
 
-pub(crate) fn open_default_terminal(current_dir: &Path) {
+/// Opens a terminal window in `current_dir`.
+///
+/// `shell` is the id of the shell the user picked in Settings > Behavior >
+/// Terminal Program (`ShellProfile::id`); `None` keeps the original
+/// behaviour - Windows Terminal if it is installed, else Windows PowerShell,
+/// else Command Prompt. A chosen shell that is no longer installed falls
+/// back to the same chain rather than failing silently.
+pub(crate) fn open_default_terminal(current_dir: &Path, shell: Option<&str>) {
     let start_dir = if current_dir.to_string_lossy() == MY_PC_PATH || !current_dir.exists() {
         dirs::home_dir().unwrap_or_else(|| current_dir.to_path_buf())
     } else {
         current_dir.to_path_buf()
     };
+
+    if let Some(id) = shell
+        && let Some(profile) = crate::core::terminal_shells::shells(|| {})
+            .and_then(|shells| shells.iter().find(|s| s.id == id))
+        && open_shell_window(profile, &start_dir)
+    {
+        return;
+    }
 
     // Windows Terminal is given `-d .` plus a working directory rather than
     // the folder path itself: wt splits its command line on `;` to chain
@@ -1317,6 +1332,33 @@ pub(crate) fn open_default_terminal(current_dir: &Path) {
     if !launched {
         eprintln!("Failed to open terminal");
     }
+}
+
+/// Starts `profile` in its own console window, in `dir`.
+///
+/// `CREATE_NEW_CONSOLE` is what gives it a window at all: this app is a GUI
+/// process with no console of its own, so a console program started from it
+/// would otherwise run with nowhere to draw. The program, its arguments and
+/// its environment all come from `ShellProfile::launch` - the same thing the
+/// terminal pane runs - so a shell behaves the same whether it opens inside
+/// the window or outside it.
+fn open_shell_window(
+    profile: &crate::core::terminal_shells::ShellProfile,
+    dir: &Path,
+) -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+    let launch = profile.launch(dir);
+    let mut command = Command::new(&launch.program);
+    command
+        .args(&launch.args)
+        .current_dir(dir)
+        .creation_flags(CREATE_NEW_CONSOLE);
+    for (key, value) in &launch.env {
+        command.env(key, value);
+    }
+    command.spawn().is_ok()
 }
 
 fn measure_breadcrumb_width(ui: &egui::Ui, font_id: &egui::FontId, text: &str) -> f32 {
