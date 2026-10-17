@@ -78,6 +78,13 @@ pub fn draw_external_to_internal_drag_overlay(
 /// be added explicitly rather than relying on `header_height` alone).
 const HEADER_TOP_PADDING: f32 = 4.0;
 
+/// Height of one row in the Details table: the content height plus 2 points
+/// of padding above and below. Also what one "line" means to the mouse
+/// wheel (see `core::wheel`).
+pub fn details_row_height(palette: &ThemePalette) -> f32 {
+    palette.row_height + 4.0
+}
+
 pub fn compute_layout(
     _ui: &egui::Ui,
     is_drive_view: bool,
@@ -85,11 +92,10 @@ pub fn compute_layout(
     show_selection_checkboxes: bool,
     palette: &ThemePalette,
 ) -> ItemViewerLayout {
-    let row_padding = 2.0;
     // Height of the actual content (icon/text).
     let content_height = palette.row_height;
     // Total height allocated to each table row.
-    let row_height = content_height + row_padding * 2.0;
+    let row_height = details_row_height(palette);
     // The column header (Name/Type/Size/...) gets a bit more breathing room
     // above and below its labels than a plain data row does.
     let header_height = row_height + HEADER_TOP_PADDING * 2.0;

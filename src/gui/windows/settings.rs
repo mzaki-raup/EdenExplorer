@@ -1251,6 +1251,56 @@ fn draw_behavior_section(
     });
 
     settings_section(ui, palette, |ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.wheel_follow_windows,
+            "settings_wheel_follow_windows",
+            "tooltip_settings_wheel_follow_windows",
+            action,
+        );
+        if !prefs.wheel_follow_windows {
+            ui.add_space(SETTINGS_FIELD_GAP);
+            let suffix = format!(" {}", i18n.tr("settings_wheel_lines_suffix"));
+            let mut lines_row = |ui: &mut egui::Ui, label: &str, tooltip: &str, value: &mut u32| {
+                setting_row(
+                    ui,
+                    |ui| setting_label(ui, label, Some((tooltip, palette)), palette),
+                    |ui| {
+                        apply_eden_visual_overrides(ui, palette);
+                        let changed = ui
+                            .add_sized(
+                                [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                                egui::DragValue::new(value)
+                                    .range(1..=crate::core::wheel::MAX_LINES)
+                                    .speed(0.1)
+                                    .suffix(&suffix),
+                            )
+                            .changed();
+                        if changed {
+                            *action = Some(SettingsAction::ApplySettings);
+                        }
+                    },
+                );
+            };
+            lines_row(
+                ui,
+                &i18n.tr("settings_wheel_lines"),
+                &i18n.tr("tooltip_settings_wheel_lines"),
+                &mut prefs.wheel_lines,
+            );
+            lines_row(
+                ui,
+                &i18n.tr("settings_terminal_wheel_lines"),
+                &i18n.tr("tooltip_settings_terminal_wheel_lines"),
+                &mut prefs.terminal.wheel_lines,
+            );
+        }
+    });
+
+    settings_section(ui, palette, |ui| {
         setting_row(
             ui,
             |ui| {

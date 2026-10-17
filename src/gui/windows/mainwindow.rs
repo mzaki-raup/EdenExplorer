@@ -14,6 +14,7 @@ use crate::gui::theme::{
 };
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
+use crate::gui::windows::containers::itemviewer_helper::details_row_height;
 use crate::gui::windows::containers::notifications::{draw_notifications_button, draw_toast, NotificationsState};
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
@@ -919,10 +920,22 @@ impl eframe::App for MainWindow {
             self.clipboard_set = self.clipboard_paths.iter().cloned().collect();
         }
 
-        // Increase scroll speed for the explorer view.
-        ui.ctx().input_mut(|i| {
-            i.smooth_scroll_delta *= 6.0;
-        });
+        // One wheel notch scrolls a chosen number of file-list rows (Windows'
+        // own setting by default - nothing upstream of egui applies it, see
+        // `core::wheel`). egui reads this when it converts the next notch,
+        // so it is kept current here rather than set once.
+        {
+            let prefs = &self.settings_window.current_settings.ui_prefs;
+            let lines = crate::core::wheel::lines_per_notch(
+                prefs.wheel_follow_windows,
+                prefs.wheel_lines,
+                crate::core::wheel::windows_lines(),
+            );
+            let points = lines as f32 * details_row_height(&palette);
+            if ui.ctx().options(|o| o.input_options.line_scroll_speed) != points {
+                ui.ctx().options_mut(|o| o.input_options.line_scroll_speed = points);
+            }
+        }
 
         if self.icon_cache.is_none() {
             self.icon_cache = Some(IconCache::new(ui.ctx().clone()));
@@ -1364,8 +1377,14 @@ impl eframe::App for MainWindow {
                                         };
                                         if let Some((size, rect)) = reserved {
                                             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                                            let ui_prefs = &self.settings_window.current_settings.ui_prefs;
+                                            let wheel_lines = crate::core::wheel::lines_per_notch(
+                                                ui_prefs.wheel_follow_windows,
+                                                prefs.wheel_lines,
+                                                crate::core::wheel::windows_lines(),
+                                            );
                                             let action = self.terminal.draw(
-                                                &mut child, rect, tab_id, &dir, size, &layout, prefs, &palette, &self.i18n,
+                                                &mut child, rect, tab_id, &dir, size, &layout, prefs, wheel_lines, &palette, &self.i18n,
                                             );
                                             self.handle_terminal_action(action, &dir);
                                             if layout.side {

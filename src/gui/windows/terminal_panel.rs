@@ -244,7 +244,8 @@ impl TerminalPanels {
 
     /// Draws `tab`'s pane in `rect`. `dir` is where new shells start and
     /// where "Go To Current Folder" goes; `size` is the pane's height (or
-    /// width beside the files).
+    /// width beside the files); `wheel_lines` is how many lines one wheel
+    /// notch scrolls (see `core::wheel`).
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -255,6 +256,7 @@ impl TerminalPanels {
         size: f32,
         layout: &PaneLayout,
         prefs: &crate::core::ui_prefs::TerminalPrefs,
+        wheel_lines: u32,
         palette: &ThemePalette,
         i18n: &I18n,
     ) -> PanelAction {
@@ -652,7 +654,7 @@ impl TerminalPanels {
         }
 
         // Mouse: wheel scrolls back, drag selects, right-click menu.
-        handle_mouse(ui, &resp, session, &mut panel.scroll, &mut panel.drag_scroll, inner, cell_w, cell_h);
+        handle_mouse(ui, &resp, session, &mut panel.scroll, &mut panel.drag_scroll, inner, cell_w, cell_h, wheel_lines);
 
         let exited_text = session
             .exited
@@ -851,12 +853,17 @@ fn handle_mouse(
     inner: egui::Rect,
     cell_w: f32,
     cell_h: f32,
+    wheel_lines: u32,
 ) {
     // Wheel: history, or arrow keys in full-screen programs that ask for it.
+    // egui reports the wheel in points, `line_scroll_speed` of them per
+    // notch (the file list's rows-per-notch, set in `MainWindow::ui`), so
+    // the notches are recovered first and the terminal's own count applied.
     if resp.hovered() {
         let delta = ui.input(|i| i.smooth_scroll_delta.y);
         if delta != 0.0 {
-            *scroll += delta / cell_h;
+            let per_notch = ui.ctx().options(|o| o.input_options.line_scroll_speed).max(1.0);
+            *scroll += delta / per_notch * wheel_lines as f32;
             let lines = scroll.trunc() as i32;
             *scroll -= lines as f32;
             if lines != 0 {
