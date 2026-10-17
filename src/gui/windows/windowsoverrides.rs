@@ -20,7 +20,7 @@ use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
 use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
@@ -372,6 +372,13 @@ pub unsafe fn install_wndproc(hwnd: HWND) -> Result<(), String> {
     }
 }
 
+/// Width of the resize border Windows gives this window at its own DPI
+/// (`SM_CXFRAME` plus the padded border Windows 10/11 add on top of it).
+fn resize_border_thickness(hwnd: HWND) -> i32 {
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(1);
+    unsafe { GetSystemMetricsForDpi(SM_CXFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) }
+}
+
 unsafe extern "system" fn custom_wndproc(
     hwnd: HWND,
     msg: u32,
@@ -450,7 +457,22 @@ unsafe extern "system" fn custom_wndproc(
         // Keep the custom borderless frame's client area aligned with the
         // window. Without this, Windows 10 may retain a non-client top inset
         // after WS_THICKFRAME is added, offsetting both painting and input.
-        WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
+        // A maximized window is sized a resize border *larger* than the
+        // monitor's work area on every side (Windows hides that border off
+        // screen for ordinary windows), so without this inset a borderless
+        // window's content runs under the screen edges.
+        WM_NCCALCSIZE if wparam.0 != 0 => {
+            if unsafe { IsZoomed(hwnd).as_bool() } {
+                let params = unsafe { &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS) };
+                let b = resize_border_thickness(hwnd);
+                let r = &mut params.rgrc[0];
+                r.left += b;
+                r.top += b;
+                r.right -= b;
+                r.bottom -= b;
+            }
+            LRESULT(0)
+        }
 
         WM_NCHITTEST => {
             let x = get_x_lparam(lparam);

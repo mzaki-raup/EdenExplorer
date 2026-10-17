@@ -2687,6 +2687,17 @@ PowerShell process) rather than the app's own code - if you're using the
   per-frame-syscall mistake recorded several times above), and
   `WHEEL_PAGESCROLL` (`u32::MAX`, Windows' "one screen at a time") has to be
   mapped to a fixed count, since no page height is known there.
+- **A maximized window's client area can be measured, and therefore
+  verified, without a single synthetic click - which matters because
+  maximize is exactly the kind of thing a stale-coordinate click gets wrong
+  while the owner is at the keyboard.** `ShowWindow(hwnd, SW_MAXIMIZE)` from
+  PowerShell needs no focus; `GetWindowRect` then shows the window sized a
+  resize border *past* the work area on every side (`(-8,-8)-(1928,992)` on
+  a 1920x984 work area at 96 DPI), and `GetClientRect` shows whether the
+  app's `WM_NCCALCSIZE` handler pulled the client area back in (`1920x984`)
+  or left content under the screen edges (`1936x1000`). Restore with
+  `SW_RESTORE` afterwards. Run it against a `--new-window` portable-mode
+  instance so the owner's own window is never touched.
 
 ## Build & release workflow
 
