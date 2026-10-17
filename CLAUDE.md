@@ -2698,6 +2698,21 @@ PowerShell process) rather than the app's own code - if you're using the
   or left content under the screen edges (`1936x1000`). Restore with
   `SW_RESTORE` afterwards. Run it against a `--new-window` portable-mode
   instance so the owner's own window is never touched.
+- **`git reset --hard origin/main` to catch up a rejected push discards
+  every uncommitted change in the working tree, including the owner's own
+  work in progress - and in this repo the tree is rarely clean.** After a
+  push of `main` was rejected (the release workflow had added its version
+  bump commit in the meantime), the merge was rebuilt with `fetch` +
+  `reset --hard origin/main` + re-merge. That silently deleted the owner's
+  uncommitted `.gitignore` edit, noticed only because the file it ignored
+  reappeared as untracked in the next `git status`. Recovered by
+  re-applying the one known line, which was only possible because the
+  diff had been read earlier in the session. Catch up without touching the
+  working tree instead: `git merge --ff-only origin/main` (fails loudly
+  rather than discarding anything if `main` has diverged), then re-merge
+  the branch - and before any `reset --hard`, `checkout --`, or `stash`,
+  run `git status` and treat every modified file that is not yours as a
+  reason to pick a different command.
 
 ## Build & release workflow
 
