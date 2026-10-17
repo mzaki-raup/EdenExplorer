@@ -58,6 +58,7 @@ pub mod treemap;
 pub mod toolbar;
 pub mod ui_prefs;
 pub mod update;
+pub mod wheel;
 pub mod utils;
 pub mod verify;
 pub mod video;

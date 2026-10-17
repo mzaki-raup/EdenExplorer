@@ -2667,6 +2667,37 @@ PowerShell process) rather than the app's own code - if you're using the
   every other struct that mentions that type by name, not just the load
   function** - a shadow of an older shape must be built entirely from frozen
   types, or it silently tracks the thing it is supposed to be a snapshot of.
+- **Nothing between the mouse and this app applies Windows' "lines to
+  scroll each time" setting, so wheel distance is entirely the app's to
+  decide - and until `core::wheel` it was a hardcoded fast constant.** The
+  question "does scrolling follow the OS mouse setting?" is answered by
+  reading two files rather than guessing: winit's `WM_MOUSEWHEEL` handler
+  reports `LineDelta(delta / WHEEL_DELTA)` - the raw notch count, no
+  `SPI_GETWHEELSCROLLLINES` - and egui's `wheel_state.rs` converts each
+  notch to `InputOptions::line_scroll_speed` points (a flat 40). On top of
+  that `MainWindow::ui` multiplied every `smooth_scroll_delta` by 6, so one
+  notch was 240 points everywhere: ~12 rows of the file list, ~14 lines of
+  the terminal, whatever Windows said. The fix sets `line_scroll_speed` to
+  `rows x details_row_height` each frame (so "a line" means a file-list row,
+  for every panel) and has the terminal divide the points back into notches
+  before applying its own count - do not reintroduce a blanket
+  `smooth_scroll_delta *=` multiplier, it silently redefines what a notch
+  means for every scroll surface at once. `windows_lines()` caches the
+  system call for five seconds because it is read from draw code (the
+  per-frame-syscall mistake recorded several times above), and
+  `WHEEL_PAGESCROLL` (`u32::MAX`, Windows' "one screen at a time") has to be
+  mapped to a fixed count, since no page height is known there.
+- **A maximized window's client area can be measured, and therefore
+  verified, without a single synthetic click - which matters because
+  maximize is exactly the kind of thing a stale-coordinate click gets wrong
+  while the owner is at the keyboard.** `ShowWindow(hwnd, SW_MAXIMIZE)` from
+  PowerShell needs no focus; `GetWindowRect` then shows the window sized a
+  resize border *past* the work area on every side (`(-8,-8)-(1928,992)` on
+  a 1920x984 work area at 96 DPI), and `GetClientRect` shows whether the
+  app's `WM_NCCALCSIZE` handler pulled the client area back in (`1920x984`)
+  or left content under the screen edges (`1936x1000`). Restore with
+  `SW_RESTORE` afterwards. Run it against a `--new-window` portable-mode
+  instance so the owner's own window is never touched.
 
 ## Build & release workflow
 

@@ -68,6 +68,12 @@ pub struct UiPrefs {
     /// While dragging, resting on a folder opens it after this long
     /// (0 = spring-loaded folders off).
     pub spring_load_ms: u32,
+    /// One wheel notch scrolls as many rows as Windows' own mouse setting
+    /// says (see `core::wheel`); off, `wheel_lines` is used instead. Shared
+    /// with the terminal, whose own count is `TerminalPrefs::wheel_lines`.
+    pub wheel_follow_windows: bool,
+    /// Rows the file list scrolls per notch when not following Windows.
+    pub wheel_lines: u32,
     /// Double-clicking a SQLite database shows its tables instead of
     /// opening it in whatever program owns the extension (see
     /// `core::sqlite`). The struct's own container-level `#[serde(default)]`
@@ -150,6 +156,14 @@ pub struct TerminalPrefs {
     /// program already running unelevated.
     #[serde(default)]
     pub external_shell_admin: bool,
+    /// Lines the terminal scrolls per wheel notch when
+    /// `UiPrefs::wheel_follow_windows` is off.
+    #[serde(default = "default_wheel_lines")]
+    pub wheel_lines: u32,
+}
+
+fn default_wheel_lines() -> u32 {
+    3
 }
 
 impl Default for TerminalPrefs {
@@ -165,6 +179,7 @@ impl Default for TerminalPrefs {
             ssh_side_width: 0.0,
             external_shell: None,
             external_shell_admin: false,
+            wheel_lines: default_wheel_lines(),
         }
     }
 }
@@ -240,6 +255,8 @@ impl Default for UiPrefs {
             folder_tree: true,
             folder_tree_expanded: true,
             spring_load_ms: 800,
+            wheel_follow_windows: true,
+            wheel_lines: 3,
             browse_databases: true,
             git_status: true,
             portable_tags: false,

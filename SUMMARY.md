@@ -61,6 +61,7 @@ EdenExplorer is an open-source, high-performance file manager for Windows 10/11,
 - Asynchronous/streaming directory scanning that doesn't block the UI
 - Tabbed browsing with pinned tabs, independent loading states, and full navigation history (back/forward/up)
 - Up to three panes per tab (one full-height pane in the left column, one or two stacked in the right), each with its own folder, layout, sort, selection and history; the arrow keys move the selection in the active pane only, and a three-pane tab is restored on the next launch
+- The mouse wheel follows Windows' lines-per-notch setting by default (previously a fixed, fast distance that ignored it); Settings > Behavior can instead set separate counts for the file list and the terminal pane
 - Lists scroll while a drag is held at their top or bottom edge (Details, Detail+Preview and Gallery), so a folder that was off screen when the drag began is still a drop target - combines with spring-loaded folders
 - Real-time fuzzy search/filtering with cached indices
 - Sidebar with favorites (drag-and-drop reorderable) and quick access
